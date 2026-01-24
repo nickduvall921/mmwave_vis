@@ -1,0 +1,3 @@
+flask
+flask-socketio
+paho-mqtt==1.6.1

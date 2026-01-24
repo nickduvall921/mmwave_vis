@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Inovelli mmWave Live</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: #eee; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        
+        /* Header */
+        .header { background: #2b2b2b; padding: 10px 15px; border-bottom: 2px solid #00bcd4; display: flex; justify-content: space-between; align-items: center; z-index: 10; }
+        .header-title { display: flex; align-items: center; gap: 15px; }
+        h2 { color: #00bcd4; margin: 0; }
+        select { background: #333; color: white; border: 1px solid #00bcd4; padding: 6px 12px; font-size: 14px; border-radius: 4px; cursor: pointer; }
+        
+        .status-bar { font-size: 0.9em; color: #888; text-align: center; background: #222; padding: 5px; display: flex; justify-content: center; gap: 10px; }
+        #packetInfo { color: #00bcd4; font-weight: bold; }
+        #timestamp { color: #ff9800; font-family: monospace; }
+
+        /* Main Layout Grid */
+        .app-container { display: grid; grid-template-columns: 1fr 350px; flex-grow: 1; overflow: hidden; transition: 0.3s; }
+        .main-content { display: flex; flex-direction: column; padding: 10px; overflow-y: auto; position: relative; }
+        .sidebar { background: #222; border-left: 1px solid #444; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; transition: opacity 0.3s; }
+
+        /* Chart & Table */
+        #chart { width: 100%; height: 50vh; min-height: 400px; }
+        .table-container { background: #2b2b2b; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.3); margin-top: 15px; }
+        table { width: 100%; border-collapse: collapse; text-align: center; }
+        th { background: #00bcd4; color: #1a1a1a; padding: 8px; font-weight: bold; }
+        td { padding: 8px; border-bottom: 1px solid #444; }
+        .no-data { padding: 15px; font-style: italic; color: #888; }
+
+        /* Sidebar Controls */
+        .config-group { background: #2b2b2b; padding: 12px; border-radius: 6px; border: 1px solid #333; }
+        .config-title { font-weight: bold; color: #00bcd4; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 5px; font-size: 0.95em; }
+        .input-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.9em; }
+        .input-row label { color: #ccc; }
+        
+        /* Live Sensor Badges */
+        .sensor-row { display: flex; justify-content: space-between; background: #222; padding: 8px 10px; border-radius: 4px; margin-bottom: 5px; }
+        .sensor-val { font-weight: bold; color: #fff; }
+        .badge-detected { color: #4caf50; font-weight: bold; }
+        .badge-clear { color: #888; font-style: italic; }
+
+        /* Form Inputs */
+        input[type="number"] { width: 60px; background: #333; color: white; border: 1px solid #555; border-radius: 3px; padding: 3px 5px; text-align: right; }
+        .control-select { width: 100%; margin-top: 5px; background: #333; border: 1px solid #555; color: white; }
+
+        .cmd-btn { background: #444; color: white; border: 1px solid #00bcd4; padding: 6px 10px; border-radius: 4px; cursor: pointer; transition: 0.2s; font-size: 0.85em;}
+        .cmd-btn:hover { background: #00bcd4; color: #1a1a1a; }
+        .btn-danger { border-color: #ff5252; }
+        .btn-danger:hover { background: #ff5252; color: white; }
+
+        #zoneStatus { display: none; position: fixed; top: 20px; right: 20px; background: #333; color: white; padding: 15px 20px; border-radius: 6px; z-index: 1000; }
+
+        /* Non-mmWave Overlay Warning */
+        #nonMmwaveWarning {
+            display: none;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 82, 82, 0.9);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 8px;
+            font-size: 1.2em;
+            font-weight: bold;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            z-index: 20;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-title">
+            <h2>mmWave Live</h2>
+            <select id="deviceSelect"><option value="" disabled selected>Loading devices...</option></select>
+            <button id="refreshDevicesBtn" class="cmd-btn">↻ Refresh</button>
+        </div>
+        <div style="display: flex; gap: 10px;">
+            <button class="cmd-btn" id="btnForceSync" onclick="socket.emit('force_sync'); packetInfo.innerText = 'Requesting live data...';">🔄 Force Sync</button>
+            <button class="cmd-btn" id="btnInterference" onclick="sendCommand(1)">Auto-Config Interference</button>
+            <button class="cmd-btn btn-danger" id="btnClear" onclick="sendCommand(3)">Clear Interference</button>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <span id="statusDiv">Waiting for connection...</span> | 
+        <span id="packetInfo">Awaiting data...</span> |
+        <span>Last Packet: <span id="timestamp">--:--:--</span></span>
+    </div>
+
+    <div id="zoneStatus"></div>
+
+    <div class="app-container">
+        <div class="main-content">
+            <div id="nonMmwaveWarning">⚠ Standard Switch Detected<br><span style="font-size: 0.8em; font-weight: normal;">This device does not have mmWave hardware.</span></div>
+            <div id="chart"></div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Target ID</th>
+                            <th>X (Width)</th>
+                            <th>Y (Depth)</th>
+                            <th>Z (Height)</th>
+                            <th>Action (Doppler)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dataTableBody">
+                        <tr><td colspan="5" class="no-data">No targets detected</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="sidebar" id="configSidebar">
+            
+            <div class="config-group" style="background: #1e1e1e; border-color: #00bcd4;">
+                <div class="config-title" style="color: #00bcd4;">Live Sensors</div>
+                <div class="sensor-row">
+                    <span style="color: #ccc;">Occupancy:</span>
+                    <span id="occupancyVal" class="sensor-val badge-clear">Waiting...</span>
+                </div>
+                <div class="sensor-row">
+                    <span style="color: #ccc;">Illuminance:</span>
+                    <span id="illuminanceVal" class="sensor-val">-- lx</span>
+                </div>
+            </div>
+
+            <div class="config-group">
+                <div class="config-title">Detection Zone (cm)</div>
+                <div class="input-row"><label>Depth Max (Y):</label> <input type="number" id="mmWaveDepthMax" data-param="mmWaveDepthMax" step="10" max="600" min="0"></div>
+                <div class="input-row"><label>Depth Min (Y):</label> <input type="number" id="mmWaveDepthMin" data-param="mmWaveDepthMin" step="10" max="600" min="0"></div>
+                <div class="input-row"><label>Width Max (X):</label> <input type="number" id="mmWaveWidthMax" data-param="mmWaveWidthMax" step="10" max="600" min="-600"></div>
+                <div class="input-row"><label>Width Min (X):</label> <input type="number" id="mmWaveWidthMin" data-param="mmWaveWidthMin" step="10" max="600" min="-600"></div>
+                <div class="input-row"><label>Height Max (Z):</label> <input type="number" id="mmWaveHeightMax" data-param="mmWaveHeightMax" step="10" max="600" min="-600"></div>
+                <div class="input-row"><label>Height Min (Z):</label> <input type="number" id="mmWaveHeightMin" data-param="mmWaveHeightMin" step="10" max="600" min="-600"></div>
+            </div>
+
+            <div class="config-group">
+                <div class="config-title">Sensor Behavior</div>
+                <div class="input-row">
+                    <label>Sensitivity:</label>
+                    <select class="control-select" style="width: 140px;" id="mmWaveDetectSensitivity" data-param="mmWaveDetectSensitivity">
+                        <option value="Low">Low</option>
+                        <option value="Medium">Medium</option>
+                        <option value="High (default)">High</option>
+                    </select>
+                </div>
+                <div class="input-row">
+                    <label>Trigger Speed:</label>
+                    <select class="control-select" style="width: 140px;" id="mmWaveDetectTrigger" data-param="mmWaveDetectTrigger">
+                        <option value="Fast (0.2s, default)">Fast (0.2s)</option>
+                        <option value="Medium (1s)">Medium (1s)</option>
+                        <option value="Slow (5s)">Slow (5s)</option>
+                    </select>
+                </div>
+                <div class="input-row"><label>Hold Time (s):</label><input type="number" id="mmWaveHoldTime" data-param="mmWaveHoldTime" min="0"></div>
+                <div class="input-row"><label>Stay Life (internal):</label><input type="number" id="mmWaveStayLife" data-param="mmWaveStayLife" min="0"></div>
+            </div>
+
+            <div class="config-group">
+                <div class="config-title">System Settings</div>
+                <div class="input-row">
+                    <label>Room Preset:</label>
+                    <select class="control-select" style="width: 140px;" id="mmWaveRoomSizePreset" data-param="mmWaveRoomSizePreset">
+                        <option value="Custom">Custom</option>
+                        <option value="Small">Small</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Large">Large</option>
+                    </select>
+                </div>
+                <div class="input-row">
+                    <label>Target Reporting:</label>
+                    <select class="control-select" style="width: 140px;" id="mmWaveTargetInfoReport" data-param="mmWaveTargetInfoReport">
+                        <option value="Disable (default)">Disable</option>
+                        <option value="Enable">Enable</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const INGRESS_PATH = "{{ ingress_path }}";
+        const socket = io({ path: INGRESS_PATH + '/socket.io' });
+
+        const statusDiv = document.getElementById('statusDiv');
+        const packetInfo = document.getElementById('packetInfo');
+        const timestampSpan = document.getElementById('timestamp');
+        const deviceSelect = document.getElementById('deviceSelect');
+        const refreshBtn = document.getElementById('refreshDevicesBtn');
+        const dataTableBody = document.getElementById('dataTableBody');
+
+        // UI Elements
+        const nonMmwaveWarning = document.getElementById('nonMmwaveWarning');
+        const configSidebar = document.getElementById('configSidebar');
+        const btnForceSync = document.getElementById('btnForceSync');
+        const btnInterference = document.getElementById('btnInterference');
+        const btnClear = document.getElementById('btnClear');
+        const occupancyVal = document.getElementById('occupancyVal');
+        const illuminanceVal = document.getElementById('illuminanceVal');
+
+        let targetHistory = {}; 
+        const HISTORY_LENGTH = 15; 
+        let currentZoneShape = null;
+        let interferenceShapes = [];
+
+        // Context-aware command tracking
+        let lastCommandId = null; 
+
+        // Helper: Update Timestamp
+        function updateTimestamp() {
+            const now = new Date();
+            timestampSpan.innerText = now.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second:'2-digit' }) + '.' + now.getMilliseconds().toString().padStart(3, '0');
+        }
+
+        // Radar Rings
+        const radarRings = [100, 200, 300, 400, 500, 600].map(dist => ({
+            type: 'circle', xref: 'x', yref: 'y', x0: -dist, x1: dist, y0: -dist, y1: dist,
+            line: { color: 'rgba(255, 255, 255, 0.1)', width: 1, dash: 'dot' }
+        }));
+        radarRings.push({type: 'circle', xref: 'x', yref: 'y', x0: -10, x1: 10, y0: -10, y1: 10, fillcolor: 'red', line: {color: 'red'}});
+
+        function getChartShapes() {
+            let shapes = [...radarRings];
+            if (currentZoneShape) shapes.push(currentZoneShape);
+            return shapes.concat(interferenceShapes);
+        }
+
+        function sendCommand(actionId) {
+            socket.emit('send_command', actionId);
+            
+            // Set expectation
+            if (actionId === 1 || actionId === 3) {
+                lastCommandId = actionId; 
+                packetInfo.innerText = actionId === 1 ? "Scanning for interference..." : "Clearing interference zones...";
+            }
+        }
+
+        document.querySelectorAll('.sidebar input, .sidebar select').forEach(input => {
+            input.addEventListener('change', function() {
+                socket.emit('update_parameter', { param: this.getAttribute('data-param'), value: this.value });
+            });
+        });
+
+        // --- SOCKET EVENT HANDLERS ---
+        socket.on('connect', () => socket.emit('request_devices'));
+        refreshBtn.addEventListener('click', () => socket.emit('request_devices'));
+
+        socket.on('device_list', function(devices) {
+            const currentSelection = deviceSelect.value;
+            deviceSelect.innerHTML = '<option value="" disabled>Select an Inovelli Switch</option>';
+            devices.forEach(device => {
+                const option = document.createElement('option');
+                option.value = device.topic; option.text = device.friendly_name;
+                deviceSelect.appendChild(option);
+            });
+            if (currentSelection) deviceSelect.value = currentSelection;
+            else deviceSelect.selectedIndex = 0;
+        });
+
+        deviceSelect.addEventListener('change', function() {
+            socket.emit('change_device', this.value);
+            statusDiv.innerText = `Monitoring: ${this.options[this.selectedIndex].text}`;
+            packetInfo.innerText = "Awaiting data...";
+            timestampSpan.innerText = "--:--:--";
+            occupancyVal.innerText = "Waiting..."; occupancyVal.className = "sensor-val badge-clear";
+            illuminanceVal.innerText = "-- lx";
+            targetHistory = {}; currentZoneShape = null; interferenceShapes = []; lastCommandId = null;
+            Plotly.update('chart', {x: [[]], y: [[]], text: [[]]}, {shapes: getChartShapes()});
+            dataTableBody.innerHTML = '<tr><td colspan="5" class="no-data">No targets detected</td></tr>';
+            nonMmwaveWarning.style.display = 'none'; 
+        });
+
+        // --- FULL DEVICE CONFIGURATION & SENSORS ---
+        socket.on('device_config', function(config) {
+            updateTimestamp();
+
+            // 1. UPDATE LIVE SENSORS
+            if ("occupancy" in config) {
+                if (config.occupancy === true) {
+                    occupancyVal.innerText = "DETECTED";
+                    occupancyVal.className = "sensor-val badge-detected";
+                } else {
+                    occupancyVal.innerText = "CLEAR";
+                    occupancyVal.className = "sensor-val badge-clear";
+                }
+            }
+            if ("illuminance" in config) {
+                illuminanceVal.innerText = `${config.illuminance} lx`;
+            }
+
+            // 2. CHECK DEVICE TYPE
+            if (!("mmWaveVersion" in config)) {
+                nonMmwaveWarning.style.display = 'block';
+                configSidebar.style.opacity = '0.3';
+                configSidebar.style.pointerEvents = 'none';
+                btnForceSync.disabled = true; btnInterference.disabled = true; btnClear.disabled = true;
+                packetInfo.innerText = "Non-mmWave Switch";
+                return;
+            } else {
+                nonMmwaveWarning.style.display = 'none';
+                configSidebar.style.opacity = '1';
+                configSidebar.style.pointerEvents = 'auto';
+                btnForceSync.disabled = false; btnInterference.disabled = false; btnClear.disabled = false;
+            }
+
+            // 3. SYNC CONFIG INPUTS
+            for (const [key, value] of Object.entries(config)) {
+                const element = document.getElementById(key);
+                if (element) {
+                    element.value = value;
+                }
+            }
+        });
+
+        // --- PLOTLY INIT ---
+        const layout = {
+            paper_bgcolor: '#1a1a1a', plot_bgcolor: '#1a1a1a',
+            xaxis: { range: [-450, 450], title: 'Width (cm)', gridcolor: '#333', zerolinecolor: '#666', fixedrange: true },
+            yaxis: { range: [0, 650], title: 'Depth (cm)', gridcolor: '#333', zerolinecolor: '#666', fixedrange: true },
+            margin: { t: 10, b: 40, l: 40, r: 40 }, font: { color: '#eee' }, showlegend: false,
+            shapes: getChartShapes()
+        };
+
+        const chartConfig = {
+            modeBarButtonsToRemove: ['select2d', 'lasso2d'], 
+            displaylogo: false
+        };
+
+        Plotly.newPlot('chart', [
+            { x: [], y: [], mode: 'markers+text', text: [], textposition: 'top center', type: 'scatter' },
+            { x: [], y: [], mode: 'lines', line: {color: '#00bcd4', width: 3}, opacity: 0.3, type: 'scatter' }
+        ], layout, chartConfig);
+
+        socket.on('zone_config', function(config) {
+            currentZoneShape = {
+                type: 'rect', x0: config.x_min, x1: config.x_max, y0: config.y_min, y1: config.y_max,
+                line: { color: 'rgba(0, 188, 212, 0.6)', width: 2, dash: 'dot' },
+                fillcolor: 'rgba(0, 188, 212, 0.05)',
+            };
+            Plotly.relayout('chart', {shapes: getChartShapes()});
+        });
+
+        // --- INTERFERENCE ZONE LOGIC ---
+        socket.on('interference_zones', function(zones) {
+            const statusBox = document.getElementById('zoneStatus');
+            interferenceShapes = zones.map(z => ({
+                type: 'rect', x0: z.x_min, x1: z.x_max, y0: z.y_min, y1: z.y_max,
+                line: { color: 'rgba(255, 82, 82, 0.8)', width: 2 },
+                fillcolor: 'rgba(255, 82, 82, 0.2)'
+            }));
+            Plotly.relayout('chart', {shapes: getChartShapes()});
+
+            // Context-aware notification
+            if (lastCommandId !== null) {
+                statusBox.style.display = 'block';
+
+                if (zones.length === 0) {
+                    statusBox.style.background = 'rgba(76, 175, 80, 0.9)'; // Green
+                    
+                    if (lastCommandId === 1) {
+                        statusBox.innerText = "✓ Scan Complete: No active interference found.";
+                    } else if (lastCommandId === 3) {
+                        statusBox.innerText = "✓ Interference Cleared: Zones reset to zero.";
+                    }
+                } else {
+                    statusBox.style.background = 'rgba(255, 82, 82, 0.9)'; // Red
+                    statusBox.innerText = `⚠ Auto-Config Complete: Found ${zones.length} zone(s).`;
+                }
+
+                setTimeout(() => { statusBox.style.display = 'none'; }, 5000);
+                lastCommandId = null; 
+            }
+        });
+
+        socket.on('new_data', function(data) {
+            updateTimestamp();
+            packetInfo.innerText = `Targets Visible: ${data.targets.length}`;
+            
+            const currentIds = new Set(data.targets.map(t => t.id));
+            Object.keys(targetHistory).forEach(id => { if (!currentIds.has(Number(id))) delete targetHistory[id]; });
+
+            data.targets.forEach(t => {
+                if (!targetHistory[t.id]) targetHistory[t.id] = [];
+                targetHistory[t.id].push({x: t.x, y: t.y});
+                if (targetHistory[t.id].length > HISTORY_LENGTH) targetHistory[t.id].shift();
+            });
+
+            let historyX = [], historyY = [];
+            Object.values(targetHistory).forEach(points => {
+                points.forEach(p => { historyX.push(p.x); historyY.push(p.y); });
+                historyX.push(null); historyY.push(null); 
+            });
+
+            const sizes = data.targets.map(t => Math.max(8, Math.min(40, 10 + (t.z / 5))));
+
+            Plotly.react('chart', [
+                { x: data.targets.map(t => t.x), y: data.targets.map(t => t.y), text: data.targets.map(t => `ID: ${t.id} [Z:${t.z}cm]`), mode: 'markers+text', textposition: 'top center', marker: { size: sizes, color: '#00bcd4', line: {color: 'white', width: 2} }, type: 'scatter' },
+                { x: historyX, y: historyY, mode: 'lines', line: {color: '#00bcd4', width: 3}, opacity: 0.3, type: 'scatter' }
+            ], layout);
+
+            if (data.targets.length === 0) {
+                dataTableBody.innerHTML = '<tr><td colspan="5" class="no-data">Scanning for motion...</td></tr>';
+                return;
+            }
+
+            dataTableBody.innerHTML = ''; 
+            data.targets.forEach(t => {
+                let dopStatus = "Stationary", dopColor = "#888";
+                if (t.dop > 10) { dopStatus = `▲ Moving Away (${t.dop})`; dopColor = "#ff9800"; }
+                else if (t.dop < -10) { dopStatus = `▼ Approaching (${t.dop})`; dopColor = "#4caf50"; }
+
+                dataTableBody.innerHTML += `<tr><td style="font-weight: bold; color: #00bcd4;">${t.id}</td><td>${t.x} cm</td><td>${t.y} cm</td><td>${t.z} cm</td><td style="color: ${dopColor}; font-weight: bold;">${dopStatus}</td></tr>`;
+            });
+        });
+    </script>
+</body>
+</html>

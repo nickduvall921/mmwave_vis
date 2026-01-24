@@ -1,0 +1,25 @@
+name: "Inovelli mmWave Visualizer"
+description: "Live 2D tracking for Inovelli mmWave switches via MQTT-Z2M"
+version: "1.0.0"
+slug: "mmwave_viz"
+init: false
+arch:
+  - aarch64
+  - amd64
+map:
+  - config:rw
+options:
+  mqtt_broker: "core-mosquitto"
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
+schema:
+  mqtt_broker: str
+  mqtt_port: int
+  mqtt_username: str
+  mqtt_password: str
+
+ingress: true
+ingress_port: 5000
+panel_icon: mdi:radar
+panel_title: "mmWave Radar"
