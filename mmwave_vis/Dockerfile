@@ -1,11 +1,10 @@
-#Dockerfile
 ARG BUILD_FROM
 FROM $BUILD_FROM
 
 # Force Python to print logs immediately
 ENV PYTHONUNBUFFERED=1
 
-RUN apk add --no-cache python3 py3-pip jq
+RUN apk add --no-cache python3 py3-pip
 
 WORKDIR /app
 
