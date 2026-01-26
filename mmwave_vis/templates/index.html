@@ -11,7 +11,7 @@
         .header { background: #2b2b2b; padding: 10px 15px; border-bottom: 2px solid #00bcd4; display: flex; justify-content: space-between; align-items: center; z-index: 10; flex-wrap: wrap; gap: 10px;}
         .header-title { display: flex; align-items: center; gap: 15px; }
         h2 { color: #00bcd4; margin: 0; }
-        select { background: #333; color: white; border: 1px solid #00bcd4; padding: 6px 12px; font-size: 14px; border-radius: 4px; cursor: pointer; max-width: 250px;}
+        select#deviceSelect { background: #333; color: white; border: 1px solid #00bcd4; padding: 6px 12px; font-size: 14px; border-radius: 4px; cursor: pointer; max-width: 250px;}
         
         .status-bar { font-size: 0.9em; color: #888; text-align: center; background: #222; padding: 5px; display: flex; justify-content: center; gap: 10px; }
         #packetInfo { color: #00bcd4; font-weight: bold; }
@@ -19,40 +19,43 @@
 
         /* Main Layout Grid */
         .app-container { display: grid; grid-template-columns: 1fr 350px; flex-grow: 1; overflow: hidden; transition: 0.3s; }
-        .main-content { display: flex; flex-direction: column; padding: 10px; overflow-y: auto; position: relative; }
+        .main-content { display: flex; flex-direction: column; padding: 10px; overflow-y: auto; position: relative; gap: 15px; }
         .sidebar { background: #222; border-left: 1px solid #444; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; transition: opacity 0.3s; }
-
-        /* Responsive Design: Collapse Sidebar on smaller screens */
-        @media (max-width: 900px) {
-            .app-container { grid-template-columns: 1fr; grid-template-rows: auto auto; overflow-y: auto; }
-            .sidebar { border-left: none; border-top: 1px solid #444; height: auto; }
-            #chart { min-height: 350px; }
-        }
 
         /* Chart & Table */
         #chart { width: 100%; height: 50vh; min-height: 400px; }
-        .table-container { background: #2b2b2b; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.3); margin-top: 15px; }
-        table { width: 100%; border-collapse: collapse; text-align: center; }
+        .table-container { background: #2b2b2b; border-radius: 8px; overflow-x: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        table { width: 100%; border-collapse: collapse; text-align: center; min-width: 500px; }
         th { background: #00bcd4; color: #1a1a1a; padding: 8px; font-weight: bold; }
         td { padding: 8px; border-bottom: 1px solid #444; }
         .no-data { padding: 15px; font-style: italic; color: #888; }
 
-        /* Sidebar Controls */
+        /* Collapsible Sections */
+        details { background: #2b2b2b; border-radius: 6px; border: 1px solid #333; }
+        details > summary { font-weight: bold; color: #00bcd4; padding: 12px; cursor: pointer; list-style: none; user-select: none; display: flex; justify-content: space-between; align-items: center; }
+        details > summary::-webkit-details-marker { display: none; }
+        details > summary::after { content: '▼'; font-size: 0.8em; color: #666; transition: 0.2s; }
+        details[open] > summary::after { transform: rotate(180deg); color: #00bcd4; }
+        details[open] > summary { border-bottom: 1px solid #444; }
+        .config-content { padding: 12px; }
+
+        /* Non-collapsible config group (for Live Sensors) */
         .config-group { background: #2b2b2b; padding: 12px; border-radius: 6px; border: 1px solid #333; }
         .config-title { font-weight: bold; color: #00bcd4; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 5px; font-size: 0.95em; }
+
+        /* Form Inputs Aligned */
         .input-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.9em; }
         .input-row label { color: #ccc; }
-        
+        input[type="number"] { width: 130px; background: #333; color: white; border: 1px solid #555; border-radius: 3px; padding: 3px 5px; text-align: right; }
+        .control-select { width: 142px; margin-top: 5px; background: #333; border: 1px solid #555; color: white; padding: 3px; }
+
         /* Live Sensor Badges */
         .sensor-row { display: flex; justify-content: space-between; background: #222; padding: 8px 10px; border-radius: 4px; margin-bottom: 5px; }
         .sensor-val { font-weight: bold; color: #fff; }
         .badge-detected { color: #4caf50; font-weight: bold; }
         .badge-clear { color: #888; font-style: italic; }
 
-        /* Form Inputs */
-        input[type="number"] { width: 60px; background: #333; color: white; border: 1px solid #555; border-radius: 3px; padding: 3px 5px; text-align: right; }
-        .control-select { width: 100%; margin-top: 5px; background: #333; border: 1px solid #555; color: white; }
-
+        /* Buttons */
         .cmd-btn { background: #444; color: white; border: 1px solid #00bcd4; padding: 6px 10px; border-radius: 4px; cursor: pointer; transition: 0.2s; font-size: 0.85em;}
         .cmd-btn:hover { background: #00bcd4; color: #1a1a1a; }
         .btn-danger { border-color: #ff5252; }
@@ -76,6 +79,19 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.5);
             z-index: 20;
         }
+
+        /* Responsive Design: Mobile Layout Adjustments */
+        @media (max-width: 900px) {
+            .app-container { grid-template-columns: 1fr; grid-template-rows: auto auto; overflow-y: auto; }
+            .sidebar { border-left: none; border-top: 1px solid #444; height: auto; }
+            #chart { height: 350px; min-height: unset; } 
+            
+            /* Header improvements for mobile */
+            .header { flex-direction: column; align-items: stretch; }
+            .header-title { flex-direction: column; align-items: stretch; text-align: center; }
+            select#deviceSelect { max-width: 100%; margin-top: 5px; }
+            .header > div:last-child { justify-content: center; flex-wrap: wrap; }
+        }
     </style>
 </head>
 <body>
@@ -86,7 +102,8 @@
             <button id="refreshDevicesBtn" class="cmd-btn">↻ Refresh</button>
         </div>
         <div style="display: flex; gap: 10px;">
-            <button class="cmd-btn" id="btnForceSync" onclick="socket.emit('force_sync'); packetInfo.innerText = 'Requesting live data...';">🔄 Force Sync</button>
+            <button class="cmd-btn" id="btnLockView" onclick="toggleViewLock()">🔓 Unlock View</button>
+            <button class="cmd-btn" id="btnForceSync" onclick="if(isEditingZone) cancelZoneEdit(); else socket.emit('force_sync'); packetInfo.innerText = 'Requesting live data...';">🔄 Force Sync</button>
             <button class="cmd-btn" id="btnInterference" onclick="sendCommand(1)">Auto-Config Interference</button>
             <button class="cmd-btn btn-danger" id="btnClear" onclick="sendCommand(3)">Clear Interference</button>
         </div>
@@ -103,7 +120,23 @@
     <div class="app-container">
         <div class="main-content">
             <div id="nonMmwaveWarning">⚠ Standard Switch Detected<br><span style="font-size: 0.8em; font-weight: normal;">This device does not have mmWave hardware.</span></div>
-            <div id="chart"></div>
+            
+            <div id="zoneEditorControls" style="display: none; position: absolute; top: 15px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.85); padding: 10px 15px; border-radius: 6px; border: 1px solid #00bcd4; z-index: 50; text-align: center;">
+                <div style="color: #00bcd4; font-weight: bold; margin-bottom: 5px;">Draft Zone</div>
+                <div id="draftCoords" style="font-size: 0.85em; color: #ccc; margin-bottom: 8px;">X: -- to -- | Y: -- to --</div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="cmd-btn btn-danger" onclick="cancelZoneEdit()">Cancel</button>
+                    <button class="cmd-btn" onclick="applyZoneEdit()">Apply to Switch</button>
+                </div>
+            </div>
+
+            <details open id="chartContainer">
+                <summary>Live Radar Map</summary>
+                <div class="config-content" style="padding: 0;">
+                    <div id="chart"></div>
+                </div>
+            </details>
+
             <div class="table-container">
                 <table>
                     <thead>
@@ -136,57 +169,63 @@
                 </div>
             </div>
 
-            <div class="config-group">
-                <div class="config-title">Detection Zone (cm)</div>
-                <div class="input-row"><label>Depth Max (Y):</label> <input type="number" id="mmWaveDepthMax" data-param="mmWaveDepthMax" step="10" max="600" min="0"></div>
-                <div class="input-row"><label>Depth Min (Y):</label> <input type="number" id="mmWaveDepthMin" data-param="mmWaveDepthMin" step="10" max="600" min="0"></div>
-                <div class="input-row"><label>Width Max (X):</label> <input type="number" id="mmWaveWidthMax" data-param="mmWaveWidthMax" step="10" max="600" min="-600"></div>
-                <div class="input-row"><label>Width Min (X):</label> <input type="number" id="mmWaveWidthMin" data-param="mmWaveWidthMin" step="10" max="600" min="-600"></div>
-                <div class="input-row"><label>Height Max (Z):</label> <input type="number" id="mmWaveHeightMax" data-param="mmWaveHeightMax" step="10" max="600" min="-600"></div>
-                <div class="input-row"><label>Height Min (Z):</label> <input type="number" id="mmWaveHeightMin" data-param="mmWaveHeightMin" step="10" max="600" min="-600"></div>
-            </div>
+            <details open class="mobile-collapsed">
+                <summary>Detection Zone (cm)</summary>
+                <div class="config-content">
+                    <div class="input-row"><label>Depth Max (Y):</label> <input type="number" id="mmWaveDepthMax" data-param="mmWaveDepthMax" step="10" max="600" min="0"></div>
+                    <div class="input-row"><label>Depth Min (Y):</label> <input type="number" id="mmWaveDepthMin" data-param="mmWaveDepthMin" step="10" max="600" min="0"></div>
+                    <div class="input-row"><label>Width Max (X):</label> <input type="number" id="mmWaveWidthMax" data-param="mmWaveWidthMax" step="10" max="600" min="-600"></div>
+                    <div class="input-row"><label>Width Min (X):</label> <input type="number" id="mmWaveWidthMin" data-param="mmWaveWidthMin" step="10" max="600" min="-600"></div>
+                    <div class="input-row"><label>Height Max (Z):</label> <input type="number" id="mmWaveHeightMax" data-param="mmWaveHeightMax" step="10" max="600" min="-600"></div>
+                    <div class="input-row"><label>Height Min (Z):</label> <input type="number" id="mmWaveHeightMin" data-param="mmWaveHeightMin" step="10" max="600" min="-600"></div>
+                </div>
+            </details>
 
-            <div class="config-group">
-                <div class="config-title">Sensor Behavior</div>
-                <div class="input-row">
-                    <label>Sensitivity:</label>
-                    <select class="control-select" style="width: 140px;" id="mmWaveDetectSensitivity" data-param="mmWaveDetectSensitivity">
-                        <option value="Low">Low</option>
-                        <option value="Medium">Medium</option>
-                        <option value="High (default)">High</option>
-                    </select>
+            <details open class="mobile-collapsed">
+                <summary>Sensor Behavior</summary>
+                <div class="config-content">
+                    <div class="input-row">
+                        <label>Sensitivity:</label>
+                        <select class="control-select" id="mmWaveDetectSensitivity" data-param="mmWaveDetectSensitivity">
+                            <option value="Low">Low</option>
+                            <option value="Medium">Medium</option>
+                            <option value="High (default)">High</option>
+                        </select>
+                    </div>
+                    <div class="input-row">
+                        <label>Trigger Speed:</label>
+                        <select class="control-select" id="mmWaveDetectTrigger" data-param="mmWaveDetectTrigger">
+                            <option value="Fast (0.2s, default)">Fast (0.2s)</option>
+                            <option value="Medium (1s)">Medium (1s)</option>
+                            <option value="Slow (5s)">Slow (5s)</option>
+                        </select>
+                    </div>
+                    <div class="input-row"><label>Hold Time (s):</label><input type="number" id="mmWaveHoldTime" data-param="mmWaveHoldTime" min="0"></div>
+                    <div class="input-row"><label>Stay Life (internal):</label><input type="number" id="mmWaveStayLife" data-param="mmWaveStayLife" min="0"></div>
                 </div>
-                <div class="input-row">
-                    <label>Trigger Speed:</label>
-                    <select class="control-select" style="width: 140px;" id="mmWaveDetectTrigger" data-param="mmWaveDetectTrigger">
-                        <option value="Fast (0.2s, default)">Fast (0.2s)</option>
-                        <option value="Medium (1s)">Medium (1s)</option>
-                        <option value="Slow (5s)">Slow (5s)</option>
-                    </select>
-                </div>
-                <div class="input-row"><label>Hold Time (s):</label><input type="number" id="mmWaveHoldTime" data-param="mmWaveHoldTime" min="0"></div>
-                <div class="input-row"><label>Stay Life (internal):</label><input type="number" id="mmWaveStayLife" data-param="mmWaveStayLife" min="0"></div>
-            </div>
+            </details>
 
-            <div class="config-group">
-                <div class="config-title">System Settings</div>
-                <div class="input-row">
-                    <label>Room Preset:</label>
-                    <select class="control-select" style="width: 140px;" id="mmWaveRoomSizePreset" data-param="mmWaveRoomSizePreset">
-                        <option value="Custom">Custom</option>
-                        <option value="Small">Small</option>
-                        <option value="Medium">Medium</option>
-                        <option value="Large">Large</option>
-                    </select>
+            <details open class="mobile-collapsed">
+                <summary>System Settings</summary>
+                <div class="config-content">
+                    <div class="input-row">
+                        <label>Room Preset:</label>
+                        <select class="control-select" id="mmWaveRoomSizePreset" data-param="mmWaveRoomSizePreset">
+                            <option value="Custom">Custom</option>
+                            <option value="Small">Small</option>
+                            <option value="Medium">Medium</option>
+                            <option value="Large">Large</option>
+                        </select>
+                    </div>
+                    <div class="input-row">
+                        <label>Target Reporting:</label>
+                        <select class="control-select" id="mmWaveTargetInfoReport" data-param="mmWaveTargetInfoReport">
+                            <option value="Disable (default)">Disable</option>
+                            <option value="Enable">Enable</option>
+                        </select>
+                    </div>
                 </div>
-                <div class="input-row">
-                    <label>Target Reporting:</label>
-                    <select class="control-select" style="width: 140px;" id="mmWaveTargetInfoReport" data-param="mmWaveTargetInfoReport">
-                        <option value="Disable (default)">Disable</option>
-                        <option value="Enable">Enable</option>
-                    </select>
-                </div>
-            </div>
+            </details>
         </div>
     </div>
 
@@ -218,6 +257,23 @@
         // Context-aware command tracking
         let lastCommandId = null; 
 
+        // Helper: Collapse sidebars on mobile automatically
+        function handleMobileView() {
+            if (window.innerWidth <= 900) {
+                document.querySelectorAll('.mobile-collapsed').forEach(el => el.removeAttribute('open'));
+            } else {
+                document.querySelectorAll('.mobile-collapsed').forEach(el => el.setAttribute('open', ''));
+            }
+        }
+        window.addEventListener('load', handleMobileView);
+
+        // Resize Plotly when chart is toggled open/closed
+        document.getElementById('chartContainer').addEventListener('toggle', function(event) {
+            if (event.target.open) {
+                Plotly.relayout('chart', {autosize: true});
+            }
+        });
+
         // Helper: Update Timestamp
         function updateTimestamp() {
             const now = new Date();
@@ -227,9 +283,10 @@
         // Radar Rings
         const radarRings = [100, 200, 300, 400, 500, 600].map(dist => ({
             type: 'circle', xref: 'x', yref: 'y', x0: -dist, x1: dist, y0: -dist, y1: dist,
-            line: { color: 'rgba(255, 255, 255, 0.1)', width: 1, dash: 'dot' }
+            line: { color: 'rgba(255, 255, 255, 0.1)', width: 1, dash: 'dot' },
+            editable: false
         }));
-        radarRings.push({type: 'circle', xref: 'x', yref: 'y', x0: -10, x1: 10, y0: -10, y1: 10, fillcolor: 'red', line: {color: 'red'}});
+        radarRings.push({type: 'circle', xref: 'x', yref: 'y', x0: -10, x1: 10, y0: -10, y1: 10, fillcolor: 'red', line: {color: 'red'}, editable: false});
 
         function getChartShapes() {
             let shapes = [...radarRings];
@@ -284,6 +341,12 @@
             Plotly.update('chart', {x: [[]], y: [[]], text: [[]]}, {shapes: getChartShapes()});
             dataTableBody.innerHTML = '<tr><td colspan="5" class="no-data">No targets detected</td></tr>';
             nonMmwaveWarning.style.display = 'none'; 
+            
+            // Re-lock view on device change
+            if (!viewLocked) toggleViewLock();
+            
+            // Cancel any active edits
+            if (isEditingZone) cancelZoneEdit();
         });
 
         // --- FULL DEVICE CONFIGURATION & SENSORS ---
@@ -329,17 +392,23 @@
         });
 
         // --- PLOTLY INIT ---
+        let viewLocked = true; // Default state
+
         const layout = {
             paper_bgcolor: '#1a1a1a', plot_bgcolor: '#1a1a1a',
             xaxis: { range: [-450, 450], title: 'Width (cm)', gridcolor: '#333', zerolinecolor: '#666', fixedrange: true },
-            yaxis: { range: [0, 650], title: 'Depth (cm)', gridcolor: '#333', zerolinecolor: '#666', fixedrange: true },
+            yaxis: { range: [-100, 650], title: 'Depth (cm)', gridcolor: '#333', zerolinecolor: '#666', fixedrange: true },
             margin: { t: 10, b: 40, l: 40, r: 40 }, font: { color: '#eee' }, showlegend: false,
             shapes: getChartShapes()
         };
 
         const chartConfig = {
             modeBarButtonsToRemove: ['select2d', 'lasso2d'], 
-            displaylogo: false
+            displaylogo: false,
+            scrollZoom: false, // Disabled by default until unlocked
+            edits: {
+                shapePosition: false // CRITICAL FIX: Initializes editability correctly
+            }
         };
 
         Plotly.newPlot('chart', [
@@ -347,11 +416,55 @@
             { x: [], y: [], mode: 'lines', line: {color: '#00bcd4', width: 3}, opacity: 0.3, type: 'scatter' }
         ], layout, chartConfig);
 
+        // --- VIEW LOCK TOGGLE FUNCTION ---
+        function toggleViewLock() {
+            viewLocked = !viewLocked;
+            const btn = document.getElementById('btnLockView');
+            const chartDiv = document.getElementById('chart');
+
+            // 1. Toggle global chart editability
+            chartConfig.edits.shapePosition = !viewLocked;
+
+            // 2. Toggle the specific detection zone shape's editability
+            if (currentZoneShape) {
+                currentZoneShape.editable = !viewLocked;
+            }
+
+            if (viewLocked) {
+                btn.innerText = "🔓 Unlock View";
+                btn.style.background = "#444";
+                btn.style.color = "white";
+                
+                // Reset Layout to Locked
+                layout.xaxis.fixedrange = true;
+                layout.yaxis.fixedrange = true;
+                layout.xaxis.range = [-450, 450];
+                layout.yaxis.range = [-100, 650];
+                layout.shapes = getChartShapes();
+            } else {
+                btn.innerText = "🔒 Lock View";
+                btn.style.background = "#00bcd4";
+                btn.style.color = "#1a1a1a";
+
+                // Unlock Layout
+                layout.xaxis.fixedrange = false;
+                layout.yaxis.fixedrange = false;
+                layout.shapes = getChartShapes();
+            }
+
+            // 3. Apply the changes safely using Plotly.react
+            Plotly.react('chart', chartDiv.data, layout, chartConfig);
+        }
+
         socket.on('zone_config', function(config) {
+            // IGNORE LIVE UPDATES IF USER IS DRAGGING THE BOX
+            if (isEditingZone) return;
+
             currentZoneShape = {
                 type: 'rect', x0: config.x_min, x1: config.x_max, y0: config.y_min, y1: config.y_max,
                 line: { color: 'rgba(0, 188, 212, 0.6)', width: 2, dash: 'dot' },
                 fillcolor: 'rgba(0, 188, 212, 0.05)',
+                editable: !viewLocked 
             };
             Plotly.relayout('chart', {shapes: getChartShapes()});
         });
@@ -362,7 +475,8 @@
             interferenceShapes = zones.map(z => ({
                 type: 'rect', x0: z.x_min, x1: z.x_max, y0: z.y_min, y1: z.y_max,
                 line: { color: 'rgba(255, 82, 82, 0.8)', width: 2 },
-                fillcolor: 'rgba(255, 82, 82, 0.2)'
+                fillcolor: 'rgba(255, 82, 82, 0.2)',
+                editable: false // Interference zones cannot be manually edited
             }));
             Plotly.relayout('chart', {shapes: getChartShapes()});
 
@@ -428,6 +542,69 @@
                 dataTableBody.innerHTML += `<tr><td style="font-weight: bold; color: #00bcd4;">${t.id}</td><td>${t.x} cm</td><td>${t.y} cm</td><td>${t.z} cm</td><td style="color: ${dopColor}; font-weight: bold;">${dopStatus}</td></tr>`;
             });
         });
+
+        // --- INTERACTIVE ZONE EDITING ---
+        let isEditingZone = false;
+        let draftZoneConfig = null;
+        const zoneEditorControls = document.getElementById('zoneEditorControls');
+        const draftCoordsText = document.getElementById('draftCoords');
+
+        // Capture Plotly Drag Events
+        document.getElementById('chart').on('plotly_relayout', function(eventData) {
+            // Check if the event is a shape modification
+            if (Object.keys(eventData).some(k => k.includes('shapes['))) {
+                isEditingZone = true;
+                zoneEditorControls.style.display = 'block';
+
+                // Extract the modified shape index. 
+                const shapes = document.getElementById('chart').layout.shapes;
+                const activeShape = shapes.find(s => s.line.color === 'rgba(0, 188, 212, 0.6)');
+
+                if (activeShape) {
+                    draftZoneConfig = {
+                        x_min: Math.round(activeShape.x0),
+                        x_max: Math.round(activeShape.x1),
+                        y_min: Math.round(activeShape.y0),
+                        y_max: Math.round(activeShape.y1)
+                    };
+
+                    draftCoordsText.innerText = `X: ${draftZoneConfig.x_min} to ${draftZoneConfig.x_max} | Y: ${draftZoneConfig.y_min} to ${draftZoneConfig.y_max}`;
+                }
+            }
+        });
+
+        // Apply Button
+        function applyZoneEdit() {
+            if (!draftZoneConfig) return;
+
+            // Send each parameter to the backend
+            socket.emit('update_parameter', { param: 'mmWaveWidthMin', value: draftZoneConfig.x_min });
+            socket.emit('update_parameter', { param: 'mmWaveWidthMax', value: draftZoneConfig.x_max });
+            socket.emit('update_parameter', { param: 'mmWaveDepthMin', value: draftZoneConfig.y_min });
+            socket.emit('update_parameter', { param: 'mmWaveDepthMax', value: draftZoneConfig.y_max });
+
+            // Exit edit mode and hide UI
+            isEditingZone = false;
+            zoneEditorControls.style.display = 'none';
+            packetInfo.innerText = "Zone Updated!";
+        }
+
+// Cancel Button - Restores to the known live coordinates and resets view
+        function cancelZoneEdit() {
+            isEditingZone = false;
+            zoneEditorControls.style.display = 'none';
+
+            // 1. Reset the chart viewport to default
+            layout.xaxis.range = [-450, 450];
+            layout.yaxis.range = [-100, 650];
+            Plotly.relayout('chart', {
+                'xaxis.range': [-450, 450],
+                'yaxis.range': [-100, 650]
+            });
+
+            // 2. Fetch the true values from the switch to reset the shape coordinates
+            socket.emit('force_sync'); 
+        }
     </script>
 </body>
 </html>
