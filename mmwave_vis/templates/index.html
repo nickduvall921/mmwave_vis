@@ -13,9 +13,10 @@
         h2 { color: #00bcd4; margin: 0; }
         select#deviceSelect { background: #333; color: white; border: 1px solid #00bcd4; padding: 6px 12px; font-size: 14px; border-radius: 4px; cursor: pointer; max-width: 250px;}
         
-        .status-bar { font-size: 0.9em; color: #888; text-align: center; background: #222; padding: 5px; display: flex; justify-content: center; gap: 10px; }
+        .status-bar { font-size: 0.9em; color: #888; text-align: center; background: #222; padding: 5px; display: flex; justify-content: center; gap: 10px; align-items: center; }
         #packetInfo { color: #00bcd4; font-weight: bold; }
         #timestamp { color: #ff9800; font-family: monospace; }
+        #packetAge { color: #666; font-size: 0.85em; font-family: monospace; min-width: 60px; text-align: left; }
 
         /* Main Layout Grid */
         .app-container { display: grid; grid-template-columns: 1fr 350px; flex-grow: 1; overflow: hidden; transition: 0.3s; }
@@ -23,7 +24,9 @@
         .sidebar { background: #222; border-left: 1px solid #444; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; transition: opacity 0.3s; }
 
         /* Chart & Table */
-        #chart { width: 100%; height: 50vh; min-height: 400px; }
+        /* Flex grow helps fill space, min-height ensures visibility on resize */
+        #chart { width: 100%; flex-grow: 1; min-height: 400px; }
+        
         .table-container { background: #2b2b2b; border-radius: 8px; overflow-x: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         table { width: 100%; border-collapse: collapse; text-align: center; min-width: 500px; }
         th { background: #00bcd4; color: #1a1a1a; padding: 8px; font-weight: bold; }
@@ -38,6 +41,15 @@
         details[open] > summary::after { transform: rotate(180deg); color: #00bcd4; }
         details[open] > summary { border-bottom: 1px solid #444; }
         .config-content { padding: 12px; }
+
+        /* Radar Container needs flex to handle Plotly resizing */
+        #chartContainer[open] .config-content {
+            display: flex;
+            flex-direction: column;
+            height: 55vh; /* Fixed height relative to viewport for the chart area */
+            padding: 0;
+            overflow: hidden;
+        }
 
         /* Non-collapsible config group (for Live Sensors) */
         .config-group { background: #2b2b2b; padding: 12px; border-radius: 6px; border: 1px solid #333; }
@@ -82,10 +94,47 @@
 
         /* Responsive Design: Mobile Layout Adjustments */
         @media (max-width: 900px) {
-            .app-container { grid-template-columns: 1fr; grid-template-rows: auto auto; overflow-y: auto; }
-            .sidebar { border-left: none; border-top: 1px solid #444; height: auto; }
-            #chart { height: 350px; min-height: unset; } 
+            /* Switch to simple block scrolling layout for mobile to prevent overlap/hiding */
+            .app-container { 
+                display: block; 
+                overflow-y: auto; 
+                -webkit-overflow-scrolling: touch;
+            }
             
+            /* Remove internal scrolling for content areas */
+            .main-content {
+                overflow: visible;
+                height: auto;
+                flex: none;
+                padding-bottom: 20px;
+            }
+
+            .sidebar { 
+                border-left: none; 
+                border-top: 1px solid #444; 
+                height: auto; 
+                overflow: visible;
+                flex: none;
+                padding-bottom: 40px; /* Space for scrolling */
+            }
+
+            /* Chart sizing */
+            #chartContainer[open] .config-content { height: 350px; }
+            #chart { min-height: 0; height: 100%; }
+            
+            /* Table optimization for small screens */
+            .table-container {
+                width: 100%;
+                margin-bottom: 15px;
+            }
+            
+            table {
+                min-width: unset; /* Allow shrinking */
+                font-size: 0.8rem;
+            }
+            
+            th, td { padding: 6px 3px; }
+
             /* Header improvements for mobile */
             .header { flex-direction: column; align-items: stretch; }
             .header-title { flex-direction: column; align-items: stretch; text-align: center; }
@@ -113,6 +162,7 @@
         <span id="statusDiv">Waiting for connection...</span> | 
         <span id="packetInfo">Awaiting data...</span> |
         <span>Last Packet: <span id="timestamp">--:--:--</span></span>
+        <span id="packetAge"></span>
     </div>
 
     <div id="zoneStatus"></div>
@@ -132,7 +182,7 @@
 
             <details open id="chartContainer">
                 <summary>Live Radar Map</summary>
-                <div class="config-content" style="padding: 0;">
+                <div class="config-content">
                     <div id="chart"></div>
                 </div>
             </details>
@@ -236,6 +286,7 @@
         const statusDiv = document.getElementById('statusDiv');
         const packetInfo = document.getElementById('packetInfo');
         const timestampSpan = document.getElementById('timestamp');
+        const packetAgeSpan = document.getElementById('packetAge');
         const deviceSelect = document.getElementById('deviceSelect');
         const refreshBtn = document.getElementById('refreshDevicesBtn');
         const dataTableBody = document.getElementById('dataTableBody');
@@ -253,6 +304,23 @@
         const HISTORY_LENGTH = 15; 
         let currentZoneShape = null;
         let interferenceShapes = [];
+        
+        // Packet Aging Logic
+        let lastPacketTime = null;
+        
+        setInterval(() => {
+            if (lastPacketTime) {
+                const age = (Date.now() - lastPacketTime) / 1000;
+                packetAgeSpan.innerText = `(${age.toFixed(1)}s ago)`;
+                
+                // Color coding for stale data
+                if (age > 5) packetAgeSpan.style.color = '#ff5252';
+                else if (age > 2) packetAgeSpan.style.color = '#ff9800';
+                else packetAgeSpan.style.color = '#666';
+            } else {
+                packetAgeSpan.innerText = "";
+            }
+        }, 100);
 
         // Context-aware command tracking
         let lastCommandId = null; 
@@ -267,10 +335,16 @@
         }
         window.addEventListener('load', handleMobileView);
 
+        // Responsive Resize Handler
+        window.addEventListener('resize', function() {
+            Plotly.Plots.resize('chart');
+            handleMobileView();
+        });
+
         // Resize Plotly when chart is toggled open/closed
         document.getElementById('chartContainer').addEventListener('toggle', function(event) {
             if (event.target.open) {
-                Plotly.relayout('chart', {autosize: true});
+                setTimeout(() => Plotly.Plots.resize('chart'), 50);
             }
         });
 
@@ -278,18 +352,25 @@
         function updateTimestamp() {
             const now = new Date();
             timestampSpan.innerText = now.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second:'2-digit' }) + '.' + now.getMilliseconds().toString().padStart(3, '0');
+            lastPacketTime = Date.now();
         }
 
-        // Radar Rings
-        const radarRings = [100, 200, 300, 400, 500, 600].map(dist => ({
-            type: 'circle', xref: 'x', yref: 'y', x0: -dist, x1: dist, y0: -dist, y1: dist,
-            line: { color: 'rgba(255, 255, 255, 0.1)', width: 1, dash: 'dot' },
-            editable: false
-        }));
-        radarRings.push({type: 'circle', xref: 'x', yref: 'y', x0: -10, x1: 10, y0: -10, y1: 10, fillcolor: 'red', line: {color: 'red'}, editable: false});
+        // Radar Rings - Generate fresh objects to prevent Plotly mutation
+        function getRadarRings() {
+            const rings = [100, 200, 300, 400, 500, 600].map(dist => ({
+                type: 'circle', xref: 'x', yref: 'y', x0: -dist, x1: dist, y0: -dist, y1: dist,
+                line: { color: 'rgba(255, 255, 255, 0.1)', width: 1, dash: 'dot' },
+                editable: false // Strictly enforce un-editable
+            }));
+            rings.push({
+                type: 'circle', xref: 'x', yref: 'y', x0: -10, x1: 10, y0: -10, y1: 10, 
+                fillcolor: 'red', line: {color: 'red'}, editable: false
+            });
+            return rings;
+        }
 
         function getChartShapes() {
-            let shapes = [...radarRings];
+            let shapes = getRadarRings(); // Get fresh rings every render
             if (currentZoneShape) shapes.push(currentZoneShape);
             return shapes.concat(interferenceShapes);
         }
@@ -335,6 +416,9 @@
             statusDiv.innerText = `Monitoring: ${this.options[this.selectedIndex].text}`;
             packetInfo.innerText = "Awaiting data...";
             timestampSpan.innerText = "--:--:--";
+            packetAgeSpan.innerText = "";
+            lastPacketTime = null;
+            
             occupancyVal.innerText = "Waiting..."; occupancyVal.className = "sensor-val badge-clear";
             illuminanceVal.innerText = "-- lx";
             targetHistory = {}; currentZoneShape = null; interferenceShapes = []; lastCommandId = null;
@@ -351,7 +435,7 @@
 
         // --- FULL DEVICE CONFIGURATION & SENSORS ---
         socket.on('device_config', function(config) {
-            updateTimestamp();
+            updateTimestamp(); // Update heartbeat on standard sensor updates too
 
             // 1. UPDATE LIVE SENSORS
             if ("occupancy" in config) {
@@ -408,7 +492,8 @@
             scrollZoom: false, // Disabled by default until unlocked
             edits: {
                 shapePosition: false // CRITICAL FIX: Initializes editability correctly
-            }
+            },
+            responsive: true // Enable internal Plotly responsiveness
         };
 
         Plotly.newPlot('chart', [

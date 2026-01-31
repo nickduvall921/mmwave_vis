@@ -8,7 +8,6 @@ import json
 import os
 import traceback
 import time
-import gc 
 import threading 
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO
@@ -29,68 +28,83 @@ try:
         MQTT_PORT = int(config.get('mqtt_port', 1883))
         MQTT_USERNAME = config.get('mqtt_username', '')
         MQTT_PASSWORD = config.get('mqtt_password', '')
+        MQTT_BASE_TOPIC = config.get('mqtt_base_topic', 'zigbee2mqtt')
 except FileNotFoundError:
     print("No options.json found. Using defaults.", flush=True)
     MQTT_BROKER = 'core-mosquitto'
     MQTT_PORT = 1883
     MQTT_USERNAME = ''
     MQTT_PASSWORD = ''
-
-Z2M_BASE_TOPIC = "zigbee2mqtt"
+    MQTT_BASE_TOPIC = 'zigbee2mqtt'
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 current_topic = None
 
-# Stores device names, topics, and cached zone configurations
+# Stores device names, topics, config, and throttling timers
+# Structure: {
+#   'friendly_name': str, 
+#   'topic': str, 
+#   'interference_zones': [], 
+#   'last_update': float, 
+#   'last_seen': float
+# }
 device_list = {} 
-last_update_time = 0
 
 def on_connect(client, userdata, flags, rc):
     print(f"Connected to MQTT Broker with code {rc}", flush=True)
-    client.subscribe(f"{Z2M_BASE_TOPIC}/#")
+    client.subscribe(f"{MQTT_BASE_TOPIC}/#")
 
 def on_message(client, userdata, msg):
-    global device_list, last_update_time
+    global device_list
     try:
         topic = msg.topic
-        
-        # --- PRE-FILTERING (CPU/MEMORY OPTIMIZATION) ---
-        # Decode string without JSON parsing to quickly reject non-mmWave network traffic.
         payload_str = msg.payload.decode().strip()
         
-        # Ensure valid JSON wrapper
-        if not payload_str or not payload_str.startswith('{'):
-            return 
+        # --- ROBUST JSON PARSING ---
+        if not payload_str:
+            return
             
-        # Bypass JSON parsing for discovery if the message is from an irrelevant device
-        if topic != current_topic:
-            if "mmWaveVersion" not in payload_str:
-                return 
-                
+        try:
             payload = json.loads(payload_str)
-            topic_parts = topic.split('/')
-            if len(topic_parts) == 2:
-                friendly_name = topic_parts[1]
-                if friendly_name not in device_list:
-                    print(f"Discovered Inovelli mmWave Switch: {friendly_name}", flush=True)
-                    device_list[friendly_name] = {'friendly_name': friendly_name, 'topic': topic, 'interference_zones': []}
-                    socketio.emit('device_list', [d for d in device_list.values()])
-            return 
+        except json.JSONDecodeError:
+            # Silently ignore malformed JSON to prevent log flooding
+            return
+
+        # --- DEVICE DISCOVERY ---
+        # Check if message is from our base topic and looks like an mmWave device
+        if topic.startswith(MQTT_BASE_TOPIC):
+            # If we haven't seen this device before and it reports mmWave version
+            if "mmWaveVersion" in payload:
+                # Extract friendly name (handling potential trailing subtopics like /get or /set)
+                # Structure is typically: base_topic/friendly_name
+                parts = topic.split('/')
+                if len(parts) >= 2:
+                    friendly_name = parts[1]
+                    
+                    if friendly_name not in device_list:
+                        print(f"Discovered Inovelli mmWave Switch: {friendly_name}", flush=True)
+                        device_list[friendly_name] = {
+                            'friendly_name': friendly_name, 
+                            'topic': f"{MQTT_BASE_TOPIC}/{friendly_name}", 
+                            'interference_zones': [],
+                            'last_update': 0,
+                            'last_seen': time.time()
+                        }
+                        socketio.emit('device_list', [d for d in device_list.values()])
+                    else:
+                        # Update heartbeat
+                        device_list[friendly_name]['last_seen'] = time.time()
 
         # --- CURRENT DEVICE PROCESSING ---
-        payload = json.loads(payload_str)
-
-        fname = next((name for name, data in device_list.items() if data['topic'] == current_topic), None)
+        # Find device in our list based on the incoming topic
+        fname = next((name for name, data in device_list.items() if topic.startswith(data['topic'])), None)
         if not fname: return
 
         # Emit standard HA states (Occupancy, Illuminance, etc.)
         if "state" in payload or "illuminance" in payload:
             socketio.emit('device_config', payload)
-
-        # Ignore raw byte processing for standard switches
-        is_mmwave = payload.get("mmWaveVersion") is not None
 
         # --- EXTRACT STANDARD DETECTION ZONE ---
         if "mmWaveDepthMax" in payload:
@@ -107,23 +121,17 @@ def on_message(client, userdata, msg):
                 socketio.emit('zone_config', zone_config)
 
         # --- PROCESS RAW BYTES (ZCL Cluster 0xFC32) ---
+        # Check for signature byte keys indicating a raw packet
         if payload.get("0") == 29 and payload.get("1") == 47 and payload.get("2") == 18:
             cmd_id = payload.get("4")
             
-            # Bitwise parser for Signed Int16
-            def get_int16(idx):
-                low = int(payload.get(str(idx)) or 0)
-                high = int(payload.get(str(idx+1)) or 0)
-                val = (high << 8) | low
-                return val if val < 32768 else val - 65536
-
             # --- 0x01: Target Info Reporting (Movement Data) ---
             if cmd_id == 1:
-                # Throttle UI updates to 10Hz Max
+                # Per-Device Throttling (10Hz Max)
                 current_time = time.time()
-                if (current_time - last_update_time) < 0.1:
+                if (current_time - device_list[fname].get('last_update', 0)) < 0.1:
                     return 
-                last_update_time = current_time
+                device_list[fname]['last_update'] = current_time
 
                 seq_num = payload.get("3")
                 num_targets = payload.get("5", 0)
@@ -131,21 +139,31 @@ def on_message(client, userdata, msg):
                 offset = 6
 
                 for _ in range(num_targets):
+                    # Ensure we have enough data bytes remaining
                     if str(offset+8) not in payload: break
+                    
+                    # Optimized Parsing using int.from_bytes (Little Endian)
+                    def parse_bytes(idx):
+                        try:
+                            low = int(payload.get(str(idx)) or 0)
+                            high = int(payload.get(str(idx+1)) or 0)
+                            return int.from_bytes([low, high], byteorder='little', signed=True)
+                        except:
+                            return 0
+
                     targets.append({
                         "id": int(payload.get(str(offset+8)) or 0),
-                        "x": get_int16(offset), "y": get_int16(offset+2),
-                        "z": get_int16(offset+4), "dop": get_int16(offset+6)
+                        "x": parse_bytes(offset),
+                        "y": parse_bytes(offset+2),
+                        "z": parse_bytes(offset+4),
+                        "dop": parse_bytes(offset+6)
                     })
                     offset += 9
                 
                 socketio.emit('new_data', {"seq": seq_num, "targets": targets})
 
-                # Explicitly delete the array to clear the RAM buffer
-                del targets
-
             # --- 0x02: Interference Area Reporting ---
-            elif cmd_id == 2 and fname:
+            elif cmd_id == 2:
                 try:
                     int_zones = []
                     offset = 6  
@@ -153,29 +171,32 @@ def on_message(client, userdata, msg):
                     
                     for _ in range(num_zones):
                         if str(offset+11) not in payload: break
-                        x_min = get_int16(offset)
-                        x_max = get_int16(offset+2)
-                        y_min = get_int16(offset+4)
-                        y_max = get_int16(offset+6)
+                        
+                        def parse_bytes(idx):
+                            low = int(payload.get(str(idx)) or 0)
+                            high = int(payload.get(str(idx+1)) or 0)
+                            return int.from_bytes([low, high], byteorder='little', signed=True)
+
+                        x_min = parse_bytes(offset)
+                        x_max = parse_bytes(offset+2)
+                        y_min = parse_bytes(offset+4)
+                        y_max = parse_bytes(offset+6)
                         
                         # Only append zones with valid non-zero configurations
                         if x_max > x_min and y_max > y_min:
                             int_zones.append({"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max})
                         
-                        # Standard offset for current firmware is 12 bytes per zone
                         offset += 12
                     
                     device_list[fname]['interference_zones'] = int_zones
                     print(f"Interference Zones Updated for {fname}: {int_zones}", flush=True)
                     socketio.emit('interference_zones', int_zones)
-
-                    del int_zones
                     
                 except Exception as parse_error:
-                    print(f"Warning: Interference zone packet offset mismatch. Firmware may have updated: {parse_error}", flush=True)
+                    print(f"Warning: Interference zone packet offset mismatch: {parse_error}", flush=True)
 
     except Exception as e:
-        print(f"Error parsing message on topic {msg.topic}: {e}", flush=True)
+        print(f"Error processing message on {msg.topic}: {e}", flush=True)
         traceback.print_exc()
 
 mqtt_client = mqtt.Client()
@@ -232,8 +253,7 @@ def handle_update_parameter(data):
 @socketio.on('force_sync')
 def handle_force_sync():
     """
-    Sends an empty payload to the /get topic. 
-    Forces Zigbee2MQTT to query the switch directly and refresh all attributes.
+    Sends an empty payload to the /get topic to force Z2M to refresh attributes.
     """
     if not current_topic: return
     
@@ -270,9 +290,6 @@ def handle_force_sync():
 # --- CONTROL COMMAND SENDER ---
 @socketio.on('send_command')
 def handle_command(cmd_action):
-    """
-    Sends Z2M mapped strings for standard control commands.
-    """
     if not current_topic: return
     
     action_map = {
@@ -299,14 +316,29 @@ def handle_command(cmd_action):
     print(f"Sent mmWave Command: {cmd_string} to {set_topic}", flush=True)
 
 
-# --- RESOURCE MANAGEMENT ---
-# Explicitly clears orphaned Python references generated by the asynchronous socket loop
-def memory_cleanup():
+# --- STALE DEVICE CLEANUP ---
+# Removes devices from the list if they haven't been seen in 1 hour
+def cleanup_stale_devices():
     while True:
-        time.sleep(30) 
-        gc.collect()
+        time.sleep(60) # Run every minute
+        current_time = time.time()
+        stale_threshold = 3600 # 1 Hour
+        
+        # Identify stale keys (avoid modifying dict while iterating)
+        stale_keys = [
+            name for name, data in device_list.items() 
+            if (current_time - data.get('last_seen', 0)) > stale_threshold
+        ]
+        
+        for key in stale_keys:
+            print(f"Removing stale device from memory: {key}", flush=True)
+            del device_list[key]
+            
+        # Push update to UI if devices were removed
+        if stale_keys:
+            socketio.emit('device_list', [d for d in device_list.values()])
 
-cleanup_thread = threading.Thread(target=memory_cleanup, daemon=True)
+cleanup_thread = threading.Thread(target=cleanup_stale_devices, daemon=True)
 cleanup_thread.start()
 
 
