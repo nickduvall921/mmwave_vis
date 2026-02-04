@@ -4,15 +4,18 @@
 
 ## Overview
 
-Inovelli mmWave Visualizer. Built this because it was kinda a pain to config the switches without being able to visulaize what was actually going on.
+Decodes Zigbee2MQTT payloads to visualize real-time MQTT data and configure detection, interference, and stay zones via MQTT commands. Built because I had a need for this when I was setting up my own mmWave Switches.
+
+
 
 ## ✨ Features
 
 * **📡 Live 2D Radar Tracking:** See up to 3 simultaneous targets moving in real-time with historical comet tails.
 * **📏 Dynamic Zone Configuration:** Visually define your detection room limits (Width, Depth, and Height).
 * **🚫 Interference Management:** View, Auto-Config, and Clear interference zones directly from the UI to filter out moving fans, vents, and curtains.
-* **🔄 Live Sensor Data:** Stream live Occupancy and Illuminance states from the switch.
-* **✨ Lots of Vibes:** AI assisted in the design of this app
+* **🔄 Live Sensor Data:** streams Global Occupancy and Illuminance states via MQTT.
+* **🧱 Multi-Zone Support:** Configure up to 4 areas per zone type.(Please update to latest version on Z2M)
+* **✨ Vibe:** AI assisted in the design of this app
 
 ## 🛠️ Installation
 
@@ -46,16 +49,33 @@ Before starting the add-on, navigate to the **Configuration** tab. You need to c
 
 ## 🚀 Usage Guide
 
-1. **Start the Add-on** and click **Open Web UI** (or use the Sidebar link).
-2. **Select your Switch:** Use the dropdown in the top left to select your Inovelli switch. The add-on will automatically read the latest configuration. May take a bit for them to populate as they need to send a mqtt message to be found.
-3. **Tracking Data:** Move in front of the switch. You will see dots representing targets. 
-4. **Auto-Config Interference:** Ensure the room is clear of people, but turn on fans or objects that cause false positives. Click the **Auto-Config** button. After 5 seconds, the switch will map the moving objects as red "interference zones" and ignore them.
-5. **Data Update:** We can only display what has been sent. This program just listens for mqtt messages, decodes them and displays them. if nothing is sent then nothing is displayed
+1. **Select Switch:** Use the top-left dropdown to select your device. It may take a moment to populate as it waits for an MQTT message.
+2. **Edit Zones:**
+    - Open the Zone Editor sidebar.
+    - Select a Target Zone (e.g., "Detection Area 1").
+    - Click Draw / Edit.
+    - Drag the box on the map or type exact coordinates (including Height/Z-axis) in the sidebar.
+    - Click Apply Changes to save to the switch.
+    - You can always click Force Sync to reload the state from the switch and make sure everything was sent to the switch correctly.
+3. **Map Settings:** Use Visualizer Settings to hide specific zones, toggle labels, or adjust the map boundaries (e.g., expand X/Y for large rooms).
+4. **Auto-Config:** To mask fans/curtains, clear the room, turn on the moving object, and click Auto-Config Interference. Red zone should appear if sucsesful 
+
+**Detection Area (Green/Blue):** This defines the active boundary of the sensor. The sensor only looks for motion inside this box. Anything happening outside these coordinates is completely ignored.
+**Interference Area (Red):** This defines an exclusion zone. Any motion detected inside this box is discarded. This is used to mask out constant motion sources like ceiling fans, oscillating vents, or curtains blowing in the wind.
+**Stay Area (Orange):** This defines a high-sensitivity zone specifically for stationary presence. It is intended for areas where people sit or lie down (e.g., a sofa, bed, or desk) to ensure the lights stay on even if you are moving very little (breathing/typing).
+
+## Bugs
+**Known Issues**
+* Stay areas invert width when applyed. Just reapply to fix. This seems to be a z2m or switch issue as it happens in Z2M if you configure the zones manually.
+
+**Bugs** Please open issues if you run into any bugs in the app. I will try and update the app in due time. I try and test as much as I can but I am limited by time.
+
+
 
 ## ⚠️ Requirements
 
 * Home Assistant OS or Supervised.
-* [Zigbee2MQTT](https://www.zigbee2mqtt.io/) (ZHA is not supported).
+* [Zigbee2MQTT V2.8.0 or higher](https://www.zigbee2mqtt.io/) (ZHA is not supported).
 * At least one Inovelli mmWave Smart Switch.
 
 ## Licence
