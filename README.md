@@ -61,14 +61,24 @@ Before starting the add-on, navigate to the **Configuration** tab. You need to c
 4. **Auto-Config:** To mask fans/curtains, clear the room, turn on the moving object, and click Auto-Config Interference. Red zone should appear if sucsesful 
 
 **Detection Area (Green/Blue):** This defines the active boundary of the sensor. The sensor only looks for motion inside this box. Anything happening outside these coordinates is completely ignored.
+
 **Interference Area (Red):** This defines an exclusion zone. Any motion detected inside this box is discarded. This is used to mask out constant motion sources like ceiling fans, oscillating vents, or curtains blowing in the wind.
+
 **Stay Area (Orange):** This defines a high-sensitivity zone specifically for stationary presence. It is intended for areas where people sit or lie down (e.g., a sofa, bed, or desk) to ensure the lights stay on even if you are moving very little (breathing/typing).
 
+
+## Understanding the Data and Limitations:
+
+1. **Radar Objects:** It is important to understand that the switch does not send an all clear when there is no motion. Instead it will just stop sending location data. This means that the last tracked object will stay on the radar map **indefinitely** after its gone. To tell its all clear you need to refer to the Occupancyy status or just note the packet age(it will be many seconds between packets when no objects in view). 
+2. **Network Glitches:** If your zigbee network is slow you make see wierd glitches when you draw and save a new zone. The app will Transmit the drawn zone via mqtt but occasionally the network may fail to sent it to the switch, Causing the drawn zone to disapear.
+
+
 ## Bugs
+
 **Known Issues**
 * Stay areas invert width when applyed. Just reapply to fix. This seems to be a z2m or switch issue as it happens in Z2M if you configure the zones manually.
 
-**Bugs** Please open issues if you run into any bugs in the app. I will try and update the app in due time. I try and test as much as I can but I am limited by time.
+Please open issues if you run into any bugs in the app. I will try and update the app in due time. I try and test as much as I can but I am limited by time.
 
 
 
