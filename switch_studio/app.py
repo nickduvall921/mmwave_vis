@@ -254,6 +254,10 @@ def on_message(client, userdata, msg):
         except json.JSONDecodeError:
             return
 
+        # Zigbee2MQTT bridge topics may publish arrays/literals; this app only processes object payloads.
+        if not isinstance(payload, dict):
+            return
+
         # --- DEVICE DISCOVERY ---
         if topic.startswith(MQTT_BASE_TOPIC):
             payload_keys = [k for k in payload.keys() if isinstance(k, str)]
