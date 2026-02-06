@@ -10,6 +10,7 @@ import traceback
 import time
 import threading 
 import copy
+import hashlib
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO
 import paho.mqtt.client as mqtt
@@ -22,15 +23,39 @@ log.setLevel(logging.ERROR)
 
 # --- LOAD HOME ASSISTANT CONFIGURATION ---
 CONFIG_PATH = '/data/options.json'
+MQTT_CONNACK_REASON = {
+    0: "Connection accepted",
+    1: "Unacceptable protocol version",
+    2: "Identifier rejected",
+    3: "Server unavailable",
+    4: "Bad username or password",
+    5: "Not authorized",
+}
+
+
+def _config_first(config_obj, keys, default_value):
+    for key in keys:
+        if key in config_obj and config_obj.get(key) is not None:
+            return config_obj.get(key)
+    return default_value
+
+
+def _file_sha256_prefix(path, length=12):
+    try:
+        with open(path, "rb") as f:
+            digest = hashlib.sha256(f.read()).hexdigest()
+        return digest[:length]
+    except Exception:
+        return "unavailable"
 
 try:
     with open(CONFIG_PATH) as f:
         config = json.load(f)
-        MQTT_BROKER = config.get('mqtt_broker', 'core-mosquitto')
-        MQTT_PORT = int(config.get('mqtt_port', 1883))
-        MQTT_USERNAME = config.get('mqtt_username', '')
-        MQTT_PASSWORD = config.get('mqtt_password', '')
-        MQTT_BASE_TOPIC = config.get('mqtt_base_topic', 'zigbee2mqtt')
+        MQTT_BROKER = _config_first(config, ['mqtt_broker', 'broker', 'host'], 'core-mosquitto')
+        MQTT_PORT = int(_config_first(config, ['mqtt_port', 'port'], 1883))
+        MQTT_USERNAME = str(_config_first(config, ['mqtt_username', 'mqtt_user', 'username'], '') or '')
+        MQTT_PASSWORD = str(_config_first(config, ['mqtt_password', 'mqtt_pass', 'password'], '') or '')
+        MQTT_BASE_TOPIC = str(_config_first(config, ['mqtt_base_topic', 'base_topic'], 'zigbee2mqtt') or 'zigbee2mqtt')
 except FileNotFoundError:
     print("No options.json found. Using defaults.", flush=True)
     MQTT_BROKER = 'core-mosquitto'
@@ -49,6 +74,23 @@ SCHEMA_DEFINITION_PATHS = [
 schema_service = SchemaService(definition_paths=SCHEMA_DEFINITION_PATHS)
 print(
     f"Schema loaded: source={schema_service.schema.get('source')} path={schema_service.schema.get('source_path')}",
+    flush=True
+)
+print(
+    f"MQTT config: broker={MQTT_BROKER} port={MQTT_PORT} base_topic={MQTT_BASE_TOPIC} "
+    f"username_set={'yes' if MQTT_USERNAME else 'no'} password_set={'yes' if MQTT_PASSWORD else 'no'}",
+    flush=True
+)
+template_path = os.path.join(APP_DIR, 'templates', 'index.html')
+template_fingerprint = _file_sha256_prefix(template_path)
+template_tabs_enabled = False
+try:
+    with open(template_path, encoding='utf-8') as f:
+        template_tabs_enabled = 'data-tab-target="load"' in f.read()
+except Exception:
+    template_tabs_enabled = False
+print(
+    f"UI template fingerprint: {template_fingerprint} tabs_enabled={'yes' if template_tabs_enabled else 'no'}",
     flush=True
 )
 
@@ -185,8 +227,17 @@ def build_force_sync_payload():
 
 
 def on_connect(client, userdata, flags, rc):
-    print(f"Connected to MQTT Broker with code {rc}", flush=True)
-    client.subscribe(f"{MQTT_BASE_TOPIC}/#")
+    reason = MQTT_CONNACK_REASON.get(rc, "Unknown")
+    print(f"Connected to MQTT Broker with code {rc} ({reason})", flush=True)
+    if rc == 0:
+        subscribe_topic = f"{MQTT_BASE_TOPIC}/#"
+        client.subscribe(subscribe_topic)
+        print(f"Subscribed to topic: {subscribe_topic}", flush=True)
+    else:
+        print(
+            "MQTT connection was not accepted. Check broker host/port and credentials in add-on Configuration.",
+            flush=True
+        )
 
 def on_message(client, userdata, msg):
     global device_list
@@ -205,32 +256,37 @@ def on_message(client, userdata, msg):
 
         # --- DEVICE DISCOVERY ---
         if topic.startswith(MQTT_BASE_TOPIC):
-            if "mmWaveVersion" in payload:
+            payload_keys = [k for k in payload.keys() if isinstance(k, str)]
+            has_mmwave_key = (
+                "mmWaveVersion" in payload
+                or any(key.startswith("mmWave") or key.startswith("mmwave_") for key in payload_keys)
+            )
+            if has_mmwave_key:
                 parts = topic.split('/')
                 if len(parts) >= 2:
                     friendly_name = parts[1]
-                    
-                    discovered = False
-                    with device_list_lock:
-                        if friendly_name not in device_list:
-                            print(f"Discovered Inovelli Switch: {friendly_name}", flush=True)
-                            device_list[friendly_name] = {
-                                'friendly_name': friendly_name, 
-                                'topic': f"{MQTT_BASE_TOPIC}/{friendly_name}", 
-                                'interference_zones': [],
-                                'detection_zones': [],
-                                'stay_zones': [],
-                                'zone_config': {"x_min": -400, "x_max": 400, "y_min": 0, "y_max": 600},
-                                'last_config': {},
-                                'last_update': 0,
-                                'last_seen': time.time()
-                            }
-                            discovered = True
-                        else:
-                            device_list[friendly_name]['last_seen'] = time.time()
+                    if friendly_name and friendly_name != 'bridge':
+                        discovered = False
+                        with device_list_lock:
+                            if friendly_name not in device_list:
+                                print(f"Discovered Inovelli Switch: {friendly_name}", flush=True)
+                                device_list[friendly_name] = {
+                                    'friendly_name': friendly_name, 
+                                    'topic': f"{MQTT_BASE_TOPIC}/{friendly_name}", 
+                                    'interference_zones': [],
+                                    'detection_zones': [],
+                                    'stay_zones': [],
+                                    'zone_config': {"x_min": -400, "x_max": 400, "y_min": 0, "y_max": 600},
+                                    'last_config': {},
+                                    'last_update': 0,
+                                    'last_seen': time.time()
+                                }
+                                discovered = True
+                            else:
+                                device_list[friendly_name]['last_seen'] = time.time()
 
-                    if discovered:
-                        emit_device_list()
+                        if discovered:
+                            emit_device_list()
 
         # --- CURRENT DEVICE PROCESSING ---
         fname = None
@@ -394,8 +450,8 @@ def on_message(client, userdata, msg):
         traceback.print_exc()
 
 mqtt_client = mqtt.Client()
-if MQTT_USERNAME and MQTT_PASSWORD:
-    mqtt_client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+if MQTT_USERNAME or MQTT_PASSWORD:
+    mqtt_client.username_pw_set(MQTT_USERNAME or '', MQTT_PASSWORD or None)
 
 mqtt_client.on_connect = on_connect
 mqtt_client.on_message = on_message
