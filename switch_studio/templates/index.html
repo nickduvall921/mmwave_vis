@@ -286,18 +286,6 @@
                 </div>
             </div>
 
-            <details open class="mobile-collapsed" data-tab-panels="zones">
-                <summary>Presence & Motion Settings</summary>
-                <div class="config-content">
-                    <div style="font-size: 0.84em; color: #93b4bc; margin-bottom: 10px;">
-                        Core motion behavior settings for occupancy timing, sensitivity, and load control.
-                    </div>
-                    <div id="schemaPresenceFields">
-                        <div style="font-size: 0.9em; color: #888;">Loading schema...</div>
-                    </div>
-                </div>
-            </details>
-
             <details open class="mobile-collapsed" id="zoneStatusSection" data-tab-panels="zones">
                 <summary>Zone Status</summary>
                 <div class="config-content">
@@ -363,6 +351,18 @@
 
                     <button id="btnStartEdit" class="cmd-btn btn-full" onclick="startZoneEdit()" style="margin-top:5px; background: #00bcd4; color: #1a1a1a;">Draw / Edit Selected Zone</button>
                     <button class="cmd-btn btn-full btn-danger" onclick="deleteZone()" style="margin-top:5px;">Delete Selected Zone</button>
+                </div>
+            </details>
+
+            <details open class="mobile-collapsed" data-tab-panels="zones">
+                <summary>Presence & Motion Settings</summary>
+                <div class="config-content">
+                    <div style="font-size: 0.84em; color: #93b4bc; margin-bottom: 10px;">
+                        Core motion behavior settings for occupancy timing, sensitivity, and load control.
+                    </div>
+                    <div id="schemaPresenceFields">
+                        <div style="font-size: 0.9em; color: #888;">Loading schema...</div>
+                    </div>
                 </div>
             </details>
 
@@ -810,7 +810,7 @@
             dimmingSpeedDownLocal: 'Dim Down Speed (Paddle)',
             rampRateOnToOffRemote: 'Ramp Off Speed (Hub)',
             rampRateOnToOffLocal: 'Ramp Off Speed (Paddle)',
-            invertSwitch: 'Paddle Direction',
+            invertSwitch: 'Invert Paddle Direction',
             autoTimerOff: 'Auto-Off Timer',
             defaultLevelLocal: 'Default Level (Paddle)',
             defaultLevelRemote: 'Default Level (Hub)',
@@ -981,6 +981,37 @@
             }
         };
 
+        const enumOptionLabelOverrides = {
+            invertSwitch: {
+                Yes: 'Yes - Inverted (Up = Off)',
+                No: 'No - Normal (Up = On)'
+            },
+            smartBulbMode: {
+                Disabled: 'Disabled',
+                'Smart Bulb Mode': 'Enabled'
+            },
+            onOffLedMode: {
+                All: 'All LEDs',
+                One: 'Bottom LED Only'
+            },
+            doubleTapClearNotifications: {
+                'Enabled (Default)': 'Enabled',
+                Disabled: 'Disabled'
+            },
+            higherOutputInNonNeutral: {
+                'Disabled (default)': 'Disabled',
+                Enabled: 'Enabled'
+            },
+            mmWaveTargetInfoReport: {
+                'Disable (default)': 'Disable',
+                Enable: 'Enable'
+            },
+            ledBarScaling: {
+                'Gen3 method (VZM-style)': 'Gen 3 (VZM style)',
+                'Gen2 method (LZW-style)': 'Gen 2 (LZW style)'
+            }
+        };
+
         function looksHumanReadableLabel(label) {
             const text = String(label || '').trim();
             if (!text) return false;
@@ -1034,6 +1065,16 @@
                 return parentOverrides[featureName];
             }
             return getFriendlyLabel(featureName, feature.label);
+        }
+
+        function getReadableEnumOptionLabel(fieldName, optionValue) {
+            const raw = optionValue === undefined || optionValue === null ? '' : String(optionValue);
+            if (!raw) return raw;
+            const fieldOverrides = fieldName ? enumOptionLabelOverrides[fieldName] : null;
+            if (fieldOverrides && Object.prototype.hasOwnProperty.call(fieldOverrides, raw)) {
+                return fieldOverrides[raw];
+            }
+            return raw;
         }
 
         const defaultLedColorPresets = [
@@ -1250,7 +1291,7 @@
                 (field.values || []).forEach(optionValue => {
                     const option = document.createElement('option');
                     option.value = optionValue;
-                    option.textContent = optionValue;
+                    option.textContent = getReadableEnumOptionLabel(field.name, optionValue);
                     select.appendChild(option);
                 });
                 return select;
