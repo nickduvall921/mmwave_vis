@@ -151,6 +151,9 @@ device_list_lock = threading.Lock()
 # Stores per-socket selected MQTT topic to avoid cross-session command routing
 session_topics = {}
 session_topics_lock = threading.Lock()
+# Stores per-socket preference for auto-disabling target reporting on disconnect
+session_reporting_auto_off = {}
+session_reporting_auto_off_lock = threading.Lock()
 
 
 def get_device_snapshot():
@@ -179,6 +182,47 @@ def get_session_topic(sid):
 def clear_session_topic(sid):
     with session_topics_lock:
         session_topics.pop(sid, None)
+
+
+def has_session_for_topic(topic):
+    if not topic:
+        return False
+    with session_topics_lock:
+        return any(active_topic == topic for active_topic in session_topics.values())
+
+
+def set_session_reporting_auto_off(sid, enabled):
+    with session_reporting_auto_off_lock:
+        session_reporting_auto_off[sid] = bool(enabled)
+
+
+def get_session_reporting_auto_off(sid):
+    with session_reporting_auto_off_lock:
+        return bool(session_reporting_auto_off.get(sid, False))
+
+
+def clear_session_reporting_auto_off(sid):
+    with session_reporting_auto_off_lock:
+        session_reporting_auto_off.pop(sid, None)
+
+
+def resolve_target_reporting_value(enabled):
+    schema = schema_service.get_schema() or {}
+    field = None
+    for entry in schema.get('fields', []) or []:
+        if isinstance(entry, dict) and entry.get('name') == 'mmWaveTargetInfoReport':
+            field = entry
+            break
+
+    values = [value for value in (field or {}).get('values', []) if isinstance(value, str)]
+    if values:
+        token = 'enable' if enabled else 'disable'
+        for value in values:
+            if token in value.lower():
+                return value
+        return values[-1] if enabled else values[0]
+
+    return 'Enable' if enabled else 'Disable (default)'
 
 
 def emit_device_delta(kind, payload, topic=None, room=None):
@@ -543,12 +587,33 @@ def publish_json(topic, payload, origin, sid=None):
 @socketio.on('connect')
 def handle_socket_connect():
     print(f"WebSocket connected: sid={request.sid}", flush=True)
+    set_session_reporting_auto_off(request.sid, False)
     emit_schema_model(room=request.sid)
 
 
 @socketio.on('disconnect')
 def handle_socket_disconnect():
-    clear_session_topic(request.sid)
+    sid = request.sid
+    current_topic = get_session_topic(sid)
+    should_auto_off = get_session_reporting_auto_off(sid)
+    clear_session_topic(sid)
+    clear_session_reporting_auto_off(sid)
+
+    if should_auto_off and current_topic and not has_session_for_topic(current_topic):
+        disable_value = resolve_target_reporting_value(False)
+        payload = {'mmWaveTargetInfoReport': disable_value}
+        ok, rc = publish_json(f"{current_topic}/set", payload, origin='auto_disable_target_reporting', sid=sid)
+        if ok:
+            print(
+                f"Auto-disabled mmWave target reporting on disconnect: topic={current_topic} sid={sid}",
+                flush=True
+            )
+        else:
+            print(
+                f"Failed to auto-disable mmWave target reporting on disconnect: topic={current_topic} sid={sid} rc={rc}",
+                flush=True
+            )
+
     print(f"WebSocket disconnected: sid={request.sid}", flush=True)
 
 
@@ -582,6 +647,64 @@ def handle_change_device(new_topic):
             socketio.emit('detection_zones', {'topic': new_topic, 'payload': device_data['detection_zones']}, room=request.sid)
         if 'stay_zones' in device_data:
             socketio.emit('stay_zones', {'topic': new_topic, 'payload': device_data['stay_zones']}, room=request.sid)
+
+
+@socketio.on('set_reporting_auto_off')
+def handle_set_reporting_auto_off(data):
+    enabled = False
+    if isinstance(data, dict):
+        enabled = _as_bool(data.get('enabled'), False)
+    else:
+        enabled = _as_bool(data, False)
+
+    set_session_reporting_auto_off(request.sid, enabled)
+    emit_command_result(
+        request.sid,
+        action='set_reporting_auto_off',
+        status='sent',
+        topic=get_session_topic(request.sid),
+        payload={'enabled': enabled}
+    )
+
+
+@socketio.on('set_target_reporting')
+def handle_set_target_reporting(data):
+    request_id = data.get('request_id') if isinstance(data, dict) else None
+    current_topic = get_session_topic(request.sid)
+    if not current_topic:
+        emit_command_result(
+            request.sid,
+            action='set_target_reporting',
+            status='error',
+            request_id=request_id,
+            message='No device selected'
+        )
+        return
+
+    enabled = False
+    if isinstance(data, dict):
+        enabled = _as_bool(data.get('enabled'), False)
+    else:
+        enabled = _as_bool(data, False)
+
+    target_value = resolve_target_reporting_value(enabled)
+    payload = {'mmWaveTargetInfoReport': target_value}
+    ok, rc = publish_json(
+        f"{current_topic}/set",
+        payload,
+        origin='set_target_reporting',
+        sid=request.sid
+    )
+    emit_command_result(
+        request.sid,
+        action='set_target_reporting',
+        status='sent' if ok else 'error',
+        topic=current_topic,
+        request_id=request_id,
+        payload={'enabled': enabled, 'value': target_value},
+        rc=rc,
+        message=None if ok else 'MQTT publish failed'
+    )
 
 
 @socketio.on('update_parameter')

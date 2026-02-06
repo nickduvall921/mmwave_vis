@@ -34,6 +34,8 @@ class AppBackendTests(unittest.TestCase):
             app_module.device_list.clear()
         with app_module.session_topics_lock:
             app_module.session_topics.clear()
+        with app_module.session_reporting_auto_off_lock:
+            app_module.session_reporting_auto_off.clear()
         self.clients = []
 
     def tearDown(self):
@@ -69,6 +71,19 @@ class AppBackendTests(unittest.TestCase):
         with patch.object(app_module.schema_service, "get_schema", return_value=fake_schema):
             payload = app_module.build_force_sync_payload()
         self.assertEqual(payload, {"occupancy": "", "mmWaveVersion": ""})
+
+    def test_resolve_target_reporting_value_uses_schema_enum(self):
+        fake_schema = {
+            "fields": [
+                {
+                    "name": "mmWaveTargetInfoReport",
+                    "values": ["Disable (default)", "Enable"],
+                }
+            ]
+        }
+        with patch.object(app_module.schema_service, "get_schema", return_value=fake_schema):
+            self.assertEqual(app_module.resolve_target_reporting_value(False), "Disable (default)")
+            self.assertEqual(app_module.resolve_target_reporting_value(True), "Enable")
 
     def test_update_parameter_routes_to_each_sessions_selected_topic(self):
         published = []
@@ -116,6 +131,61 @@ class AppBackendTests(unittest.TestCase):
         self.assertTrue(results)
         self.assertEqual(results[-1]["status"], "error")
         self.assertEqual(results[-1]["message"], "No device selected")
+
+    def test_set_target_reporting_publishes_immediately(self):
+        published = []
+
+        def fake_publish(topic, payload, origin, sid=None):
+            published.append({"topic": topic, "payload": payload, "origin": origin, "sid": sid})
+            return True, 0
+
+        client = self._client()
+        client.get_received()
+
+        with patch.object(app_module, "publish_json", side_effect=fake_publish):
+            client.emit("change_device", "zigbee2mqtt/device_a")
+            client.get_received()
+            client.emit("set_target_reporting", {"enabled": True, "request_id": "report-on"})
+
+        self.assertEqual(len(published), 1)
+        self.assertEqual(published[0]["topic"], "zigbee2mqtt/device_a/set")
+        self.assertEqual(published[0]["origin"], "set_target_reporting")
+        self.assertIn("mmWaveTargetInfoReport", published[0]["payload"])
+
+        results = [event["args"][0] for event in client.get_received() if event["name"] == "command_result"]
+        matching = [result for result in results if result.get("action") == "set_target_reporting"]
+        self.assertTrue(matching)
+        self.assertEqual(matching[-1]["status"], "sent")
+        self.assertEqual(matching[-1]["payload"]["enabled"], True)
+
+    def test_auto_off_disconnect_only_when_last_session_on_topic(self):
+        published = []
+
+        def fake_publish(topic, payload, origin, sid=None):
+            published.append({"topic": topic, "payload": payload, "origin": origin, "sid": sid})
+            return True, 0
+
+        client_a = self._client()
+        client_b = self._client()
+        client_a.get_received()
+        client_b.get_received()
+
+        with patch.object(app_module, "publish_json", side_effect=fake_publish):
+            client_a.emit("change_device", "zigbee2mqtt/device_shared")
+            client_b.emit("change_device", "zigbee2mqtt/device_shared")
+            client_a.emit("set_reporting_auto_off", {"enabled": True})
+            client_b.emit("set_reporting_auto_off", {"enabled": True})
+            client_a.get_received()
+            client_b.get_received()
+
+            client_a.disconnect()
+            self.assertEqual(len(published), 0)
+
+            client_b.disconnect()
+            self.assertEqual(len(published), 1)
+            self.assertEqual(published[0]["topic"], "zigbee2mqtt/device_shared/set")
+            self.assertEqual(published[0]["origin"], "auto_disable_target_reporting")
+            self.assertIn("mmWaveTargetInfoReport", published[0]["payload"])
 
     def test_index_renders_feature_flag_value(self):
         original_value = app_module.SWITCH_STUDIO_UI

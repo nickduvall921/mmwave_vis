@@ -1,6 +1,6 @@
 name: "Inovelli Switch Studio"
 description: "Unified configuration and live presence tools for Inovelli Zigbee switches"
-version: "3.1.0"
+version: "3.1.1"
 slug: "inovelli_switch_studio"
 init: false
 arch:

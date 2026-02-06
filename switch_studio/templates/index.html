@@ -126,6 +126,15 @@
         .schema-composite-title { color: #00bcd4; font-weight: 600; margin-bottom: 6px; font-size: 0.86em; }
         .schema-composite-note { color: #777; font-size: 0.78em; margin-top: 4px; }
 
+        .target-report-card { background: linear-gradient(135deg, rgba(0, 188, 212, 0.14), rgba(24, 24, 24, 0.92)); border: 1px solid rgba(0, 188, 212, 0.45); border-radius: 8px; padding: 10px 12px; }
+        .target-report-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .target-report-meta { display: flex; align-items: center; gap: 8px; color: #9ec8cf; font-size: 0.86em; }
+        .target-report-state { font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid #555; color: #bbb; }
+        .target-report-state-on { color: #111; border-color: #4caf50; background: #4caf50; }
+        .target-report-state-off { color: #ddd; border-color: #666; background: #3b3b3b; }
+        .target-report-control { display: flex; align-items: center; gap: 8px; color: #ddd; font-size: 0.88em; }
+        .target-report-control input[type="checkbox"] { transform: scale(1.08); cursor: pointer; }
+
         #zoneStatus { display: none; position: fixed; top: 20px; right: 20px; background: #333; color: white; padding: 15px 20px; border-radius: 6px; z-index: 1000; }
 
         /* Non-mmWave Overlay Warning */
@@ -183,9 +192,8 @@
     </div>
 
     <div class="tab-bar" id="tabBar" role="tablist" aria-label="Inovelli Switch Studio tabs">
-        <button class="tab-btn" type="button" data-tab-target="live" role="tab" aria-selected="true">Live</button>
         <button class="tab-btn" type="button" data-tab-target="presence" role="tab" aria-selected="false">Presence</button>
-        <button class="tab-btn" type="button" data-tab-target="zones" role="tab" aria-selected="false">Zones</button>
+        <button class="tab-btn" type="button" data-tab-target="zones" role="tab" aria-selected="true">Zones</button>
         <button class="tab-btn" type="button" data-tab-target="load" role="tab" aria-selected="false">Load & Dimming</button>
         <button class="tab-btn" type="button" data-tab-target="led" role="tab" aria-selected="false">LED & Notifications</button>
         <button class="tab-btn" type="button" data-tab-target="buttons" role="tab" aria-selected="false">Buttons & Scenes</button>
@@ -205,16 +213,36 @@
 
     <div class="app-container">
         <div class="main-content">
-            <div id="nonMmwaveWarning" data-tab-panels="live,presence,zones,load,led,buttons,power,maintenance">WARNING: Standard Switch Detected<br><span style="font-size: 0.8em; font-weight: normal;">This device does not have mmWave hardware.</span></div>
+            <div id="nonMmwaveWarning" data-tab-panels="presence,zones,load,led,buttons,power,maintenance">WARNING: Standard Switch Detected<br><span style="font-size: 0.8em; font-weight: normal;">This device does not have mmWave hardware.</span></div>
+
+            <div class="target-report-card" data-tab-panels="zones">
+                <div class="target-report-row">
+                    <div>
+                        <div class="config-title" style="margin-bottom: 6px;">Target Reporting</div>
+                        <div class="target-report-meta">
+                            <span id="targetReportState" class="target-report-state target-report-state-off">OFF</span>
+                            <span id="targetReportValueLabel">mmWaveTargetInfoReport</span>
+                        </div>
+                    </div>
+                    <label class="target-report-control">
+                        <input type="checkbox" id="targetReportToggle">
+                        Stream live target packets
+                    </label>
+                    <label class="target-report-control">
+                        <input type="checkbox" id="targetReportAutoOffToggle">
+                        Auto-off on disconnect
+                    </label>
+                </div>
+            </div>
             
-            <details open id="chartContainer" data-tab-panels="live,zones">
+            <details open id="chartContainer" data-tab-panels="zones">
                 <summary>Live Radar Map</summary>
                 <div class="config-content">
                     <div id="chart"></div>
                 </div>
             </details>
 
-            <div class="table-container" data-tab-panels="live,zones">
+            <div class="table-container" data-tab-panels="zones">
                 <table>
                     <thead>
                         <tr>
@@ -234,7 +262,7 @@
 
         <div class="sidebar" id="configSidebar">
             
-            <div class="config-group" style="background: #1e1e1e; border-color: #00bcd4;" data-tab-panels="live">
+            <div class="config-group" style="background: #1e1e1e; border-color: #00bcd4;" data-tab-panels="zones">
                 <div class="config-title" style="color: #00bcd4;">Live Sensors</div>
                 <div class="sensor-row">
                     <span style="color: #ccc;">Area 1 (Primary):</span>
@@ -246,7 +274,7 @@
                 </div>
             </div>
 
-            <details open class="mobile-collapsed" id="zoneStatusSection" data-tab-panels="live,zones">
+            <details open class="mobile-collapsed" id="zoneStatusSection" data-tab-panels="zones">
                 <summary>Zone Status</summary>
                 <div class="config-content">
                     <div class="sensor-row">
@@ -471,6 +499,11 @@
         const btnDiscardChanges = document.getElementById('btnDiscardChanges');
         const toastContainer = document.getElementById('toastContainer');
         const commandLog = document.getElementById('commandLog');
+        const targetReportToggle = document.getElementById('targetReportToggle');
+        const targetReportAutoOffToggle = document.getElementById('targetReportAutoOffToggle');
+        const targetReportState = document.getElementById('targetReportState');
+        const targetReportValueLabel = document.getElementById('targetReportValueLabel');
+        const TARGET_REPORT_AUTO_OFF_STORAGE_KEY = 'switchStudio.targetReportAutoOff';
 
         // Visualizer Scale Inputs
         const vizXMin = document.getElementById('vizXMin');
@@ -548,7 +581,7 @@
                 // Ignore storage failures.
             }
 
-            const allowedPanels = new Set(['live', 'zones', 'maintenance']);
+            const allowedPanels = new Set(['zones', 'maintenance']);
             const panels = Array.from(document.querySelectorAll('[data-tab-panels]'));
             panels.forEach(panel => {
                 const targets = parsePanelTargets(panel.getAttribute('data-tab-panels'));
@@ -559,7 +592,7 @@
 
         if (SWITCH_STUDIO_UI_ENABLED && window.SwitchStudioTabs && typeof window.SwitchStudioTabs.init === 'function') {
             window.SwitchStudioTabs.init({
-                defaultTab: 'live',
+                defaultTab: 'zones',
                 onTabChange: () => {
                     setTimeout(() => {
                         const chartDiv = document.getElementById('chart');
@@ -584,6 +617,78 @@
                 toastContainerEl: toastContainer
             });
         }
+
+        function getStoredTargetReportingAutoOff() {
+            try {
+                return localStorage.getItem(TARGET_REPORT_AUTO_OFF_STORAGE_KEY) === '1';
+            } catch (err) {
+                return false;
+            }
+        }
+
+        function persistTargetReportingAutoOff(enabled) {
+            try {
+                localStorage.setItem(TARGET_REPORT_AUTO_OFF_STORAGE_KEY, enabled ? '1' : '0');
+            } catch (err) {
+                // Ignore storage failures.
+            }
+        }
+
+        function parseTargetReportingEnabled(value) {
+            if (value === true || value === 'ON') return true;
+            if (value === false || value === 'OFF') return false;
+            const raw = String(value || '').trim().toLowerCase();
+            if (!raw) return false;
+            if (raw.includes('disable')) return false;
+            if (raw.includes('enable')) return true;
+            return false;
+        }
+
+        function setTargetReportingState(enabled, rawValue) {
+            const isEnabled = !!enabled;
+            if (targetReportToggle) {
+                targetReportToggle.checked = isEnabled;
+            }
+            if (targetReportState) {
+                targetReportState.textContent = isEnabled ? 'ON' : 'OFF';
+                targetReportState.classList.toggle('target-report-state-on', isEnabled);
+                targetReportState.classList.toggle('target-report-state-off', !isEnabled);
+            }
+            if (targetReportValueLabel) {
+                const normalized = String(rawValue || '').trim();
+                targetReportValueLabel.textContent = normalized || (isEnabled ? 'Enable' : 'Disable');
+            }
+        }
+
+        function syncTargetReportingAutoOffPreference() {
+            const enabled = targetReportAutoOffToggle ? !!targetReportAutoOffToggle.checked : false;
+            socket.emit('set_reporting_auto_off', { enabled: enabled });
+            if (window.SwitchStudioState) {
+                window.SwitchStudioState.setPacketStatus('info', enabled ? 'Auto-off armed on disconnect' : 'Auto-off disabled');
+            }
+        }
+
+        if (targetReportAutoOffToggle) {
+            targetReportAutoOffToggle.checked = getStoredTargetReportingAutoOff();
+            targetReportAutoOffToggle.addEventListener('change', () => {
+                persistTargetReportingAutoOff(!!targetReportAutoOffToggle.checked);
+                syncTargetReportingAutoOffPreference();
+            });
+        }
+
+        if (targetReportToggle) {
+            targetReportToggle.addEventListener('change', () => {
+                const enabled = !!targetReportToggle.checked;
+                const requestId = `target-report-${Date.now()}`;
+                socket.emit('set_target_reporting', { enabled: enabled, request_id: requestId });
+                if (window.SwitchStudioState) {
+                    window.SwitchStudioState.setPacketStatus('syncing', enabled ? 'Enabling target reporting...' : 'Disabling target reporting...');
+                } else {
+                    packetInfo.innerText = enabled ? 'Enabling target reporting...' : 'Disabling target reporting...';
+                }
+            });
+        }
+        setTargetReportingState(false, 'Disable');
 
         function getInputValueForEmit(input) {
             if (!input) return '';
@@ -1384,6 +1489,7 @@
         socket.on('connect', () => {
             socket.emit('request_devices');
             socket.emit('request_schema');
+            syncTargetReportingAutoOffPreference();
         });
 
         socket.on('schema_model', function(schema) {
@@ -1396,6 +1502,26 @@
             if (zoneModule && typeof zoneModule.handleCommandResult === 'function') {
                 zoneModule.handleCommandResult(result);
             }
+
+            if (result.action === 'set_target_reporting') {
+                const payload = result.payload || {};
+                if (result.status === 'error') {
+                    // Revert the toggle on errors so the UI reflects actual device state.
+                    if (targetReportToggle) targetReportToggle.checked = !targetReportToggle.checked;
+                    if (window.SwitchStudioState) {
+                        window.SwitchStudioState.setPacketStatus('error', result.message ? `Error: ${result.message}` : 'Target reporting update failed');
+                    } else {
+                        packetInfo.innerText = result.message ? `Error: ${result.message}` : 'Target reporting update failed';
+                    }
+                } else if (result.status === 'sent') {
+                    const enabled = !!payload.enabled;
+                    setTargetReportingState(enabled, payload.value);
+                    if (window.SwitchStudioState) {
+                        window.SwitchStudioState.showToast('saved', enabled ? 'Target reporting enabled' : 'Target reporting disabled', 1500);
+                    }
+                }
+            }
+
             if (window.SwitchStudioState && typeof window.SwitchStudioState.handleCommandResult === 'function') {
                 window.SwitchStudioState.handleCommandResult(result);
             } else {
@@ -1570,6 +1696,10 @@
             }
             if ("illuminance" in config) {
                 illuminanceVal.innerText = `${config.illuminance} lx`;
+            }
+            if ("mmWaveTargetInfoReport" in config) {
+                const enabled = parseTargetReportingEnabled(config.mmWaveTargetInfoReport);
+                setTargetReportingState(enabled, config.mmWaveTargetInfoReport);
             }
 
             // Update Zone Status (mmwave_areaX_occupancy)
