@@ -1,6 +1,6 @@
 name: "Inovelli Switch Studio"
 description: "Unified configuration and live presence tools for Inovelli Zigbee switches"
-version: "3.0.3"
+version: "3.1.0"
 slug: "inovelli_switch_studio"
 init: false
 arch:
@@ -14,12 +14,14 @@ options:
   mqtt_username: ""
   mqtt_password: ""
   mqtt_base_topic: "zigbee2mqtt"
+  switch_studio_ui: true
 schema:
   mqtt_broker: str
   mqtt_port: int
   mqtt_username: str
   mqtt_password: str
   mqtt_base_topic: str
+  switch_studio_ui: bool
 
 ingress: true
 ingress_port: 5000

@@ -1,1 +1,3 @@
 reference_resources/
+__pycache__/
+*.pyc

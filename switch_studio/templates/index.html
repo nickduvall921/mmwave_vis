@@ -182,7 +182,7 @@
         <span id="packetAge"></span>
     </div>
 
-    <div class="tab-bar" role="tablist" aria-label="Inovelli Switch Studio tabs">
+    <div class="tab-bar" id="tabBar" role="tablist" aria-label="Inovelli Switch Studio tabs">
         <button class="tab-btn" type="button" data-tab-target="live" role="tab" aria-selected="true">Live</button>
         <button class="tab-btn" type="button" data-tab-target="presence" role="tab" aria-selected="false">Presence</button>
         <button class="tab-btn" type="button" data-tab-target="zones" role="tab" aria-selected="false">Zones</button>
@@ -448,6 +448,7 @@
     <script src="{{ ingress_path }}/static/js/app_zones.js"></script>
     <script>
         const INGRESS_PATH = "{{ ingress_path }}";
+        const SWITCH_STUDIO_UI_ENABLED = {{ 'true' if switch_studio_ui else 'false' }};
         const socket = io({ path: INGRESS_PATH + '/socket.io' });
 
         const statusDiv = document.getElementById('statusDiv');
@@ -456,6 +457,7 @@
         const packetAgeSpan = document.getElementById('packetAge');
         const deviceSelect = document.getElementById('deviceSelect');
         const dataTableBody = document.getElementById('dataTableBody');
+        const tabBar = document.getElementById('tabBar');
 
         // UI Elements
         const nonMmwaveWarning = document.getElementById('nonMmwaveWarning');
@@ -527,7 +529,35 @@
         let schemaCompositeMap = {};
         let zoneModule = null;
 
-        if (window.SwitchStudioTabs && typeof window.SwitchStudioTabs.init === 'function') {
+        function parsePanelTargets(raw) {
+            if (!raw) return [];
+            return raw
+                .split(',')
+                .map(item => item.trim())
+                .filter(Boolean);
+        }
+
+        function applyLegacyLayout() {
+            if (tabBar) {
+                tabBar.style.display = 'none';
+            }
+
+            try {
+                localStorage.removeItem('switchStudio.activeTab');
+            } catch (err) {
+                // Ignore storage failures.
+            }
+
+            const allowedPanels = new Set(['live', 'zones', 'maintenance']);
+            const panels = Array.from(document.querySelectorAll('[data-tab-panels]'));
+            panels.forEach(panel => {
+                const targets = parsePanelTargets(panel.getAttribute('data-tab-panels'));
+                const shouldShow = targets.length === 0 || targets.some(target => allowedPanels.has(target));
+                panel.style.display = shouldShow ? '' : 'none';
+            });
+        }
+
+        if (SWITCH_STUDIO_UI_ENABLED && window.SwitchStudioTabs && typeof window.SwitchStudioTabs.init === 'function') {
             window.SwitchStudioTabs.init({
                 defaultTab: 'live',
                 onTabChange: () => {
@@ -539,6 +569,8 @@
                     }, 40);
                 }
             });
+        } else {
+            applyLegacyLayout();
         }
 
         if (window.SwitchStudioState && typeof window.SwitchStudioState.init === 'function') {

@@ -15,7 +15,10 @@ from flask import Flask, render_template, request
 from flask_socketio import SocketIO
 import paho.mqtt.client as mqtt
 import logging
-from schema_service import SchemaService
+try:
+    from .schema_service import SchemaService
+except ImportError:
+    from schema_service import SchemaService
 
 # Suppress the Werkzeug development server warning
 log = logging.getLogger('werkzeug')
@@ -31,6 +34,7 @@ MQTT_CONNACK_REASON = {
     4: "Bad username or password",
     5: "Not authorized",
 }
+TEST_MODE = str(os.environ.get("SWITCH_STUDIO_TEST_MODE", "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _config_first(config_obj, keys, default_value):
@@ -72,6 +76,22 @@ def _as_int_or_none(value):
     except (TypeError, ValueError):
         return None
 
+
+def _as_bool(value, default=False):
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "off"}:
+            return False
+    return bool(default)
+
 try:
     with open(CONFIG_PATH) as f:
         config = json.load(f)
@@ -80,6 +100,7 @@ try:
         MQTT_USERNAME = str(_config_first(config, ['mqtt_username', 'mqtt_user', 'username'], '') or '')
         MQTT_PASSWORD = str(_config_first(config, ['mqtt_password', 'mqtt_pass', 'password'], '') or '')
         MQTT_BASE_TOPIC = str(_config_first(config, ['mqtt_base_topic', 'base_topic'], 'zigbee2mqtt') or 'zigbee2mqtt')
+        SWITCH_STUDIO_UI = _as_bool(_config_first(config, ['switch_studio_ui'], True), True)
 except FileNotFoundError:
     print("No options.json found. Using defaults.", flush=True)
     MQTT_BROKER = 'core-mosquitto'
@@ -87,6 +108,7 @@ except FileNotFoundError:
     MQTT_USERNAME = ''
     MQTT_PASSWORD = ''
     MQTT_BASE_TOPIC = 'zigbee2mqtt'
+    SWITCH_STUDIO_UI = True
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 SCHEMA_DEFINITION_PATHS = [
@@ -102,7 +124,8 @@ print(
 )
 print(
     f"MQTT config: broker={MQTT_BROKER} port={MQTT_PORT} base_topic={MQTT_BASE_TOPIC} "
-    f"username_set={'yes' if MQTT_USERNAME else 'no'} password_set={'yes' if MQTT_PASSWORD else 'no'}",
+    f"username_set={'yes' if MQTT_USERNAME else 'no'} password_set={'yes' if MQTT_PASSWORD else 'no'} "
+    f"switch_studio_ui={'enabled' if SWITCH_STUDIO_UI else 'disabled'}",
     flush=True
 )
 template_path = os.path.join(APP_DIR, 'templates', 'index.html')
@@ -493,8 +516,9 @@ mqtt_client.on_connect = on_connect
 mqtt_client.on_message = on_message
 
 try:
-    mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
-    mqtt_client.loop_start()
+    if not TEST_MODE:
+        mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        mqtt_client.loop_start()
 except Exception as e:
     print(f"Connection Failed: {e}", flush=True)
 
@@ -745,12 +769,18 @@ def cleanup_stale_devices():
         if stale_keys:
             emit_device_list()
 
-cleanup_thread = threading.Thread(target=cleanup_stale_devices, daemon=True)
-cleanup_thread.start()
+cleanup_thread = None
+if not TEST_MODE:
+    cleanup_thread = threading.Thread(target=cleanup_stale_devices, daemon=True)
+    cleanup_thread.start()
 
 @app.route('/')
 def index():
-    return render_template('index.html', ingress_path=request.headers.get('X-Ingress-Path', ''))
+    return render_template(
+        'index.html',
+        ingress_path=request.headers.get('X-Ingress-Path', ''),
+        switch_studio_ui=SWITCH_STUDIO_UI
+    )
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)

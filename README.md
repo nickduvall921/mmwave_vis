@@ -36,6 +36,8 @@ Before starting the add-on, navigate to the **Configuration** tab. You need to c
 | `mqtt_port` | The port your broker uses | `1883` |
 | `mqtt_username` | Your MQTT username (if applicable) | `""` |
 | `mqtt_password` | Your MQTT password (if applicable) | `""` |
+| `mqtt_base_topic` | Root Zigbee2MQTT topic prefix | `"zigbee2mqtt"` |
+| `switch_studio_ui` | Enable tabbed Switch Studio UI (`false` shows legacy-focused layout) | `true` |
 
 *Note: If you use the standard Home Assistant Mosquitto broker add-on, the default settings will usually work out of the box.*
 
@@ -77,6 +79,24 @@ Before starting the add-on, navigate to the **Configuration** tab. You need to c
 * Home Assistant OS or Supervised.
 * [Zigbee2MQTT V2.8.0 or higher](https://www.zigbee2mqtt.io/) (ZHA is not supported).
 * At least one Inovelli mmWave Smart Switch.
+
+## Testing
+
+Run backend tests:
+
+```powershell
+python -m unittest discover -s tests/python -p "test_*.py" -v
+```
+
+Run frontend tests:
+
+```powershell
+node --test tests/frontend/*.test.js
+```
+
+Manual QA checklist:
+
+`docs/HOME_ASSISTANT_INGRESS_QA_CHECKLIST.md`
 
 ## Licence
 GNU General Public License v3.0

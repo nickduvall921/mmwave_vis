@@ -1,0 +1,1 @@
+"""Inovelli Switch Studio package."""
