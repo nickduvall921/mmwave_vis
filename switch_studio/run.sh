@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "Starting mmWave Visualizer..."
+echo "Starting Inovelli Switch Studio..."
 
 # Limit the container to ~200 MB of RAM (200,000 KB)
 ulimit -v 200000 

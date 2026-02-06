@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Inovelli mmWave Live</title>
+    <title>Inovelli Switch Studio</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <style>
@@ -127,7 +127,7 @@
 </head>
 <body>
     <div class="header">
-        <h2>mmWave Live</h2>
+        <h2>Inovelli Switch Studio</h2>
         <div class="header-controls">
             <select id="deviceSelect"><option value="" disabled selected>Loading devices...</option></select>
             <button class="cmd-btn" id="btnForceSync" onclick="if(isEditingZone) cancelZoneEdit(); else { socket.emit('request_devices'); socket.emit('force_sync'); } packetInfo.innerText = 'Syncing...';">🔄 Force Sync</button>
@@ -251,7 +251,7 @@
             </details>
 
             <details open class="mobile-collapsed">
-                <summary>Visualizer Settings</summary>
+                <summary>Studio View Settings</summary>
                 <div class="config-content">
                     
                     <div style="margin-top:10px; padding-top:5px;">
@@ -314,60 +314,10 @@
             </details>
             
             <details open class="mobile-collapsed">
-                <summary>Sensor Behavior</summary>
+                <summary>Presence Controls (Schema)</summary>
                 <div class="config-content">
-                    <div class="input-row">
-                        <label>Sensitivity:</label>
-                        <select class="control-select" id="mmWaveDetectSensitivity" data-param="mmWaveDetectSensitivity">
-                            <option value="Low">Low</option>
-                            <option value="Medium">Medium</option>
-                            <option value="High (default)">High</option>
-                        </select>
-                    </div>
-                    <div class="input-row">
-                        <label>Trigger Speed:</label>
-                        <select class="control-select" id="mmWaveDetectTrigger" data-param="mmWaveDetectTrigger">
-                            <option value="Fast (0.2s, default)">Fast (0.2s)</option>
-                            <option value="Medium (1s)">Medium (1s)</option>
-                            <option value="Slow (5s)">Slow (5s)</option>
-                        </select>
-                    </div>
-                    <div class="input-row"><label>Hold Time (s):</label><input type="number" id="mmWaveHoldTime" data-param="mmWaveHoldTime" min="0"></div>
-                    <div class="input-row"><label>Stay Life (internal):</label><input type="number" id="mmWaveStayLife" data-param="mmWaveStayLife" min="0"></div>
-                </div>
-            </details>
-
-            <details open class="mobile-collapsed">
-                <summary>System Settings</summary>
-                <div class="config-content">
-                    <div class="input-row">
-                        <label>Room Preset:</label>
-                        <select class="control-select" id="mmWaveRoomSizePreset" data-param="mmWaveRoomSizePreset">
-                            <option value="Custom">Custom</option>
-                            <option value="Small">Small</option>
-                            <option value="Medium">Medium</option>
-                            <option value="Large">Large</option>
-                        </select>
-                    </div>
-                    <div class="input-row">
-                        <label>Target Reporting:</label>
-                        <select class="control-select" id="mmWaveTargetInfoReport" data-param="mmWaveTargetInfoReport">
-                            <option value="Disable (default)">Disable</option>
-                            <option value="Enable">Enable</option>
-                        </select>
-                    </div>
-
-                    <div style="margin-top: 10px;">
-                        <label style="color: #ccc; font-size: 0.9em;">Wired Device Control:</label>
-                        <select class="full-width-select" id="mmwaveControlWiredDevice" data-param="mmwaveControlWiredDevice">
-                            <option value="Disabled">Disabled</option>
-                            <option value="Occupancy (default)">Occupancy</option>
-                            <option value="Vacancy">Vacancy</option>
-                            <option value="Wasteful Occupancy">Wasteful Occupancy</option>
-                            <option value="Mirrored Occupancy">Mirrored Occupancy</option>
-                            <option value="Mirrored Vacancy">Mirrored Vacancy</option>
-                            <option value="Mirrored Wasteful Occupancy">Mirrored Wasteful Occupancy</option>
-                        </select>
+                    <div id="schemaPresenceFields">
+                        <div style="font-size: 0.9em; color: #888;">Loading schema...</div>
                     </div>
                 </div>
             </details>
@@ -448,6 +398,145 @@
         const editYMax = document.getElementById('editYMax');
         const editZMin = document.getElementById('editZMin');
         const editZMax = document.getElementById('editZMax');
+        const schemaPresenceFields = document.getElementById('schemaPresenceFields');
+
+        let schemaModel = null;
+        let schemaFieldMap = {};
+
+        function getInputValueForEmit(input) {
+            if (input.type === 'checkbox') return input.checked;
+            if (input.dataset.fieldType === 'numeric') {
+                if (input.value === '') return '';
+                const parsed = Number(input.value);
+                return Number.isFinite(parsed) ? parsed : input.value;
+            }
+            return input.value;
+        }
+
+        function getReadableFieldLabel(field) {
+            if (field.label) return field.label;
+            return field.name || 'Unknown';
+        }
+
+        function createSchemaFieldInput(field) {
+            if (field.type === 'enum') {
+                const select = document.createElement('select');
+                select.className = 'control-select';
+                select.id = field.name;
+                select.setAttribute('data-param', field.name);
+                select.setAttribute('data-field-type', field.type);
+                (field.values || []).forEach(optionValue => {
+                    const option = document.createElement('option');
+                    option.value = optionValue;
+                    option.textContent = optionValue;
+                    select.appendChild(option);
+                });
+                return select;
+            }
+
+            if (field.type === 'binary') {
+                const select = document.createElement('select');
+                select.className = 'control-select';
+                select.id = field.name;
+                select.setAttribute('data-param', field.name);
+                select.setAttribute('data-field-type', field.type);
+
+                const onValue = field.value_on !== undefined ? field.value_on : true;
+                const offValue = field.value_off !== undefined ? field.value_off : false;
+                const entries = [
+                    { value: onValue, label: `On (${String(onValue)})` },
+                    { value: offValue, label: `Off (${String(offValue)})` }
+                ];
+
+                entries.forEach(entry => {
+                    const option = document.createElement('option');
+                    option.value = typeof entry.value === 'boolean' ? String(entry.value) : entry.value;
+                    option.textContent = entry.label;
+                    select.appendChild(option);
+                });
+                return select;
+            }
+
+            if (field.type === 'numeric') {
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.id = field.name;
+                input.setAttribute('data-param', field.name);
+                input.setAttribute('data-field-type', field.type);
+                if (field.value_min !== null && field.value_min !== undefined) input.min = field.value_min;
+                if (field.value_max !== null && field.value_max !== undefined) input.max = field.value_max;
+                if (field.value_step !== null && field.value_step !== undefined) input.step = field.value_step;
+                return input;
+            }
+
+            const unsupported = document.createElement('span');
+            unsupported.className = 'zone-badge';
+            unsupported.innerText = `Unsupported type: ${field.type || 'unknown'}`;
+            return unsupported;
+        }
+
+        function renderSchemaPresenceFields() {
+            if (!schemaPresenceFields) return;
+
+            if (!schemaModel || !Array.isArray(schemaModel.fields)) {
+                schemaPresenceFields.innerHTML = '<div style="font-size: 0.9em; color: #888;">Schema unavailable. Using fallback controls when available.</div>';
+                return;
+            }
+
+            const presenceNames = schemaModel.mmwave_presence_fields || [];
+            const fieldByName = new Map(schemaModel.fields.map(field => [field.name, field]));
+            const orderedFields = [];
+
+            presenceNames.forEach(name => {
+                const field = fieldByName.get(name);
+                if (field) orderedFields.push(field);
+            });
+
+            if (orderedFields.length === 0) {
+                schemaPresenceFields.innerHTML = '<div style="font-size: 0.9em; color: #888;">No Presence fields found in schema.</div>';
+                return;
+            }
+
+            schemaPresenceFields.innerHTML = '';
+            schemaFieldMap = {};
+
+            orderedFields.forEach(field => {
+                schemaFieldMap[field.name] = field;
+
+                const row = document.createElement('div');
+                row.className = 'input-row';
+
+                const label = document.createElement('label');
+                label.setAttribute('for', field.name);
+                label.textContent = getReadableFieldLabel(field) + ':';
+                row.appendChild(label);
+
+                if (field.can_write) {
+                    const input = createSchemaFieldInput(field);
+                    row.appendChild(input);
+                } else {
+                    const readOnlyVal = document.createElement('span');
+                    readOnlyVal.id = field.name;
+                    readOnlyVal.className = 'sensor-val';
+                    readOnlyVal.style.fontFamily = 'monospace';
+                    readOnlyVal.style.color = '#00bcd4';
+                    readOnlyVal.innerText = '--';
+                    row.appendChild(readOnlyVal);
+                }
+
+                schemaPresenceFields.appendChild(row);
+
+                if (field.description) {
+                    const desc = document.createElement('div');
+                    desc.style.fontSize = '0.78em';
+                    desc.style.color = '#777';
+                    desc.style.marginTop = '-4px';
+                    desc.style.marginBottom = '8px';
+                    desc.textContent = field.description;
+                    schemaPresenceFields.appendChild(desc);
+                }
+            });
+        }
 
         // Packet Aging Logic
         let lastPacketTime = null;
@@ -792,17 +881,53 @@
             if (actionId === 5) packetInfo.innerText = "Clearing stay zones...";
         }
 
-        document.querySelectorAll('.sidebar input, .sidebar select').forEach(input => {
-            // Skip Visualizer Settings and Zone Editor inputs
+        configSidebar.addEventListener('change', function(event) {
+            const input = event.target;
+            if (!input || !(input.matches('input') || input.matches('select'))) return;
+            if (!input.id) return;
+
+            // Skip non-device config controls
             if (input.id.startsWith('viz') || input.id.startsWith('zoneEditor') || input.id.startsWith('edit')) return;
-            
-            input.addEventListener('change', function() {
-                socket.emit('update_parameter', { param: this.getAttribute('data-param'), value: this.value });
+
+            const param = input.getAttribute('data-param');
+            if (!param) return;
+
+            let value = getInputValueForEmit(input);
+            const fieldMeta = schemaFieldMap[param];
+            if (fieldMeta && fieldMeta.type === 'binary' && typeof value === 'string') {
+                if (value === 'true') value = true;
+                else if (value === 'false') value = false;
+            }
+
+            socket.emit('update_parameter', {
+                param: param,
+                value: value,
+                request_id: `ui-${Date.now()}-${param}`
             });
         });
 
         // --- SOCKET EVENT HANDLERS ---
-        socket.on('connect', () => socket.emit('request_devices'));
+        socket.on('connect', () => {
+            socket.emit('request_devices');
+            socket.emit('request_schema');
+        });
+
+        socket.on('schema_model', function(schema) {
+            schemaModel = schema || null;
+            renderSchemaPresenceFields();
+        });
+
+        socket.on('command_result', function(result) {
+            if (!result || !result.status) return;
+            if (result.status === 'error') {
+                packetInfo.innerText = result.message ? `Error: ${result.message}` : "Command failed";
+                return;
+            }
+
+            if (result.action === 'update_parameter' && result.status === 'sent') {
+                packetInfo.innerText = "Setting updated";
+            }
+        });
         
         socket.on('device_list', function(devices) {
             const currentSelection = deviceSelect.value;
@@ -979,7 +1104,13 @@
             for (const [key, value] of Object.entries(config)) {
                 const element = document.getElementById(key);
                 if (element) {
-                    element.value = value;
+                    if (element.tagName === 'SPAN') {
+                        element.innerText = value;
+                    } else if (element.type === 'checkbox') {
+                        element.checked = value === true || value === 'ON' || value === 'true';
+                    } else {
+                        element.value = value;
+                    }
                 }
             }
         });

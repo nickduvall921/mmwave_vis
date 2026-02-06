@@ -1,4 +1,4 @@
-# Inovelli mmWave Visualizer for Z2M
+# Inovelli Switch Studio for Z2M
 
 **Live 2D presence tracking and interference zone configuration for Inovelli Smart Switches in Home Assistant.**
 
@@ -24,11 +24,11 @@ Decodes Zigbee2MQTT payloads to visualize real-time MQTT data and configure dete
 2. Click the **ADD-ON STORE** button in the bottom right corner.
 3. Click the **Three Dots (⋮)** in the top right corner and select **Repositories**.
 4. Paste the URL of this GitHub repository and click **Add**.
-5. Close the dialog. "Inovelli mmWave Visualizer" will now appear at the bottom of the Add-on store.
+5. Close the dialog. "Inovelli Switch Studio" will now appear at the bottom of the Add-on store.
 
 ## ⚙️ Configuration of Addon
 
-Before starting the add-on, navigate to the **Configuration** tab. You need to connect the visualizer to the MQTT broker that Zigbee2MQTT uses.
+Before starting the add-on, navigate to the **Configuration** tab. You need to connect Switch Studio to the MQTT broker that Zigbee2MQTT uses.
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -57,7 +57,7 @@ Before starting the add-on, navigate to the **Configuration** tab. You need to c
     - Drag the box on the map or type exact coordinates (including Height/Z-axis) in the sidebar.
     - Click Apply Changes to save to the switch.
     - You can always click Force Sync to reload the state from the switch and make sure everything was sent to the switch correctly.
-3. **Map Settings:** Use Visualizer Settings to hide specific zones, toggle labels, or adjust the map boundaries (e.g., expand X/Y for large rooms).
+3. **Map Settings:** Use Studio View Settings to hide specific zones, toggle labels, or adjust the map boundaries (e.g., expand X/Y for large rooms).
 4. **Auto-Config:** To mask fans/curtains, clear the room, turn on the moving object, and click Auto-Config Interference. Red zone should appear if sucsesful 
 
 **Detection Area (Green/Blue):** This defines the active boundary of the sensor. The sensor only looks for motion inside this box. Anything happening outside these coordinates is completely ignored.

@@ -1,7 +1,7 @@
-name: "Inovelli mmWave Visualizer"
-description: "Live 2D tracking for Inovelli mmWave switches via MQTT-Z2M"
-version: "2.0.0"
-slug: "mmwave_viz"
+name: "Inovelli Switch Studio"
+description: "Unified configuration and live presence tools for Inovelli Zigbee switches"
+version: "3.0.0"
+slug: "inovelli_switch_studio"
 init: false
 arch:
   - aarch64
@@ -23,5 +23,5 @@ schema:
 
 ingress: true
 ingress_port: 5000
-panel_icon: mdi:radar
-panel_title: "mmWave Radar"
+panel_icon: mdi:toggle-switch-variant
+panel_title: "Switch Studio"
