@@ -48,6 +48,30 @@ def _file_sha256_prefix(path, length=12):
     except Exception:
         return "unavailable"
 
+
+def _as_int_or_none(value):
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped == "":
+            return None
+        try:
+            return int(stripped)
+        except ValueError:
+            try:
+                return int(float(stripped))
+            except ValueError:
+                return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
 try:
     with open(CONFIG_PATH) as f:
         config = json.load(f)
@@ -297,7 +321,7 @@ def on_message(client, userdata, msg):
         device_topic = None
         with device_list_lock:
             for name, data in device_list.items():
-                if topic.startswith(data['topic']):
+                if topic == data['topic']:
                     fname = name
                     device_topic = data['topic']
                     break
@@ -429,17 +453,25 @@ def on_message(client, userdata, msg):
                     current_zone = dict(device_data.get('zone_config', {"x_min": -400, "x_max": 400, "y_min": 0, "y_max": 600}))
 
                     if "mmWaveWidthMin" in config_payload:
-                        current_zone["x_min"] = int(config_payload["mmWaveWidthMin"])
-                        needs_emit = True
+                        parsed = _as_int_or_none(config_payload.get("mmWaveWidthMin"))
+                        if parsed is not None:
+                            current_zone["x_min"] = parsed
+                            needs_emit = True
                     if "mmWaveWidthMax" in config_payload:
-                        current_zone["x_max"] = int(config_payload["mmWaveWidthMax"])
-                        needs_emit = True
+                        parsed = _as_int_or_none(config_payload.get("mmWaveWidthMax"))
+                        if parsed is not None:
+                            current_zone["x_max"] = parsed
+                            needs_emit = True
                     if "mmWaveDepthMin" in config_payload:
-                        current_zone["y_min"] = int(config_payload["mmWaveDepthMin"])
-                        needs_emit = True
+                        parsed = _as_int_or_none(config_payload.get("mmWaveDepthMin"))
+                        if parsed is not None:
+                            current_zone["y_min"] = parsed
+                            needs_emit = True
                     if "mmWaveDepthMax" in config_payload:
-                        current_zone["y_max"] = int(config_payload["mmWaveDepthMax"])
-                        needs_emit = True
+                        parsed = _as_int_or_none(config_payload.get("mmWaveDepthMax"))
+                        if parsed is not None:
+                            current_zone["y_max"] = parsed
+                            needs_emit = True
 
                     if needs_emit:
                         device_data['zone_config'] = current_zone
