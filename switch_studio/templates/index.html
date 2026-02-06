@@ -2,7 +2,6 @@
 <html>
 <head>
     <title>Inovelli Switch Studio</title>
-    <link rel="icon" type="image/png" href="{{ ingress_path }}/static/favicon.png">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <style>
@@ -11,7 +10,6 @@
         /* Header */
         .header { background: #2b2b2b; padding: 10px 15px; border-bottom: 2px solid #00bcd4; display: flex; justify-content: space-between; align-items: center; z-index: 10; gap: 15px;}
         .header-brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
-        .header-favicon { width: 20px; height: 20px; border-radius: 4px; box-shadow: 0 0 0 1px rgba(0, 188, 212, 0.25); }
         .header-logo { height: 22px; width: auto; object-fit: contain; }
         .header h2 { color: #00bcd4; margin: 0; white-space: nowrap; }
         
@@ -183,7 +181,6 @@
             th, td { padding: 6px 3px; }
             .header { padding: 5px 10px; }
             .header h2 { display: none; } 
-            .header-favicon { width: 18px; height: 18px; }
             .header-logo { height: 18px; }
             .header-controls { width: 100%; justify-content: space-between; }
             select#deviceSelect { flex-grow: 1; max-width: unset; margin-right: 5px; }
@@ -197,7 +194,6 @@
 <body>
     <div class="header">
         <div class="header-brand">
-            <img class="header-favicon" src="{{ ingress_path }}/static/favicon.png" alt="Switch Studio icon">
             <img class="header-logo" src="{{ ingress_path }}/static/logo.png" alt="Inovelli logo">
             <h2>Inovelli Switch Studio</h2>
         </div>
