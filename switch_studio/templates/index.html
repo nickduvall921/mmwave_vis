@@ -89,8 +89,8 @@
         .config-title { font-weight: bold; color: #00bcd4; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 5px; font-size: 0.95em; }
 
         /* Inputs */
-        .input-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.9em; }
-        .input-row label { color: #ccc; }
+        .input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 0.9em; }
+        .input-row label { color: #ccc; min-width: 0; line-height: 1.2; overflow-wrap: anywhere; }
         input[type="number"] { width: 130px; background: #333; color: white; border: 1px solid #555; border-radius: 3px; padding: 3px 5px; text-align: right; }
         .control-select { width: 142px; margin-top: 5px; background: #333; border: 1px solid #555; color: white; padding: 3px; }
         .full-width-select { width: 100%; max-width: 100%; box-sizing: border-box; margin-top: 5px; background: #333; border: 1px solid #555; color: white; padding: 5px; }
@@ -781,9 +781,259 @@
             return input.value;
         }
 
+        const friendlyLabelMap = {
+            // Presence & Zones
+            mmwaveControlWiredDevice: 'Presence -> Light Behavior',
+            mmWaveRoomSizePreset: 'Room Size Preset',
+            mmWaveHoldTime: 'Vacancy Timeout',
+            mmWaveDetectSensitivity: 'Presence Sensitivity',
+            mmWaveDetectTrigger: 'Detection Response Speed',
+            mmWaveTargetInfoReport: 'Live Position Reporting',
+            mmWaveStayLife: 'Stationary Detection Duration',
+            mmWaveHeightMin: 'Height Min (Z)',
+            mmWaveHeightMax: 'Height Max (Z)',
+            mmWaveWidthMin: 'Width Min (X)',
+            mmWaveWidthMax: 'Width Max (X)',
+            mmWaveDepthMin: 'Depth Min (Y)',
+            mmWaveDepthMax: 'Depth Max (Y)',
+            mmwave_control_commands: 'mmWave Commands (Advanced)',
+            mmwave_interference_areas: 'Interference Zones (Advanced)',
+            mmwave_detection_areas: 'Detection Zones (Advanced)',
+            mmwave_stay_areas: 'Stay Zones (Advanced)',
+
+            // Load & Dimming
+            dimmingSpeedUpRemote: 'Dim Up Speed (Hub)',
+            dimmingSpeedUpLocal: 'Dim Up Speed (Paddle)',
+            rampRateOffToOnRemote: 'Ramp On Speed (Hub)',
+            rampRateOffToOnLocal: 'Ramp On Speed (Paddle)',
+            dimmingSpeedDownRemote: 'Dim Down Speed (Hub)',
+            dimmingSpeedDownLocal: 'Dim Down Speed (Paddle)',
+            rampRateOnToOffRemote: 'Ramp Off Speed (Hub)',
+            rampRateOnToOffLocal: 'Ramp Off Speed (Paddle)',
+            invertSwitch: 'Paddle Direction',
+            autoTimerOff: 'Auto-Off Timer',
+            defaultLevelLocal: 'Default Level (Paddle)',
+            defaultLevelRemote: 'Default Level (Hub)',
+            stateAfterPowerRestored: 'Power Restore State',
+            loadLevelIndicatorTimeout: 'Level Indicator Timeout',
+            switchType: 'Wiring Type',
+            smartBulbMode: 'Smart Bulb Mode',
+            bindingOffToOnSyncLevel: 'Bind Uses Default Level',
+            minimumLevel: 'Minimum Dim Level',
+            maximumLevel: 'Maximum Dim Level',
+            outputMode: 'Switch Mode (Dimmer / On-Off)',
+            quickStartTime: 'Quick Start Time',
+            quickStartLevel: 'Quick Start Level',
+            higherOutputInNonNeutral: 'Unthrottled Output (No Neutral)',
+
+            // LED & Notifications
+            led_effect: 'LED Effect (All LEDs)',
+            individual_led_effect: 'LED Effect (Single LED)',
+            ledColorWhenOn: 'All LEDs Color (On)',
+            ledColorWhenOff: 'All LEDs Color (Off)',
+            ledIntensityWhenOn: 'All LEDs Brightness (On)',
+            ledIntensityWhenOff: 'All LEDs Brightness (Off)',
+            ledColorForFanControlMode: 'Fan Mode LED Color',
+            onOffLedMode: 'Single LED Mode (Bottom Only)',
+            firmwareUpdateInProgressIndicator: 'Firmware Progress LED',
+            doubleTapClearNotifications: 'Double-Tap Clears Notifications',
+            fanLedLevelType: 'Fan LED Display Mode',
+            ledBarScaling: 'LED Bar Scaling (Gen 2 Match)',
+            defaultLed1ColorWhenOn: 'LED 1 Color (On)',
+            defaultLed1ColorWhenOff: 'LED 1 Color (Off)',
+            defaultLed1IntensityWhenOn: 'LED 1 Brightness (On)',
+            defaultLed1IntensityWhenOff: 'LED 1 Brightness (Off)',
+            defaultLed2ColorWhenOn: 'LED 2 Color (On)',
+            defaultLed2ColorWhenOff: 'LED 2 Color (Off)',
+            defaultLed2IntensityWhenOn: 'LED 2 Brightness (On)',
+            defaultLed2IntensityWhenOff: 'LED 2 Brightness (Off)',
+            defaultLed3ColorWhenOn: 'LED 3 Color (On)',
+            defaultLed3ColorWhenOff: 'LED 3 Color (Off)',
+            defaultLed3IntensityWhenOn: 'LED 3 Brightness (On)',
+            defaultLed3IntensityWhenOff: 'LED 3 Brightness (Off)',
+            defaultLed4ColorWhenOn: 'LED 4 Color (On)',
+            defaultLed4ColorWhenOff: 'LED 4 Color (Off)',
+            defaultLed4IntensityWhenOn: 'LED 4 Brightness (On)',
+            defaultLed4IntensityWhenOff: 'LED 4 Brightness (Off)',
+            defaultLed5ColorWhenOn: 'LED 5 Color (On)',
+            defaultLed5ColorWhenOff: 'LED 5 Color (Off)',
+            defaultLed5IntensityWhenOn: 'LED 5 Brightness (On)',
+            defaultLed5IntensityWhenOff: 'LED 5 Brightness (Off)',
+            defaultLed6ColorWhenOn: 'LED 6 Color (On)',
+            defaultLed6ColorWhenOff: 'LED 6 Color (Off)',
+            defaultLed6IntensityWhenOn: 'LED 6 Brightness (On)',
+            defaultLed6IntensityWhenOff: 'LED 6 Brightness (Off)',
+            defaultLed7ColorWhenOn: 'LED 7 Color (On)',
+            defaultLed7ColorWhenOff: 'LED 7 Color (Off)',
+            defaultLed7IntensityWhenOn: 'LED 7 Brightness (On)',
+            defaultLed7IntensityWhenOff: 'LED 7 Brightness (Off)',
+            notificationComplete: 'Last Notification Cleared',
+
+            // Buttons & Scenes
+            buttonDelay: 'Multi-Tap Delay',
+            doubleTapUpToParam55: 'Enable Double-Tap Up',
+            doubleTapDownToParam56: 'Enable Double-Tap Down',
+            brightnessLevelForDoubleTapUp: 'Double-Tap Up Level',
+            brightnessLevelForDoubleTapDown: 'Double-Tap Down Level',
+            singleTapBehavior: 'Single-Tap Behavior (Fan Mode)',
+            auxSwitchUniqueScenes: 'Aux Unique Scenes',
+
+            // Power & Device
+            fanControlMode: 'Fan Control Mode',
+            lowLevelForFanControlMode: 'Fan Low Level',
+            mediumLevelForFanControlMode: 'Fan Medium Level',
+            highLevelForFanControlMode: 'Fan High Level',
+            fanTimerMode: 'Fan Timer Mode',
+            localProtection: 'Local Control Lock',
+            activePowerReports: 'Power Report Threshold',
+            periodicPowerAndEnergyReports: 'Periodic Report Interval',
+            activeEnergyReports: 'Energy Report Threshold',
+            otaImageType: 'OTA Image Type',
+            identify: 'Identify Device',
+            energy_reset: 'Reset Energy Counter',
+
+            // Runtime Options
+            power_calibration: 'Power Calibration (%)',
+            power_precision: 'Power Precision',
+            voltage_calibration: 'Voltage Calibration (%)',
+            voltage_precision: 'Voltage Precision',
+            current_calibration: 'Current Calibration (%)',
+            current_precision: 'Current Precision',
+            energy_calibration: 'Energy Calibration (%)',
+            energy_precision: 'Energy Precision',
+            illuminance_calibration: 'Illuminance Calibration',
+            transition: 'Transition Time',
+            identify_timeout: 'Identify Timeout',
+            state_action: 'Publish Action Events',
+            illuminance_raw: 'Publish Raw Illuminance',
+            no_occupancy_since: 'Vacancy Alert Intervals',
+
+            // Read-only
+            mmWaveVersion: 'mmWave Firmware Version',
+            dimmingMode: 'Dimming Method (Leading / Trailing)',
+            remoteProtection: 'Remote Control Lock',
+            powerType: 'Wiring Detection (Neutral / Non-Neutral)',
+            internalTemperature: 'Internal Temperature',
+            overheat: 'Overheat Status',
+            deviceBindNumber: 'Bound Device Count',
+
+            // Live state
+            occupancy: 'Presence Detected',
+            illuminance: 'Ambient Light (lux)',
+            power: 'Active Power (W)',
+            voltage: 'Line Voltage (V)',
+            current: 'Current Draw (A)',
+            energy: 'Total Energy (kWh)',
+            action: 'Last Scene Event',
+            linkquality: 'Zigbee Link Quality',
+            area1Occupancy: 'Area 1 Presence',
+            area2Occupancy: 'Area 2 Presence',
+            area3Occupancy: 'Area 3 Presence',
+            area4Occupancy: 'Area 4 Presence',
+
+            // Composite features
+            effect: 'Effect Pattern',
+            color: 'Color Preset',
+            level: 'Brightness',
+            duration: 'Duration',
+            led: 'Target LED',
+            command: 'mmWave Command',
+            area1: 'Area 1',
+            area2: 'Area 2',
+            area3: 'Area 3',
+            area4: 'Area 4'
+        };
+
+        const compositeFeatureLabelOverrides = {
+            led_effect: {
+                effect: 'Effect Pattern',
+                color: 'Color Preset',
+                level: 'Brightness',
+                duration: 'Duration'
+            },
+            individual_led_effect: {
+                led: 'Target LED',
+                effect: 'Effect Pattern',
+                color: 'Color Preset',
+                level: 'Brightness',
+                duration: 'Duration'
+            },
+            mmwave_control_commands: {
+                command: 'mmWave Command'
+            },
+            mmwave_interference_areas: {
+                area1: 'Area 1',
+                area2: 'Area 2',
+                area3: 'Area 3',
+                area4: 'Area 4'
+            },
+            mmwave_detection_areas: {
+                area1: 'Area 1',
+                area2: 'Area 2',
+                area3: 'Area 3',
+                area4: 'Area 4'
+            },
+            mmwave_stay_areas: {
+                area1: 'Area 1',
+                area2: 'Area 2',
+                area3: 'Area 3',
+                area4: 'Area 4'
+            }
+        };
+
+        function looksHumanReadableLabel(label) {
+            const text = String(label || '').trim();
+            if (!text) return false;
+            if (text.includes(' ')) return true;
+            return !/[a-z][A-Z]/.test(text);
+        }
+
+        function humanizeSchemaKey(name) {
+            if (!name) return '';
+            let text = String(name)
+                .replace(/_/g, ' ')
+                .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+                .replace(/([A-Za-z])([0-9])/g, '$1 $2')
+                .replace(/([0-9])([A-Za-z])/g, '$1 $2')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            const tokens = text.split(' ').map(token => {
+                const lower = token.toLowerCase();
+                if (lower === 'led') return 'LED';
+                if (lower === 'ota') return 'OTA';
+                if (lower === 'id') return 'ID';
+                if (lower === 'zigbee') return 'Zigbee';
+                if (/^\d+$/.test(token)) return token;
+                return lower.charAt(0).toUpperCase() + lower.slice(1);
+            });
+
+            text = tokens.join(' ');
+            text = text.replace(/\bMm Wave\b/g, 'mmWave');
+            return text;
+        }
+
+        function getFriendlyLabel(name, fallbackLabel) {
+            if (name && friendlyLabelMap[name]) return friendlyLabelMap[name];
+            if (looksHumanReadableLabel(fallbackLabel)) return String(fallbackLabel).trim();
+            if (name) return humanizeSchemaKey(name);
+            return fallbackLabel || 'Unknown';
+        }
+
         function getReadableFieldLabel(field) {
-            if (field.label) return field.label;
-            return field.name || 'Unknown';
+            if (!field) return 'Unknown';
+            return getFriendlyLabel(field.name, field.label);
+        }
+
+        function getReadableFeatureLabel(parentField, feature) {
+            if (!feature) return 'Unknown';
+            const parentName = parentField && parentField.name ? parentField.name : '';
+            const featureName = feature.name || '';
+            const parentOverrides = parentName ? compositeFeatureLabelOverrides[parentName] : null;
+            if (parentOverrides && featureName && parentOverrides[featureName]) {
+                return parentOverrides[featureName];
+            }
+            return getFriendlyLabel(featureName, feature.label);
         }
 
         const defaultLedColorPresets = [
@@ -1155,7 +1405,7 @@
                     else if (value === 'false') value = false;
                 }
                 if (feature.type === 'numeric' && value === '') {
-                    throw new Error(`${feature.label || feature.name} cannot be empty`);
+                    throw new Error(`${getReadableFeatureLabel(field, feature)} cannot be empty`);
                 }
 
                 const payloadKey = feature.property || feature.name;
@@ -1213,7 +1463,7 @@
 
                 const label = document.createElement('label');
                 label.setAttribute('for', getCompositeFeatureInputId(field.name, feature.name));
-                label.textContent = `${feature.label || feature.name}${feature.unit ? ` (${feature.unit})` : ''}:`;
+                label.textContent = `${getReadableFeatureLabel(field, feature)}${feature.unit ? ` (${feature.unit})` : ''}:`;
                 row.appendChild(label);
                 row.appendChild(createCompositeFeatureInput(field, feature));
                 block.appendChild(row);
