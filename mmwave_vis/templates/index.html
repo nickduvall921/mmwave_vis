@@ -303,6 +303,10 @@
                     </div>
                     
                     <div class="config-title" style="margin-top: 15px; border-top: 1px solid #444; padding-top: 5px;">Radar Map Size (cm)</div>
+                    <div class="input-row">
+                        <label for="vizToggleAutoScale" style="color:#00bcd4">Auto Scale:</label>
+                        <input type="checkbox" id="vizToggleAutoScale">
+                    </div>
                     <div class="zone-data-grid">
                         <div class="zone-input-group"><label>X Min</label><input type="number" id="vizXMin" value="-450"></div>
                         <div class="zone-input-group"><label>X Max</label><input type="number" id="vizXMax" value="450"></div>
@@ -408,8 +412,10 @@
         const vizXMax = document.getElementById('vizXMax');
         const vizYMin = document.getElementById('vizYMin');
         const vizYMax = document.getElementById('vizYMax');
+        const vizToggleAutoScale = document.getElementById('vizToggleAutoScale');
 
         let targetHistory = {}; 
+        let lastTargets = []; // Global store for resizing
         const HISTORY_LENGTH = 15; 
         
         // Interaction Lock for Jitter Prevention
@@ -516,6 +522,7 @@
         let chartXMax = 450;
         let chartYMin = -100;
         let chartYMax = 650;
+        let autoScale = false;
 
         // Init Settings from LocalStorage
         try {
@@ -536,6 +543,7 @@
             if (localStorage.getItem('vizXMax') !== null) chartXMax = parseInt(localStorage.getItem('vizXMax'));
             if (localStorage.getItem('vizYMin') !== null) chartYMin = parseInt(localStorage.getItem('vizYMin'));
             if (localStorage.getItem('vizYMax') !== null) chartYMax = parseInt(localStorage.getItem('vizYMax'));
+            if (localStorage.getItem('vizAutoScale') !== null) autoScale = localStorage.getItem('vizAutoScale') === 'true';
         } catch(e) { console.log('Storage access error', e); }
 
         const vizToggleInterference = document.getElementById('vizToggleInterference');
@@ -556,6 +564,86 @@
         vizXMax.value = chartXMax;
         vizYMin.value = chartYMin;
         vizYMax.value = chartYMax;
+        if(vizToggleAutoScale) vizToggleAutoScale.checked = autoScale;
+
+        // Helper: Calculate Auto Bounds
+        function calculateAutoBounds(targets = []) {
+             let minX = 0, maxX = 0, minY = 0, maxY = 0;
+             let hasData = false;
+
+             // Helper to expand bounds
+             const expand = (x, y) => {
+                 if (!hasData) {
+                     minX = x; maxX = x; minY = y; maxY = y;
+                     hasData = true;
+                 } else {
+                     if (x < minX) minX = x;
+                     if (x > maxX) maxX = x;
+                     if (y < minY) minY = y;
+                     if (y > maxY) maxY = y;
+                 }
+             };
+
+             // 1. Include Targets
+             targets.forEach(t => expand(t.x, t.y));
+
+             // 2. Include Detection Zones
+             if (showDetection) {
+                 Object.entries(deviceZones.mmwave_detection_areas).forEach(([areaId, z]) => {
+                     let isVisible = true;
+                     if (areaId === 'area1' && !showDetection1) isVisible = false;
+                     if (areaId === 'area2' && !showDetection2) isVisible = false;
+                     if (areaId === 'area3' && !showDetection3) isVisible = false;
+                     if (areaId === 'area4' && !showDetection4) isVisible = false;
+                     
+                     if(z && isVisible) { expand(z.x_min, z.y_min); expand(z.x_max, z.y_max); }
+                 });
+             }
+
+             // 3. Include Stay Zones
+             if (showStay) {
+                 Object.values(deviceZones.mmwave_stay_areas).forEach(z => {
+                     if(z) { expand(z.x_min, z.y_min); expand(z.x_max, z.y_max); }
+                 });
+             }
+
+             // 4. Include Interference Zones
+             if (showInterference) {
+                 Object.values(deviceZones.mmwave_interference_areas).forEach(z => {
+                     if(z) { expand(z.x_min, z.y_min); expand(z.x_max, z.y_max); }
+                 });
+             }
+
+             // Default if empty
+             if (!hasData) return { xMin: -450, xMax: 450, yMin: -100, yMax: 650 };
+
+             // Add Padding (50cm)
+             const padding = 50;
+             return {
+                 xMin: minX - padding,
+                 xMax: maxX + padding,
+                 yMin: minY - padding,
+                 yMax: maxY + padding
+             };
+        }
+
+        function performAutoResize(targets = []) {
+            if (!autoScale) return;
+
+            const bounds = calculateAutoBounds(targets);
+            
+            // Only update if significantly changed (simple debounce/hysteresis could be added here if needed, 
+            // but for now we just applying it to keep it snappy)
+            
+            // Update Inputs
+            vizXMin.value = bounds.xMin;
+            vizXMax.value = bounds.xMax;
+            vizYMin.value = bounds.yMin;
+            vizYMax.value = bounds.yMax;
+            
+            // Update Chart
+            updateRadarScale();
+        }
 
         function applyVizSettings() {
             // Set checkboxes
@@ -571,6 +659,8 @@
             if (vizToggleDetection3) vizToggleDetection3.checked = showDetection3;
             if (vizToggleDetection4) vizToggleDetection4.checked = showDetection4;
             
+            if (autoScale) performAutoResize(lastTargets);
+
             // Only update Plotly if the chart exists
             const chartDiv = document.getElementById('chart');
             if (chartDiv && chartDiv.layout) {
@@ -609,6 +699,11 @@
         if (vizToggleGrid) vizToggleGrid.addEventListener('change', (e) => { showGrid = e.target.checked; localStorage.setItem('vizShowGrid', showGrid); applyVizSettings(); });
         if (vizToggleLabels) vizToggleLabels.addEventListener('change', (e) => { showLabels = e.target.checked; localStorage.setItem('vizShowLabels', showLabels); applyVizSettings(); });
         if (vizToggleZValues) vizToggleZValues.addEventListener('change', (e) => { showZValues = e.target.checked; localStorage.setItem('vizShowZValues', showZValues); applyVizSettings(); });
+        if (vizToggleAutoScale) vizToggleAutoScale.addEventListener('change', (e) => { 
+            autoScale = e.target.checked; 
+            localStorage.setItem('vizAutoScale', autoScale);
+            if(autoScale) performAutoResize(lastTargets); // Trigger immediately
+        });
 
         if (vizToggleDetection1) vizToggleDetection1.addEventListener('change', (e) => { showDetection1 = e.target.checked; localStorage.setItem('vizShowDetection1', showDetection1); applyVizSettings(); });
         if (vizToggleDetection2) vizToggleDetection2.addEventListener('change', (e) => { showDetection2 = e.target.checked; localStorage.setItem('vizShowDetection2', showDetection2); applyVizSettings(); });
@@ -931,6 +1026,7 @@
             
             // Refresh chart to show new zones (unless editing)
             if (!isEditingZone) {
+                if(autoScale) performAutoResize(); // Resize if enabled
                 Plotly.relayout('chart', {shapes: getChartShapes(), annotations: getChartAnnotations()});
             }
 
@@ -1026,7 +1122,11 @@
                 y_min: config.y_min, y_max: config.y_max
             };
             
-            if (!isEditingZone) Plotly.relayout('chart', {shapes: getChartShapes(), annotations: getChartAnnotations()});
+            
+            if (!isEditingZone) {
+                 if(autoScale) performAutoResize();
+                 Plotly.relayout('chart', {shapes: getChartShapes(), annotations: getChartAnnotations()});
+            }
         });
 
         // --- INTERFERENCE ZONE LOGIC (From Raw Packets) ---
@@ -1059,7 +1159,10 @@
             }
             
             // Update map if not editing
-            if (!isEditingZone) Plotly.relayout('chart', {shapes: getChartShapes(), annotations: getChartAnnotations()});
+            if (!isEditingZone) {
+                if(autoScale) performAutoResize();
+                Plotly.relayout('chart', {shapes: getChartShapes(), annotations: getChartAnnotations()});
+            }
 
             // Context-aware notification
             const statusBox = document.getElementById('zoneStatus');
@@ -1102,7 +1205,10 @@
                     deviceZones.mmwave_detection_areas[`area${i+1}`] = null;
                 }
             }
-            if (!isEditingZone) Plotly.relayout('chart', {shapes: getChartShapes(), annotations: getChartAnnotations()});
+            if (!isEditingZone) {
+                if(autoScale) performAutoResize();
+                Plotly.relayout('chart', {shapes: getChartShapes(), annotations: getChartAnnotations()});
+            }
         });
 
         socket.on('stay_zones', function(msg) {
@@ -1122,7 +1228,10 @@
                     deviceZones.mmwave_stay_areas[`area${i+1}`] = null;
                 }
             }
-            if (!isEditingZone) Plotly.relayout('chart', {shapes: getChartShapes(), annotations: getChartAnnotations()});
+            if (!isEditingZone) {
+                if(autoScale) performAutoResize();
+                Plotly.relayout('chart', {shapes: getChartShapes(), annotations: getChartAnnotations()});
+            }
         });
 
         socket.on('new_data', function(msg) {
@@ -1135,6 +1244,8 @@
 
             updateTimestamp();
             packetInfo.innerText = `Targets Visible: ${data.targets.length}`;
+            
+            lastTargets = data.targets; // Store for auto-resize when toggling views
             
             const currentIds = new Set(data.targets.map(t => t.id));
             Object.keys(targetHistory).forEach(id => { if (!currentIds.has(Number(id))) delete targetHistory[id]; });
@@ -1167,6 +1278,8 @@
                 }, [0, 1]); // Update Trace 0 and 1
             } else {
                 // Normal update
+                if(autoScale) performAutoResize(data.targets);
+
                 Plotly.react('chart', [
                     { x: data.targets.map(t => t.x), y: data.targets.map(t => t.y), text: data.targets.map(t => `ID: ${t.id} [Z:${t.z}cm]`), mode: 'markers+text', textposition: 'top center', marker: { size: sizes, color: '#00bcd4', line: {color: 'white', width: 2} }, type: 'scatter' },
                     { x: historyX, y: historyY, mode: 'lines', line: {color: '#00bcd4', width: 3}, opacity: 0.3, type: 'scatter' }
