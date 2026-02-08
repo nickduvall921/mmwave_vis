@@ -45,6 +45,18 @@ current_topic = None
 # Stores device names, topics, config, and throttling timers
 device_list = {} 
 
+def safe_int(value, default=0):
+    """
+    Safely converts a value to int.
+    Handles empty strings, None, and parsing errors.
+    """
+    try:
+        if value is None or value == "":
+            return default
+        return int(float(value)) # float conversion handles strings like "100.0"
+    except (ValueError, TypeError):
+        return default
+
 def on_connect(client, userdata, flags, rc):
     print(f"Connected to MQTT Broker with code {rc}", flush=True)
     client.subscribe(f"{MQTT_BASE_TOPIC}/#")
@@ -79,7 +91,13 @@ def on_message(client, userdata, msg):
                             'interference_zones': [],
                             'detection_zones': [],
                             'stay_zones': [],
-                            'zone_config': {"x_min": -400, "x_max": 400, "y_min": 0, "y_max": 600},
+                            'use_nested_area1': False, # Flag to track if we should write to detection_areas or top-level
+                            # Default zone config now includes Z values
+                            'zone_config': {
+                                "x_min": -100, "x_max": 100, 
+                                "y_min": 0, "y_max": 600,
+                                "z_min": -300, "z_max": 300
+                            },
                             'last_update': 0,
                             'last_seen': time.time()
                         }
@@ -154,9 +172,7 @@ def on_message(client, userdata, msg):
                         z_min = parse_bytes(offset+8)
                         z_max = parse_bytes(offset+10)
                         
-                        # Append if it looks like a valid configured zone (has dimensions)
-                        # We use a loose check (x_max > x_min) to allow 0-based zones if valid, 
-                        # but typically 0,0,0,0,0,0 is an empty zone.
+                        # Append if it looks like a valid configured zone
                         if (x_max != 0 or x_min != 0 or y_max != 0 or y_min != 0):
                             zones.append({
                                 "x_min": x_min, "x_max": x_max, 
@@ -189,21 +205,40 @@ def on_message(client, userdata, msg):
         if config_payload:
             socketio.emit('device_config', {'topic': device_topic, 'payload': config_payload})
 
-            # Update Standard Global Zone (Attributes 103-106)
+            # Check if we should switch to Nested Mode for Zone 1 Write operations
+            # We only switch if mmwave_detection_areas exists AND Area 1 has numerical values
+            if "mmwave_detection_areas" in config_payload:
+                a1 = config_payload["mmwave_detection_areas"].get("area1")
+                has_data = False
+                if a1 and isinstance(a1, dict):
+                    # Check if any value is non-zero to consider it "present with numerical values"
+                    for val in a1.values():
+                        if isinstance(val, (int, float)) and val != 0:
+                            has_data = True
+                            break
+                device_list[fname]['use_nested_area1'] = has_data
+
+            # Update Standard Global Zone (Fallback logic for Zone 1)
             needs_emit = False
             current_zone = device_list[fname]['zone_config']
 
             if "mmWaveWidthMin" in config_payload:
-                current_zone["x_min"] = int(config_payload["mmWaveWidthMin"])
+                current_zone["x_min"] = safe_int(config_payload["mmWaveWidthMin"])
                 needs_emit = True
             if "mmWaveWidthMax" in config_payload:
-                current_zone["x_max"] = int(config_payload["mmWaveWidthMax"])
+                current_zone["x_max"] = safe_int(config_payload["mmWaveWidthMax"])
                 needs_emit = True
             if "mmWaveDepthMin" in config_payload:
-                current_zone["y_min"] = int(config_payload["mmWaveDepthMin"])
+                current_zone["y_min"] = safe_int(config_payload["mmWaveDepthMin"])
                 needs_emit = True
             if "mmWaveDepthMax" in config_payload:
-                current_zone["y_max"] = int(config_payload["mmWaveDepthMax"])
+                current_zone["y_max"] = safe_int(config_payload["mmWaveDepthMax"])
+                needs_emit = True
+            if "mmWaveHeightMin" in config_payload:
+                current_zone["z_min"] = safe_int(config_payload["mmWaveHeightMin"])
+                needs_emit = True
+            if "mmWaveHeightMax" in config_payload:
+                current_zone["z_max"] = safe_int(config_payload["mmWaveHeightMax"])
                 needs_emit = True
                 
             if needs_emit:
@@ -256,8 +291,36 @@ def handle_update_parameter(data):
     if not current_topic: return
     param = data.get('param')
     value = data.get('value')
+    
+    # Identify device
+    fname = next((name for name, d in device_list.items() if d['topic'] == current_topic), None)
+    
+    # Fallback Logic: Intercept writes to mmwave_detection_areas:area1
+    if fname and param == "mmwave_detection_areas" and isinstance(value, dict) and "area1" in value:
+        use_nested = device_list.get(fname, {}).get('use_nested_area1', False)
+        
+        # If the switch does NOT have nested area1 active/configured, map to top-level standard params
+        if not use_nested:
+            try:
+                z_data = value["area1"]
+                legacy_payload = {
+                    "mmWaveWidthMin": int(z_data.get("width_min", 0)),
+                    "mmWaveWidthMax": int(z_data.get("width_max", 0)),
+                    "mmWaveDepthMin": int(z_data.get("depth_min", 0)),
+                    "mmWaveDepthMax": int(z_data.get("depth_max", 0)),
+                    "mmWaveHeightMin": int(z_data.get("height_min", 0)),
+                    "mmWaveHeightMax": int(z_data.get("height_max", 0))
+                }
+                mqtt_client.publish(f"{current_topic}/set", json.dumps(legacy_payload))
+                print(f"Mapped Area 1 write to Top Level params for {fname}", flush=True)
+                return
+            except Exception as e:
+                print(f"Error mapping legacy zone: {e}", flush=True)
+
+    # Standard Publish
     if isinstance(value, str) and value.lstrip('-').isnumeric():
         value = int(value)
+    
     control_payload = { param: value }
     mqtt_client.publish(f"{current_topic}/set", json.dumps(control_payload))
 
@@ -286,7 +349,6 @@ def handle_force_sync():
     mqtt_client.publish(f"{current_topic}/get", json.dumps(payload))
     
     # 3. Trigger mmWave Module Report (Query Areas)
-    # This forces the sensor to output packets 0x02, 0x03, 0x04
     cmd_payload = { "mmwave_control_commands": { "controlID": "query_areas" } }
     mqtt_client.publish(f"{current_topic}/set", json.dumps(cmd_payload))
     print(f"Force Sync (Z2M Read + Query Areas) sent to {current_topic}", flush=True)
