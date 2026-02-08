@@ -314,6 +314,10 @@
                         <div class="zone-input-group"><label>Y Max</label><input type="number" id="vizYMax" value="650"></div>
                     </div>
                     <button class="cmd-btn btn-full" onclick="updateRadarScale()" style="margin-top:5px; background: #00bcd4; color: #1a1a1a;">Update Scale</button>
+                    <div style="display:flex; gap: 5px; margin-top: 5px;">
+                        <button class="cmd-btn" style="flex:1;" onclick="autoScaleRadar()">Auto-Scale</button>
+                        <button class="cmd-btn btn-danger" style="flex:1;" onclick="resetRadarScale()">Reset Scale</button>
+                    </div>
                 </div>
             </details>
             
@@ -683,6 +687,10 @@
             localStorage.setItem('vizYMin', chartYMin);
             localStorage.setItem('vizYMax', chartYMax);
             
+            // IMPORTANT: Update global layout so react loop sees it
+            layout.xaxis.range = [chartXMin, chartXMax];
+            layout.yaxis.range = [chartYMin, chartYMax];
+
             const chartDiv = document.getElementById('chart');
             if (chartDiv && chartDiv.layout) {
                 Plotly.relayout('chart', {
@@ -690,6 +698,58 @@
                     'yaxis.range': [chartYMin, chartYMax]
                 });
             }
+        }
+        
+        function resetRadarScale() {
+            vizXMin.value = -450;
+            vizXMax.value = 450;
+            vizYMin.value = -100;
+            vizYMax.value = 650;
+            updateRadarScale();
+        }
+
+        function autoScaleRadar() {
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            let hasZones = false;
+
+            // Helper to check zones
+            const checkZone = (zone) => {
+                if (zone) {
+                    // Check if it's a "real" zone (not 0,0,0,0)
+                    if (zone.x_max !== 0 || zone.x_min !== 0 || zone.y_max !== 0 || zone.y_min !== 0) {
+                        hasZones = true;
+                        if (zone.x_min < minX) minX = zone.x_min;
+                        if (zone.x_max > maxX) maxX = zone.x_max;
+                        if (zone.y_min < minY) minY = zone.y_min;
+                        if (zone.y_max > maxY) maxY = zone.y_max;
+                    }
+                }
+            };
+
+            // Iterate all collections
+            Object.values(deviceZones.mmwave_detection_areas).forEach(checkZone);
+            Object.values(deviceZones.mmwave_interference_areas).forEach(checkZone);
+            Object.values(deviceZones.mmwave_stay_areas).forEach(checkZone);
+
+            if (!hasZones) {
+                resetRadarScale();
+                return;
+            }
+
+            // Add buffer
+            const buffer = 100;
+            minX -= buffer;
+            maxX += buffer;
+            minY -= buffer;
+            maxY += buffer;
+
+            // Apply
+            vizXMin.value = Math.round(minX);
+            vizXMax.value = Math.round(maxX);
+            vizYMin.value = Math.round(minY);
+            vizYMax.value = Math.round(maxY);
+            
+            updateRadarScale();
         }
 
         // Attach Listeners
@@ -898,7 +958,8 @@
 
         // --- SOCKET EVENT HANDLERS ---
         socket.on('connect', () => socket.emit('request_devices'));
-        
+        // refreshBtn removed
+
         socket.on('device_list', function(devices) {
             const currentSelection = deviceSelect.value;
             deviceSelect.innerHTML = '<option value="" disabled selected>Select an Inovelli Switch</option>';
@@ -1411,7 +1472,8 @@
             const y_vals = [parseInt(draftZoneConfig.y_min), parseInt(draftZoneConfig.y_max)].sort((a,b)=>a-b);
             const z_vals = [parseInt(draftZoneConfig.z_min), parseInt(draftZoneConfig.z_max)].sort((a,b)=>a-b);
             
-            // Always use composite payload with width/depth keys
+            // Always use composite payload with width/depth keys per Z2M convention
+            // This applies to ALL zones (Detection, Interference, Stay) as seen in logs
             areaPayload[area] = {
                 width_min: x_vals[0],
                 width_max: x_vals[1],
@@ -1433,7 +1495,8 @@
             const [category, area] = zoneEditorSelect.value.split(':');
             const areaPayload = {};
              
-            // Always use width/depth keys for deletion
+            // Always use width/depth keys for deletion for ALL zone types
+            // This matches what Z2M reports and expects
             areaPayload[area] = { 
                 width_min: 0, width_max: 0, 
                 depth_min: 0, depth_max: 0, 
