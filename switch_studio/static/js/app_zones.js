@@ -429,16 +429,16 @@
         dataTableBodyEl.innerHTML = '';
         data.targets.forEach((target) => {
             let dopStatus = 'Stationary';
-            let dopColor = '#888';
+            let dopClass = 'doppler-stationary';
             if (target.dop > 10) {
                 dopStatus = `Moving Away (${target.dop})`;
-                dopColor = '#ff9800';
+                dopClass = 'doppler-moving';
             } else if (target.dop < -10) {
                 dopStatus = `Approaching (${target.dop})`;
-                dopColor = '#4caf50';
+                dopClass = 'doppler-approaching';
             }
 
-            dataTableBodyEl.innerHTML += `<tr><td style="font-weight: bold; color: #00bcd4;">${target.id}</td><td>${target.x} cm</td><td>${target.y} cm</td><td>${target.z} cm</td><td style="color: ${dopColor}; font-weight: bold;">${dopStatus}</td></tr>`;
+            dataTableBodyEl.innerHTML += `<tr><td class="target-id-cell"><span class="target-id-tag">${target.id}</span></td><td class="target-num">${target.x} cm</td><td class="target-num">${target.y} cm</td><td class="target-num">${target.z} cm</td><td class="doppler-cell"><span class="doppler-badge ${dopClass}">${dopStatus}</span></td></tr>`;
         });
 
         return true;

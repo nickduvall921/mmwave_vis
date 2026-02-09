@@ -95,22 +95,23 @@
         
         /* Header */
         .header {
-            background: var(--panel-overlay);
-            padding: 10px 15px;
-            border-bottom: 1px solid var(--accent-strong);
+            background: linear-gradient(180deg, rgba(25, 33, 48, 0.96) 0%, rgba(22, 30, 44, 0.96) 100%);
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border-subtle);
             display: flex;
             justify-content: space-between;
             align-items: center;
             z-index: 10;
-            gap: 15px;
-            backdrop-filter: blur(8px);
+            gap: 14px;
+            backdrop-filter: blur(10px);
         }
-        .header-brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .header-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
         .header-logo { height: 22px; width: auto; object-fit: contain; }
-        .header h2 { color: var(--accent); margin: 0; white-space: nowrap; letter-spacing: 0.01em; }
+        .header h2 { color: var(--text-primary); margin: 0; white-space: nowrap; letter-spacing: 0.01em; font-size: 1.02rem; font-weight: 600; }
         
         /* Header Controls Group */
-        .header-controls { display: flex; align-items: center; gap: 10px; flex-grow: 1; justify-content: flex-start; }
+        .header-controls { display: flex; align-items: center; gap: 10px; flex-grow: 1; justify-content: flex-start; min-width: 0; }
+        .header-device-wrap { width: min(340px, 100%); min-width: 150px; }
         select#deviceSelect {
             background: var(--bg-elev-3);
             color: var(--text-primary);
@@ -128,20 +129,70 @@
             border-color: var(--accent);
             box-shadow: 0 0 0 2px var(--accent-soft);
         }
+        .header-right {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: nowrap;
+        }
+        .status-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 9px;
+            border-radius: 999px;
+            border: 1px solid var(--border-subtle);
+            background: rgba(33, 43, 62, 0.85);
+            color: var(--text-secondary);
+            font-size: 0.76rem;
+            white-space: nowrap;
+        }
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--success);
+            box-shadow: 0 0 8px rgba(74, 197, 109, 0.75);
+        }
+        .btn-force-sync {
+            border-color: var(--accent);
+            background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+            color: #061216;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+        }
+        .btn-force-sync:hover {
+            filter: brightness(1.06);
+            border-color: var(--accent);
+            color: #041015;
+            transform: translateY(-1px);
+        }
         
         .status-bar {
-            font-size: 0.9em;
+            font-size: 0.84em;
             color: var(--text-muted);
-            text-align: center;
-            background: rgba(24, 31, 44, 0.9);
-            padding: 6px;
+            background: rgba(20, 27, 39, 0.95);
+            padding: 6px 12px;
             display: flex;
-            justify-content: center;
-            gap: 10px;
+            justify-content: flex-start;
+            gap: 8px;
             align-items: center;
             border-bottom: 1px solid var(--border-subtle);
+            overflow-x: auto;
         }
-        #packetInfo { color: var(--accent); font-weight: bold; }
+        .status-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-subtle);
+            background: rgba(31, 40, 57, 0.9);
+            white-space: nowrap;
+        }
+        #statusDiv { color: var(--text-secondary); }
+        #packetInfo { color: var(--accent); font-weight: 700; }
         #timestamp { color: var(--warning); font-family: monospace; }
         #packetAge { color: var(--text-muted); font-size: 0.85em; font-family: monospace; min-width: 60px; text-align: left; }
 
@@ -149,33 +200,34 @@
         .tab-bar {
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 8px 12px;
+            gap: 4px;
+            padding: 0 12px;
             background: rgba(17, 24, 36, 0.95);
             border-top: 1px solid var(--border-subtle);
             border-bottom: 1px solid var(--border-subtle);
             overflow-x: auto;
         }
         .tab-btn {
-            background: var(--bg-elev-2);
+            background: transparent;
             color: var(--text-secondary);
-            border: 1px solid var(--border-subtle);
-            padding: 6px 12px;
-            border-radius: 999px;
+            border: none;
+            border-bottom: 2px solid transparent;
+            padding: 10px 12px 9px;
             cursor: pointer;
-            font-size: 0.85em;
-            transition: border-color var(--anim-fast), background var(--anim-fast), color var(--anim-fast), transform var(--anim-fast);
+            font-size: 0.84em;
+            font-weight: 500;
+            transition: border-color var(--anim-fast), color var(--anim-fast), background var(--anim-fast);
+            border-radius: 0;
+            white-space: nowrap;
         }
         .tab-btn:hover {
-            border-color: var(--accent);
-            color: #e8fffd;
-            background: var(--bg-elev-3);
-            transform: translateY(-1px);
+            color: #e9fffd;
+            background: rgba(22, 215, 203, 0.07);
         }
         .tab-btn.active {
-            background: linear-gradient(135deg, var(--accent), var(--accent-strong));
-            color: #0b121a;
-            border-color: transparent;
+            background: transparent;
+            color: var(--accent);
+            border-bottom-color: var(--accent);
             font-weight: 700;
         }
 
@@ -188,6 +240,9 @@
             border-bottom: 1px solid var(--border-subtle);
             padding: 8px 12px;
             color: var(--text-muted);
+            position: sticky;
+            top: 0;
+            z-index: 8;
         }
         .dirty-bar.dirty-active { color: #ffd59c; border-bottom-color: var(--warning); }
         .dirty-actions { display: flex; gap: 8px; }
@@ -205,6 +260,107 @@
         .dirty-btn:not(:disabled):hover { border-color: var(--accent); color: #fff; }
         .dirty-btn.apply-btn { border-color: var(--success); }
         .dirty-btn.apply-btn:not(:disabled):hover { background: var(--success); color: #0f161f; }
+        .dirty-btn.apply-btn:not(:disabled) {
+            background: linear-gradient(135deg, rgba(74, 197, 109, 0.18), rgba(74, 197, 109, 0.12));
+        }
+
+        .zones-live-strip {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            padding: 10px 12px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            background: linear-gradient(135deg, rgba(22, 215, 203, 0.08), rgba(25, 33, 48, 0.94));
+            box-shadow: var(--shadow-soft);
+        }
+        .zones-pill-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .zone-live-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 5px 10px;
+            border: 1px solid var(--border-subtle);
+            border-radius: 999px;
+            background: rgba(33, 44, 64, 0.9);
+            color: var(--text-secondary);
+            transition: border-color var(--anim-fast), background var(--anim-fast), color var(--anim-fast);
+        }
+        .zone-live-pill-active {
+            border-color: rgba(74, 197, 109, 0.55);
+            background: rgba(40, 92, 64, 0.34);
+            color: #e9fff0;
+        }
+        .zone-live-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            box-shadow: 0 0 6px rgba(127, 139, 163, 0.6);
+        }
+        .zone-live-pill-active .zone-live-dot {
+            background: var(--success);
+            box-shadow: 0 0 8px rgba(74, 197, 109, 0.8);
+        }
+        .zone-live-label {
+            font-size: 0.78rem;
+            letter-spacing: 0.01em;
+            color: inherit;
+        }
+        .zone-live-state {
+            font-size: 0.74rem;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            color: inherit;
+        }
+        .zones-live-meta {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-left: auto;
+        }
+        .zones-meta-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            background: rgba(28, 37, 52, 0.84);
+            color: var(--text-secondary);
+            padding: 4px 8px;
+            font-size: 0.78rem;
+            white-space: nowrap;
+        }
+        .zones-meta-item strong {
+            color: #f3c26a;
+            font-weight: 700;
+        }
+        .zones-report-state {
+            border-radius: 999px;
+            border: 1px solid var(--border-subtle);
+            padding: 2px 8px;
+            font-weight: 700;
+            font-size: 0.73rem;
+            letter-spacing: 0.02em;
+        }
+        .zones-report-on {
+            color: #062315;
+            background: var(--success);
+            border-color: var(--success);
+        }
+        .zones-report-off {
+            color: var(--text-secondary);
+            background: rgba(43, 55, 78, 0.92);
+            border-color: #50607e;
+        }
 
         /* Toasts */
         #toastContainer { position: fixed; right: 18px; bottom: 18px; z-index: 2500; display: flex; flex-direction: column; gap: 8px; pointer-events: none; max-width: min(420px, 85vw); }
@@ -247,13 +403,46 @@
         }
 
         /* Chart & Table */
+        #chartContainer {
+            border: 1px solid rgba(22, 215, 203, 0.25);
+            background: linear-gradient(180deg, rgba(20, 27, 40, 0.96) 0%, rgba(16, 22, 34, 0.96) 100%);
+        }
+        #chartContainer > summary {
+            font-size: 0.95em;
+            letter-spacing: 0.01em;
+        }
         #chart {
             width: 100%;
-            flex-grow: 1;
+            height: 100%;
             min-height: 440px;
             border-radius: var(--radius-lg);
-            border: 1px solid rgba(22, 215, 203, 0.28);
+            border: 1px solid rgba(22, 215, 203, 0.2);
             box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03), var(--shadow-panel);
+        }
+        .chart-canvas-wrap {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+        .map-standby-chip {
+            position: absolute;
+            left: 14px;
+            bottom: 14px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-subtle);
+            background: rgba(16, 23, 34, 0.86);
+            backdrop-filter: blur(4px);
+            color: var(--text-muted);
+            font-size: 0.77rem;
+            padding: 5px 9px;
+            pointer-events: none;
+            opacity: 0;
+            transform: translateY(2px);
+            transition: opacity var(--anim-fast), transform var(--anim-fast);
+        }
+        .map-standby-chip.visible {
+            opacity: 1;
+            transform: translateY(0);
         }
         
         .table-container {
@@ -267,6 +456,55 @@
         th { background: linear-gradient(135deg, var(--accent), var(--accent-strong)); color: #0f161f; padding: 8px; font-weight: bold; }
         td { padding: 8px; border-bottom: 1px solid var(--border-subtle); }
         .no-data { padding: 15px; font-style: italic; color: var(--text-muted); }
+        .target-table th { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; }
+        .target-table td { font-size: 0.84rem; color: #dbe4f1; }
+        .target-id-cell { text-align: left; }
+        .target-id-tag {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 26px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(22, 215, 203, 0.5);
+            background: rgba(22, 215, 203, 0.12);
+            color: var(--accent);
+            font-weight: 700;
+            font-size: 0.78rem;
+        }
+        .target-num {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            color: #c6d4e8;
+        }
+        .doppler-cell {
+            text-align: left;
+        }
+        .doppler-badge {
+            display: inline-flex;
+            align-items: center;
+            border-radius: var(--radius-sm);
+            padding: 3px 8px;
+            font-size: 0.74rem;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            border: 1px solid transparent;
+        }
+        .doppler-stationary {
+            background: rgba(22, 215, 203, 0.14);
+            border-color: rgba(22, 215, 203, 0.38);
+            color: #9ef8ef;
+        }
+        .doppler-moving {
+            background: rgba(240, 170, 82, 0.14);
+            border-color: rgba(240, 170, 82, 0.44);
+            color: #ffd8a4;
+        }
+        .doppler-approaching {
+            background: rgba(74, 197, 109, 0.15);
+            border-color: rgba(74, 197, 109, 0.45);
+            color: #c7ffd6;
+        }
 
         /* Collapsible Sections */
         details { background: var(--bg-elev-2); border-radius: var(--radius-md); border: 1px solid var(--border-subtle); box-shadow: var(--shadow-soft); }
@@ -281,9 +519,10 @@
         #chartContainer[open] .config-content {
             display: flex;
             flex-direction: column;
-            height: 58vh;
+            height: 60vh;
             padding: 0;
             overflow: hidden;
+            position: relative;
         }
 
         /* Config Groups */
@@ -359,6 +598,17 @@
             background: linear-gradient(135deg, var(--accent), var(--accent-strong));
             color: #091319;
             transform: translateY(-1px);
+        }
+        .cmd-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            filter: grayscale(0.15);
+        }
+        .cmd-btn:disabled:hover {
+            border-color: var(--border-strong);
+            background: linear-gradient(180deg, #2a3449 0%, #222c3e 100%);
+            color: var(--text-primary);
         }
         .btn-danger { border-color: #d86e6e; }
         .btn-danger:hover { background: linear-gradient(135deg, #ff6f6f, #e24f4f); color: #1f0909; border-color: #ff7b7b; }
@@ -445,15 +695,25 @@
             .table-container { width: 100%; margin-bottom: 15px; }
             table { min-width: unset; font-size: 0.8rem; }
             th, td { padding: 6px 3px; }
-            .header { padding: 5px 10px; }
-            .header h2 { display: none; } 
+            .header { padding: 7px 10px; flex-wrap: wrap; gap: 8px; }
+            .header h2 { display: none; }
             .header-logo { height: 18px; }
-            .header-controls { width: 100%; justify-content: space-between; }
-            select#deviceSelect { flex-grow: 1; max-width: unset; margin-right: 5px; }
-            .tab-bar { gap: 6px; padding: 8px 10px; }
-            .tab-btn { padding: 5px 10px; font-size: 0.8em; }
+            .header-controls { width: 100%; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+            .header-device-wrap { flex: 1 1 180px; width: auto; }
+            select#deviceSelect { flex-grow: 1; max-width: unset; margin-right: 0; }
+            .header-right { margin-left: 0; width: 100%; justify-content: space-between; flex-wrap: wrap; }
+            .status-chip { font-size: 0.72rem; padding: 4px 8px; }
+            .btn-force-sync { width: 100%; justify-content: center; }
+            .status-bar { padding: 6px 10px; }
+            .tab-bar { gap: 4px; padding: 0 10px; }
+            .tab-btn { padding: 8px 10px; font-size: 0.79em; }
             .dirty-bar { padding: 8px 10px; flex-wrap: wrap; }
             .dirty-actions { width: 100%; justify-content: flex-end; }
+            .dirty-btn { min-width: 88px; }
+            .zones-live-strip { padding: 8px 10px; }
+            .zones-live-meta { width: 100%; margin-left: 0; justify-content: flex-start; }
+            .zones-meta-item { font-size: 0.74rem; }
+            .map-standby-chip { left: 10px; bottom: 10px; font-size: 0.72rem; }
         }
     </style>
 </head>
@@ -464,16 +724,20 @@
             <h2>Inovelli Switch Studio</h2>
         </div>
         <div class="header-controls">
-            <select id="deviceSelect"><option value="" disabled selected>Loading devices...</option></select>
-            <button class="cmd-btn" id="btnForceSync" onclick="handleForceSyncClick()">Force Sync</button>
+            <div class="header-device-wrap">
+                <select id="deviceSelect"><option value="" disabled selected>Loading devices...</option></select>
+            </div>
+            <div class="header-right">
+                <span class="status-chip"><span class="status-dot"></span>Connected</span>
+                <button class="cmd-btn btn-force-sync" id="btnForceSync" onclick="handleForceSyncClick()">Force Sync</button>
+            </div>
         </div>
     </div>
 
     <div class="status-bar">
-        <span id="statusDiv">Waiting for connection...</span> | 
-        <span id="packetInfo">Awaiting data...</span> |
-        <span>Last Packet: <span id="timestamp">--:--:--</span></span>
-        <span id="packetAge"></span>
+        <span class="status-item" id="statusDiv">Waiting for connection...</span>
+        <span class="status-item" id="packetInfo">Awaiting data...</span>
+        <span class="status-item">Last packet: <span id="timestamp">--:--:--</span> <span id="packetAge"></span></span>
     </div>
 
     <div class="tab-bar" id="tabBar" role="tablist" aria-label="Inovelli Switch Studio tabs">
@@ -499,6 +763,19 @@
         <div class="main-content">
             <div id="nonMmwaveWarning" data-tab-panels="zones,load,led,buttons,power,advanced">WARNING: Standard Switch Detected<br><span style="font-size: 0.8em; font-weight: normal;">This device does not have mmWave hardware.</span></div>
 
+            <div class="zones-live-strip" data-tab-panels="zones">
+                <div class="zones-pill-row">
+                    <span id="area1Pill" class="zone-live-pill"><span class="zone-live-dot"></span><span class="zone-live-label">Area 1 (Primary)</span><span id="area1PillState" class="zone-live-state">CLEAR</span></span>
+                    <span id="area2Pill" class="zone-live-pill"><span class="zone-live-dot"></span><span class="zone-live-label">Area 2</span><span id="area2PillState" class="zone-live-state">CLEAR</span></span>
+                    <span id="area3Pill" class="zone-live-pill"><span class="zone-live-dot"></span><span class="zone-live-label">Area 3</span><span id="area3PillState" class="zone-live-state">CLEAR</span></span>
+                    <span id="area4Pill" class="zone-live-pill"><span class="zone-live-dot"></span><span class="zone-live-label">Area 4</span><span id="area4PillState" class="zone-live-state">CLEAR</span></span>
+                </div>
+                <div class="zones-live-meta">
+                    <span class="zones-meta-item">Illuminance <strong id="stripIlluminanceVal">-- lx</strong></span>
+                    <span class="zones-meta-item">Target Reporting <span id="stripTargetReportState" class="zones-report-state zones-report-off">OFF</span></span>
+                </div>
+            </div>
+
             <div class="target-report-card" data-tab-panels="zones">
                 <div class="target-report-row">
                     <div>
@@ -522,12 +799,15 @@
             <details open id="chartContainer" data-tab-panels="zones">
                 <summary>Live Radar Map</summary>
                 <div class="config-content">
-                    <div id="chart"></div>
+                    <div class="chart-canvas-wrap">
+                        <div id="chart"></div>
+                        <div class="map-standby-chip" id="mapStandbyChip">Standby: all occupancy areas clear.</div>
+                    </div>
                 </div>
             </details>
 
             <div class="table-container" data-tab-panels="zones">
-                <table>
+                <table class="target-table">
                     <thead>
                         <tr>
                             <th>Target ID</th>
@@ -811,6 +1091,9 @@
         const targetReportAutoOffToggle = document.getElementById('targetReportAutoOffToggle');
         const targetReportState = document.getElementById('targetReportState');
         const targetReportValueLabel = document.getElementById('targetReportValueLabel');
+        const stripIlluminanceVal = document.getElementById('stripIlluminanceVal');
+        const stripTargetReportState = document.getElementById('stripTargetReportState');
+        const mapStandbyChip = document.getElementById('mapStandbyChip');
         const TARGET_REPORT_AUTO_OFF_STORAGE_KEY = 'switchStudio.targetReportAutoOff';
 
         // Visualizer Scale Inputs
@@ -891,6 +1174,31 @@
             return null;
         }
 
+        function setAreaStatusIndicators(areaIndex, isDetected) {
+            const badge = document.getElementById(`area${areaIndex}Val`);
+            const pill = document.getElementById(`area${areaIndex}Pill`);
+            const pillState = document.getElementById(`area${areaIndex}PillState`);
+            const active = isDetected === true;
+            const stateText = active ? 'DETECTED' : 'CLEAR';
+
+            if (badge) {
+                badge.innerText = stateText;
+                badge.className = active ? 'zone-badge zone-active' : 'zone-badge';
+            }
+            if (pillState) {
+                pillState.textContent = stateText;
+            }
+            if (pill) {
+                pill.classList.toggle('zone-live-pill-active', active);
+            }
+        }
+
+        function setMapStandbyState(isStandby, message) {
+            if (!mapStandbyChip) return;
+            if (message) mapStandbyChip.textContent = message;
+            mapStandbyChip.classList.toggle('visible', !!isStandby);
+        }
+
         function hasActiveOccupancy() {
             const states = Object.values(occupancyState).filter(v => v === true || v === false);
             if (states.length === 0) return true;
@@ -898,8 +1206,9 @@
         }
 
         function clearTargetsForOccupancyGate() {
+            setMapStandbyState(true, 'Standby: all occupancy areas clear.');
             if (zoneModule && typeof zoneModule.clearTargetVisualization === 'function') {
-                zoneModule.clearTargetVisualization('Standby: all occupancy areas clear');
+                zoneModule.clearTargetVisualization('Standby: all occupancy areas clear.');
                 return;
             }
             targetHistory = {};
@@ -1006,6 +1315,11 @@
                 targetReportState.textContent = isEnabled ? 'ON' : 'OFF';
                 targetReportState.classList.toggle('target-report-state-on', isEnabled);
                 targetReportState.classList.toggle('target-report-state-off', !isEnabled);
+            }
+            if (stripTargetReportState) {
+                stripTargetReportState.textContent = isEnabled ? 'ON' : 'OFF';
+                stripTargetReportState.classList.toggle('zones-report-on', isEnabled);
+                stripTargetReportState.classList.toggle('zones-report-off', !isEnabled);
             }
             if (targetReportValueLabel) {
                 const normalized = String(rawValue || '').trim();
@@ -2550,13 +2864,15 @@
             
             occupancyVal.innerText = "Waiting..."; occupancyVal.className = "sensor-val badge-clear";
             illuminanceVal.innerText = "-- lx";
+            if (stripIlluminanceVal) stripIlluminanceVal.innerText = "-- lx";
             occupancyState = { global: null, area1: null, area2: null, area3: null, area4: null };
+            setTargetReportingState(false, 'Disable');
             
             // Reset Zone Indicators
             for(let i=1; i<=4; i++) {
-                const badge = document.getElementById(`area${i}Val`);
-                if(badge) { badge.innerText = "CLEAR"; badge.className = "zone-badge"; }
+                setAreaStatusIndicators(i, false);
             }
+            setMapStandbyState(false, 'Standby: all occupancy areas clear.');
 
             // Reset Visualization
             if (zoneModule && typeof zoneModule.resetHistory === 'function') {
@@ -2684,6 +3000,7 @@
             }
             if ("illuminance" in config) {
                 illuminanceVal.innerText = `${config.illuminance} lx`;
+                if (stripIlluminanceVal) stripIlluminanceVal.innerText = `${config.illuminance} lx`;
             }
             if ("mmWaveTargetInfoReport" in config) {
                 const enabled = parseTargetReportingEnabled(config.mmWaveTargetInfoReport);
@@ -2694,20 +3011,17 @@
             for(let i=1; i<=4; i++) {
                 const snakeKey = `mmwave_area${i}_occupancy`;
                 const camelKey = `area${i}Occupancy`;
-                const badge = document.getElementById(`area${i}Val`);
                 let rawVal = null;
                 if (snakeKey in config) rawVal = config[snakeKey];
                 else if (camelKey in config) rawVal = config[camelKey];
 
-                if(rawVal !== null && badge) {
+                if(rawVal !== null) {
                     const parsedArea = parseOccupancyValue(rawVal);
                     if(parsedArea === true) {
-                        badge.innerText = "DETECTED";
-                        badge.className = "zone-badge zone-active";
+                        setAreaStatusIndicators(i, true);
                         occupancyState[`area${i}`] = true;
                     } else if (parsedArea === false) {
-                        badge.innerText = "CLEAR";
-                        badge.className = "zone-badge";
+                        setAreaStatusIndicators(i, false);
                         occupancyState[`area${i}`] = false;
                     }
                 }
@@ -2715,6 +3029,8 @@
 
             if (!hasActiveOccupancy()) {
                 clearTargetsForOccupancyGate();
+            } else {
+                setMapStandbyState(false, 'Standby: all occupancy areas clear.');
             }
 
             // 3. CHECK DEVICE TYPE (Fixed: Allow partial updates)
@@ -2959,6 +3275,7 @@
                 clearTargetsForOccupancyGate();
                 return;
             }
+            setMapStandbyState(false, 'Standby: all occupancy areas clear.');
 
             updateTimestamp();
             packetInfo.innerText = `Targets Visible: ${data.targets.length}`;
@@ -3017,11 +3334,17 @@
 
             dataTableBody.innerHTML = '';
             data.targets.forEach(t => {
-                let dopStatus = "Stationary", dopColor = "#888";
-                if (t.dop > 10) { dopStatus = `Moving Away (${t.dop})`; dopColor = "#ff9800"; }
-                else if (t.dop < -10) { dopStatus = `Approaching (${t.dop})`; dopColor = "#4caf50"; }
+                let dopStatus = "Stationary";
+                let dopClass = "doppler-stationary";
+                if (t.dop > 10) {
+                    dopStatus = `Moving Away (${t.dop})`;
+                    dopClass = "doppler-moving";
+                } else if (t.dop < -10) {
+                    dopStatus = `Approaching (${t.dop})`;
+                    dopClass = "doppler-approaching";
+                }
 
-                dataTableBody.innerHTML += `<tr><td style="font-weight: bold; color: #00bcd4;">${t.id}</td><td>${t.x} cm</td><td>${t.y} cm</td><td>${t.z} cm</td><td style="color: ${dopColor}; font-weight: bold;">${dopStatus}</td></tr>`;
+                dataTableBody.innerHTML += `<tr><td class="target-id-cell"><span class="target-id-tag">${t.id}</span></td><td class="target-num">${t.x} cm</td><td class="target-num">${t.y} cm</td><td class="target-num">${t.z} cm</td><td class="doppler-cell"><span class="doppler-badge ${dopClass}">${dopStatus}</span></td></tr>`;
             });
         });
 
