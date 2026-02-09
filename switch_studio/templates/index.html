@@ -316,8 +316,15 @@
         .panel-lede {
             margin-bottom: 10px;
             font-size: 0.83em;
-            color: #9bc1cc;
+            color: #9ec0ce;
             line-height: 1.45;
+        }
+        details[data-tab-panels="load"],
+        details[data-tab-panels="led"],
+        details[data-tab-panels="buttons"],
+        details[data-tab-panels="power"],
+        details[data-tab-panels="advanced"] {
+            background: linear-gradient(180deg, rgba(30, 39, 56, 0.95) 0%, rgba(25, 33, 48, 0.97) 100%);
         }
 
         .zones-live-strip {
@@ -586,7 +593,14 @@
         .config-title { font-weight: bold; color: var(--accent); margin-bottom: 10px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 5px; font-size: 0.95em; }
 
         /* Inputs */
-        .input-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 0.9em; }
+        .input-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(138px, 188px);
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 9px;
+            font-size: 0.9em;
+        }
         .input-row label { color: #d4dceb; min-width: 0; line-height: 1.2; overflow-wrap: anywhere; }
         input[type="number"] {
             width: 130px;
@@ -606,8 +620,8 @@
             border-radius: var(--radius-sm);
             transition: border-color var(--anim-fast), box-shadow var(--anim-fast);
         }
-        .control-select { width: 142px; margin-top: 5px; padding: 3px; }
-        .full-width-select { width: 100%; max-width: 100%; box-sizing: border-box; margin-top: 5px; padding: 5px; }
+        .control-select { width: 100%; margin-top: 2px; padding: 4px; }
+        .full-width-select { width: 100%; max-width: 100%; box-sizing: border-box; margin-top: 2px; padding: 5px; }
         .control-select:hover,
         .control-select:focus-visible,
         .full-width-select:hover,
@@ -688,7 +702,48 @@
         .command-log-entry.log-error { color: var(--danger); }
         .command-log-entry.log-info { color: #bbb; }
 
-        .schema-section-title { font-size: 0.85em; color: #9edee8; margin: 8px 0 6px 0; border-bottom: 1px dashed #3a3a3a; padding-bottom: 4px; }
+        .schema-fields-shell {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .schema-loading-note {
+            font-size: 0.9em;
+            color: #92a3bc;
+        }
+        .schema-section-block {
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            background: linear-gradient(180deg, rgba(29, 38, 55, 0.92) 0%, rgba(24, 31, 46, 0.94) 100%);
+            padding: 9px 10px 8px;
+        }
+        .schema-section-title {
+            font-size: 0.76em;
+            color: #a8e7f0;
+            margin: 0 0 8px 0;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            border-bottom: 1px dashed rgba(141, 185, 203, 0.36);
+            padding-bottom: 5px;
+        }
+        .schema-description {
+            font-size: 0.78em;
+            color: #8f9db2;
+            margin-top: -4px;
+            margin-bottom: 8px;
+            line-height: 1.35;
+        }
+        .schema-empty-note {
+            font-size: 0.88em;
+            color: #96a7c0;
+            padding: 2px 0;
+        }
+        .schema-readonly-value {
+            font-family: Consolas, "Courier New", monospace;
+            color: var(--accent);
+            font-weight: 700;
+            justify-self: end;
+        }
         .schema-composite-block { border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 8px; margin-bottom: 8px; background: #1b2433; }
         .schema-composite-title { color: var(--accent); font-weight: 600; margin-bottom: 6px; font-size: 0.86em; }
         .schema-composite-note { color: var(--text-muted); font-size: 0.78em; margin-top: 4px; }
@@ -771,6 +826,9 @@
             .zones-meta-item { font-size: 0.74rem; }
             .zones-sidebar-tabs { overflow-x: auto; padding: 5px; }
             .zones-sidebar-tab { min-width: 126px; flex: 0 0 auto; }
+            .input-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+            .control-select,
+            .full-width-select { width: 100%; }
             .map-standby-chip { left: 10px; bottom: 10px; font-size: 0.72rem; }
         }
     </style>
@@ -978,8 +1036,8 @@
                     <div class="panel-lede">
                         Core motion behavior settings for occupancy timing, sensitivity, and load control.
                     </div>
-                    <div id="schemaPresenceFields">
-                        <div style="font-size: 0.9em; color: #888;">Loading schema...</div>
+                    <div id="schemaPresenceFields" class="schema-fields-shell">
+                        <div class="schema-loading-note">Loading controls...</div>
                     </div>
                 </div>
             </details>
@@ -1065,37 +1123,41 @@
             </div>
 
             <details open class="mobile-collapsed" data-tab-panels="load">
-                <summary>Load & Dimming (Schema)</summary>
+                <summary>Load & Dimming</summary>
                 <div class="config-content">
-                    <div id="schemaLoadFields">
-                        <div style="font-size: 0.9em; color: #888;">Loading schema...</div>
+                    <div class="panel-lede">Frequently adjusted dimming behavior, ramp timing, and paddle response settings.</div>
+                    <div id="schemaLoadFields" class="schema-fields-shell">
+                        <div class="schema-loading-note">Loading controls...</div>
                     </div>
                 </div>
             </details>
 
             <details open class="mobile-collapsed" data-tab-panels="led">
-                <summary>LED & Notifications (Schema)</summary>
+                <summary>LED & Notifications</summary>
                 <div class="config-content">
-                    <div id="schemaLedFields">
-                        <div style="font-size: 0.9em; color: #888;">Loading schema...</div>
+                    <div class="panel-lede">Color presets, brightness levels, and notification effects that users tend to tune often.</div>
+                    <div id="schemaLedFields" class="schema-fields-shell">
+                        <div class="schema-loading-note">Loading controls...</div>
                     </div>
                 </div>
             </details>
 
             <details open class="mobile-collapsed" data-tab-panels="buttons">
-                <summary>Buttons & Scenes (Schema)</summary>
+                <summary>Buttons & Scenes</summary>
                 <div class="config-content">
-                    <div id="schemaButtonFields">
-                        <div style="font-size: 0.9em; color: #888;">Loading schema...</div>
+                    <div class="panel-lede">Tap and scene behavior mappings for paddle actions and automation events.</div>
+                    <div id="schemaButtonFields" class="schema-fields-shell">
+                        <div class="schema-loading-note">Loading controls...</div>
                     </div>
                 </div>
             </details>
 
             <details open class="mobile-collapsed" data-tab-panels="power">
-                <summary>Power & Device (Schema)</summary>
+                <summary>Power & Device</summary>
                 <div class="config-content">
-                    <div id="schemaPowerFields">
-                        <div style="font-size: 0.9em; color: #888;">Loading schema...</div>
+                    <div class="panel-lede">Power reporting, protection, and device-level operational settings.</div>
+                    <div id="schemaPowerFields" class="schema-fields-shell">
+                        <div class="schema-loading-note">Loading controls...</div>
                     </div>
                 </div>
             </details>
@@ -1103,11 +1165,11 @@
             <details open class="mobile-collapsed" data-tab-panels="advanced">
                 <summary>Advanced Settings</summary>
                 <div class="config-content">
-                    <div style="font-size: 0.84em; color: #93b4bc; margin-bottom: 10px;">
+                    <div class="panel-lede">
                         Set-and-forget settings. Most users only need to change these during initial setup.
                     </div>
-                    <div id="schemaAdvancedFields">
-                        <div style="font-size: 0.9em; color: #888;">Loading advanced settings...</div>
+                    <div id="schemaAdvancedFields" class="schema-fields-shell">
+                        <div class="schema-loading-note">Loading advanced settings...</div>
                     </div>
                 </div>
             </details>
@@ -1115,11 +1177,11 @@
             <details open class="mobile-collapsed" data-tab-panels="advanced">
                 <summary>Fan Parameters (May Not Apply)</summary>
                 <div class="config-content">
-                    <div style="font-size: 0.84em; color: #ffcc80; margin-bottom: 10px;">
+                    <div class="panel-lede" style="color: #ffcc80;">
                         These values are shared firmware fields and may not function on VZM32-SN.
                     </div>
-                    <div id="schemaFanFields">
-                        <div style="font-size: 0.9em; color: #888;">Loading fan-related fields...</div>
+                    <div id="schemaFanFields" class="schema-fields-shell">
+                        <div class="schema-loading-note">Loading fan-related fields...</div>
                     </div>
                 </div>
             </details>
@@ -2159,10 +2221,7 @@
         function createSchemaDescriptionRow(text, parent) {
             if (!text) return;
             const desc = document.createElement('div');
-            desc.style.fontSize = '0.78em';
-            desc.style.color = '#777';
-            desc.style.marginTop = '-4px';
-            desc.style.marginBottom = '8px';
+            desc.className = 'schema-description';
             desc.textContent = text;
             parent.appendChild(desc);
         }
@@ -2170,16 +2229,14 @@
         function createReadOnlyValueElement(field) {
             const readOnlyVal = document.createElement('span');
             readOnlyVal.id = field.name;
-            readOnlyVal.className = 'sensor-val';
-            readOnlyVal.style.fontFamily = 'monospace';
-            readOnlyVal.style.color = '#00bcd4';
+            readOnlyVal.className = 'sensor-val schema-readonly-value';
             readOnlyVal.innerText = '--';
             return readOnlyVal;
         }
 
         function createSchemaFieldRow(field) {
             const row = document.createElement('div');
-            row.className = 'input-row';
+            row.className = 'input-row schema-field-row';
 
             const label = document.createElement('label');
             label.setAttribute('for', field.name);
@@ -2298,7 +2355,7 @@
             features.forEach(feature => {
                 if (!feature || !feature.name || feature.type === 'composite') return;
                 const row = document.createElement('div');
-                row.className = 'input-row';
+                row.className = 'input-row schema-field-row';
 
                 const label = document.createElement('label');
                 label.setAttribute('for', getCompositeFeatureInputId(field.name, feature.name));
@@ -2353,9 +2410,10 @@
         function renderSchemaFieldCollection(container, fields, emptyMessage) {
             if (!container) return;
             container.innerHTML = '';
+            container.classList.add('schema-fields-shell');
 
             if (!fields || fields.length === 0) {
-                container.innerHTML = `<div style="font-size: 0.9em; color: #888;">${emptyMessage}</div>`;
+                container.innerHTML = `<div class="schema-empty-note">${emptyMessage}</div>`;
                 return;
             }
 
@@ -2367,29 +2425,34 @@
             });
 
             Object.keys(grouped).forEach(section => {
+                const sectionBlock = document.createElement('div');
+                sectionBlock.className = 'schema-section-block';
+
                 const sectionTitle = document.createElement('div');
                 sectionTitle.className = 'schema-section-title';
                 sectionTitle.textContent = section;
-                container.appendChild(sectionTitle);
+                sectionBlock.appendChild(sectionTitle);
 
                 grouped[section].forEach(field => {
                     schemaFieldMap[field.name] = field;
 
                     if (field.type === 'composite') {
                         schemaCompositeMap[field.name] = field;
-                        renderCompositeField(field, container);
+                        renderCompositeField(field, sectionBlock);
                         return;
                     }
 
-                    container.appendChild(createSchemaFieldRow(field));
-                    createSchemaDescriptionRow(getConciseFieldDescription(field), container);
+                    sectionBlock.appendChild(createSchemaFieldRow(field));
+                    createSchemaDescriptionRow(getConciseFieldDescription(field), sectionBlock);
                 });
+
+                container.appendChild(sectionBlock);
             });
         }
 
         function renderAllSchemaFields() {
             if (!schemaModel || !Array.isArray(schemaModel.fields)) {
-                const unavailable = '<div style="font-size: 0.9em; color: #888;">Schema unavailable.</div>';
+                const unavailable = '<div class="schema-empty-note">Schema unavailable.</div>';
                 if (schemaPresenceFields) schemaPresenceFields.innerHTML = unavailable;
                 if (schemaLoadFields) schemaLoadFields.innerHTML = unavailable;
                 if (schemaLedFields) schemaLedFields.innerHTML = unavailable;
