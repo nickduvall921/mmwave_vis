@@ -178,28 +178,6 @@
             transform: translateY(-1px);
         }
         
-        .status-bar {
-            font-size: 0.84em;
-            color: var(--text-muted);
-            background: rgba(20, 27, 39, 0.95);
-            padding: 6px 12px;
-            display: flex;
-            justify-content: flex-start;
-            gap: 8px;
-            align-items: center;
-            border-bottom: 1px solid var(--border-subtle);
-            overflow-x: auto;
-        }
-        .status-item {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 4px 8px;
-            border-radius: var(--radius-sm);
-            border: 1px solid var(--border-subtle);
-            background: rgba(31, 40, 57, 0.9);
-            white-space: nowrap;
-        }
         #statusDiv { color: var(--text-secondary); }
         #packetInfo { color: var(--accent); font-weight: 700; }
         #timestamp { color: var(--warning); font-family: monospace; }
@@ -246,14 +224,17 @@
             align-items: center;
             gap: 10px;
             background: rgba(22, 29, 42, 0.95);
-            border-bottom: 1px solid var(--border-subtle);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
             padding: 8px 12px;
             color: var(--text-muted);
             position: sticky;
-            top: 0;
-            z-index: 8;
+            bottom: 0;
+            margin-top: auto;
+            z-index: 6;
+            box-shadow: 0 -8px 18px rgba(0, 0, 0, 0.18);
         }
-        .dirty-bar.dirty-active { color: #ffd59c; border-bottom-color: var(--warning); }
+        .dirty-bar.dirty-active { color: #ffd59c; border-color: var(--warning); }
         .dirty-actions { display: flex; gap: 8px; }
         .dirty-btn {
             border-radius: var(--radius-sm);
@@ -415,6 +396,24 @@
             color: #f3c26a;
             font-weight: 700;
         }
+        .zones-report-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            background: rgba(28, 37, 52, 0.84);
+            color: var(--text-secondary);
+            padding: 4px 8px;
+            font-size: 0.78rem;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+        .zones-report-toggle input[type="checkbox"] {
+            transform: scale(1.05);
+            margin: 0;
+            cursor: pointer;
+        }
         .zones-report-state {
             border-radius: 999px;
             border: 1px solid var(--border-subtle);
@@ -478,10 +477,17 @@
         #chartContainer {
             border: 1px solid rgba(22, 215, 203, 0.25);
             background: linear-gradient(180deg, rgba(20, 27, 40, 0.96) 0%, rgba(16, 22, 34, 0.96) 100%);
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            box-shadow: var(--shadow-panel);
         }
-        #chartContainer > summary {
+        #chartContainer .chart-panel-title {
             font-size: 0.95em;
             letter-spacing: 0.01em;
+            font-weight: 700;
+            color: var(--accent);
+            padding: 12px;
+            border-bottom: 1px solid var(--border-subtle);
         }
         #chart {
             width: 100%;
@@ -588,7 +594,7 @@
         .config-content { padding: 12px; }
 
         /* Radar Container needs flex to handle Plotly resizing */
-        #chartContainer[open] .config-content {
+        #chartContainer .config-content {
             display: flex;
             flex-direction: column;
             height: 60vh;
@@ -761,15 +767,6 @@
         .slider-control input[type="range"] { width: 128px; accent-color: var(--accent); }
         .slider-value { min-width: 42px; text-align: right; color: #9edee8; font-family: Consolas, 'Courier New', monospace; font-size: 0.8em; }
 
-        .target-report-card { background: linear-gradient(135deg, rgba(22, 215, 203, 0.14), rgba(22, 29, 42, 0.94)); border: 1px solid rgba(22, 215, 203, 0.45); border-radius: var(--radius-md); padding: 10px 12px; box-shadow: var(--shadow-soft); }
-        .target-report-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-        .target-report-meta { display: flex; align-items: center; gap: 8px; color: #9edee8; font-size: 0.86em; }
-        .target-report-state { font-weight: 700; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border-strong); color: var(--text-secondary); }
-        .target-report-state-on { color: #0f1812; border-color: var(--success); background: var(--success); }
-        .target-report-state-off { color: var(--text-primary); border-color: #5d6b85; background: #334058; }
-        .target-report-control { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-size: 0.88em; }
-        .target-report-control input[type="checkbox"] { transform: scale(1.08); cursor: pointer; }
-
         #zoneStatus { display: none; position: fixed; top: 20px; right: 20px; background: var(--bg-elev-3); color: var(--text-primary); padding: 15px 20px; border-radius: var(--radius-md); z-index: 1000; border: 1px solid var(--border-strong); box-shadow: var(--shadow-panel); }
 
         /* Non-mmWave Overlay Warning */
@@ -810,7 +807,7 @@
             .app-container { display: block; overflow-y: auto; -webkit-overflow-scrolling: touch; }
             .main-content { overflow: visible; height: auto; flex: none; padding-bottom: 20px; }
             .sidebar { border-left: none; border-top: 1px solid var(--border-subtle); height: auto; overflow: visible; flex: none; padding-bottom: 40px; }
-            #chartContainer[open] .config-content { height: 350px; }
+            #chartContainer .config-content { height: 350px; }
             #chart { min-height: 0; height: 100%; }
             .table-container { width: 100%; margin-bottom: 15px; }
             table { min-width: unset; font-size: 0.8rem; }
@@ -824,7 +821,6 @@
             .header-right { margin-left: 0; width: 100%; justify-content: space-between; flex-wrap: wrap; }
             .status-chip { font-size: 0.72rem; padding: 4px 8px; }
             .btn-force-sync { width: 100%; justify-content: center; }
-            .status-bar { padding: 6px 10px; }
             .tab-bar { gap: 4px; padding: 0 10px; }
             .tab-btn { padding: 8px 10px; font-size: 0.79em; }
             .dirty-bar { padding: 8px 10px; flex-wrap: wrap; }
@@ -859,12 +855,6 @@
         </div>
     </div>
 
-    <div class="status-bar">
-        <span class="status-item" id="statusDiv">Waiting for connection...</span>
-        <span class="status-item" id="packetInfo">Awaiting data...</span>
-        <span class="status-item">Last packet: <span id="timestamp">--:--:--</span> <span id="packetAge"></span></span>
-    </div>
-
     <div class="tab-bar" id="tabBar" role="tablist" aria-label="Inovelli Switch Studio tabs">
         <button class="tab-btn" type="button" data-tab-target="zones" role="tab" aria-selected="true">Presence & Zones</button>
         <button class="tab-btn" type="button" data-tab-target="load" role="tab" aria-selected="false">Load & Dimming</button>
@@ -872,13 +862,6 @@
         <button class="tab-btn" type="button" data-tab-target="buttons" role="tab" aria-selected="false">Buttons & Scenes</button>
         <button class="tab-btn" type="button" data-tab-target="power" role="tab" aria-selected="false">Power & Device</button>
         <button class="tab-btn" type="button" data-tab-target="advanced" role="tab" aria-selected="false">Advanced</button>
-    </div>
-    <div class="dirty-bar" id="dirtyBar">
-        <span id="dirtyText">No pending changes</span>
-        <div class="dirty-actions">
-            <button class="dirty-btn" id="btnDiscardChanges" type="button" disabled>Discard</button>
-            <button class="dirty-btn apply-btn" id="btnApplyChanges" type="button" disabled>Apply</button>
-        </div>
     </div>
 
     <div id="zoneStatus"></div>
@@ -897,39 +880,26 @@
                 </div>
                 <div class="zones-live-meta">
                     <span class="zones-meta-item">Illuminance <strong id="stripIlluminanceVal">-- lx</strong></span>
-                    <span class="zones-meta-item">Target Reporting <span id="stripTargetReportState" class="zones-report-state zones-report-off">OFF</span></span>
-                </div>
-            </div>
-
-            <div class="target-report-card" data-tab-panels="zones">
-                <div class="target-report-row">
-                    <div>
-                        <div class="config-title" style="margin-bottom: 6px;">Target Reporting</div>
-                        <div class="target-report-meta">
-                            <span id="targetReportState" class="target-report-state target-report-state-off">OFF</span>
-                            <span id="targetReportValueLabel">mmWaveTargetInfoReport</span>
-                        </div>
-                    </div>
-                    <label class="target-report-control">
+                    <label class="zones-report-toggle" for="targetReportToggle">
+                        <span>Target Reporting</span>
                         <input type="checkbox" id="targetReportToggle">
-                        Stream live target packets
+                        <span id="stripTargetReportState" class="zones-report-state zones-report-off">OFF</span>
                     </label>
-                    <label class="target-report-control">
-                        <input type="checkbox" id="targetReportAutoOffToggle">
-                        Auto-off on disconnect
-                    </label>
+                    <span class="zones-meta-item"><span id="statusDiv">Waiting for connection...</span></span>
+                    <span class="zones-meta-item"><span id="packetInfo">Awaiting data...</span></span>
+                    <span class="zones-meta-item">Last packet: <span id="timestamp">--:--:--</span> <span id="packetAge"></span></span>
                 </div>
             </div>
             
-            <details open id="chartContainer" data-tab-panels="zones">
-                <summary>Live Radar Map</summary>
+            <section id="chartContainer" data-tab-panels="zones">
+                <div class="chart-panel-title">Live Radar Map</div>
                 <div class="config-content">
                     <div class="chart-canvas-wrap">
                         <div id="chart"></div>
                         <div class="map-standby-chip" id="mapStandbyChip">Standby: all occupancy areas clear.</div>
                     </div>
                 </div>
-            </details>
+            </section>
 
             <div class="table-container" data-tab-panels="zones">
                 <table class="target-table">
@@ -1036,6 +1006,17 @@
                     <button class="cmd-btn btn-full btn-danger" onclick="deleteZone()" style="margin-top:5px;">Delete Selected Zone</button>
                 </div>
             </details>
+            <details open class="mobile-collapsed" data-tab-panels="zones">
+                <summary>Presence Controls</summary>
+                <div class="config-content">
+                    <div class="panel-lede">
+                        Core motion behavior settings for occupancy timing, sensitivity, and load control.
+                    </div>
+                    <div id="schemaPresenceControlsFields" class="schema-fields-shell">
+                        <div class="schema-loading-note">Loading controls...</div>
+                    </div>
+                </div>
+            </details>
             </div>
 
             <div class="zones-pane" id="zonesPaneConfig" role="tabpanel" aria-labelledby="zonesPaneTabConfig" data-zones-pane="config" data-tab-panels="zones">
@@ -1043,10 +1024,24 @@
                 <summary>Presence Configuration</summary>
                 <div class="config-content">
                     <div class="panel-lede">
-                        Core motion behavior settings for occupancy timing, sensitivity, and load control.
+                        Room profile and set-and-forget motion configuration values.
                     </div>
-                    <div id="schemaPresenceFields" class="schema-fields-shell">
+                    <div id="schemaPresenceConfigFields" class="schema-fields-shell">
                         <div class="schema-loading-note">Loading controls...</div>
+                    </div>
+                </div>
+            </details>
+            <details open class="mobile-collapsed">
+                <summary>Maintenance Tools</summary>
+                <div class="config-content">
+                    <button class="cmd-btn btn-full" onclick="sendCommand(1)">Auto-Config Interference</button>
+                    <button class="cmd-btn btn-full btn-danger" onclick="sendCommand(3)">Clear Interference</button>
+                    <div style="height: 10px;"></div>
+                    <button class="cmd-btn btn-full" onclick="sendCommand(4)">Reset Detection Zones</button>
+                    <button class="cmd-btn btn-full" onclick="sendCommand(5)">Clear Stay Zones</button>
+                    <div class="config-title" style="margin-top: 12px;">Command Feedback</div>
+                    <div id="commandLog" class="command-log">
+                        <div class="command-log-empty">No command activity yet.</div>
                     </div>
                 </div>
             </details>
@@ -1056,6 +1051,13 @@
             <details open class="mobile-collapsed">
                 <summary>Studio View Settings</summary>
                 <div class="config-content">
+                    <div style="margin-top:5px; padding-top:5px;">
+                        <div style="font-size:0.9em; font-weight:bold; color:#00bcd4; margin-bottom:5px;">Connection Behavior</div>
+                        <div class="input-row">
+                            <label for="targetReportAutoOffToggle">Auto-off reporting on disconnect:</label>
+                            <input type="checkbox" id="targetReportAutoOffToggle">
+                        </div>
+                    </div>
                     
                     <div style="margin-top:10px; padding-top:5px;">
                         <div style="font-size:0.9em; font-weight:bold; color:#00bcd4; margin-bottom:5px;">Map Visibility</div>
@@ -1113,20 +1115,6 @@
                         <div class="zone-input-group"><label>Y Max</label><input type="number" id="vizYMax" value="650"></div>
                     </div>
                     <button class="cmd-btn btn-full" onclick="updateRadarScale()" style="margin-top:5px; background: #00bcd4; color: #1a1a1a;">Update Scale</button>
-                </div>
-            </details>
-            <details open class="mobile-collapsed">
-                <summary>Maintenance Tools</summary>
-                <div class="config-content">
-                    <button class="cmd-btn btn-full" onclick="sendCommand(1)">Auto-Config Interference</button>
-                    <button class="cmd-btn btn-full btn-danger" onclick="sendCommand(3)">Clear Interference</button>
-                    <div style="height: 10px;"></div>
-                    <button class="cmd-btn btn-full" onclick="sendCommand(4)">Reset Detection Zones</button>
-                    <button class="cmd-btn btn-full" onclick="sendCommand(5)">Clear Stay Zones</button>
-                    <div class="config-title" style="margin-top: 12px;">Command Feedback</div>
-                    <div id="commandLog" class="command-log">
-                        <div class="command-log-empty">No command activity yet.</div>
-                    </div>
                 </div>
             </details>
             </div>
@@ -1195,6 +1183,14 @@
                 </div>
             </details>
 
+            <div class="dirty-bar" id="dirtyBar">
+                <span id="dirtyText">No pending changes</span>
+                <div class="dirty-actions">
+                    <button class="dirty-btn" id="btnDiscardChanges" type="button" disabled>Discard</button>
+                    <button class="dirty-btn apply-btn" id="btnApplyChanges" type="button" disabled>Apply Changes</button>
+                </div>
+            </div>
+
         </div>
     </div>
 
@@ -1229,8 +1225,6 @@
         const commandLog = document.getElementById('commandLog');
         const targetReportToggle = document.getElementById('targetReportToggle');
         const targetReportAutoOffToggle = document.getElementById('targetReportAutoOffToggle');
-        const targetReportState = document.getElementById('targetReportState');
-        const targetReportValueLabel = document.getElementById('targetReportValueLabel');
         const stripIlluminanceVal = document.getElementById('stripIlluminanceVal');
         const stripTargetReportState = document.getElementById('stripTargetReportState');
         const mapStandbyChip = document.getElementById('mapStandbyChip');
@@ -1289,7 +1283,8 @@
         const editYMax = document.getElementById('editYMax');
         const editZMin = document.getElementById('editZMin');
         const editZMax = document.getElementById('editZMax');
-        const schemaPresenceFields = document.getElementById('schemaPresenceFields');
+        const schemaPresenceControlsFields = document.getElementById('schemaPresenceControlsFields');
+        const schemaPresenceConfigFields = document.getElementById('schemaPresenceConfigFields');
         const schemaLoadFields = document.getElementById('schemaLoadFields');
         const schemaLedFields = document.getElementById('schemaLedFields');
         const schemaButtonFields = document.getElementById('schemaButtonFields');
@@ -1547,19 +1542,10 @@
             if (targetReportToggle) {
                 targetReportToggle.checked = isEnabled;
             }
-            if (targetReportState) {
-                targetReportState.textContent = isEnabled ? 'ON' : 'OFF';
-                targetReportState.classList.toggle('target-report-state-on', isEnabled);
-                targetReportState.classList.toggle('target-report-state-off', !isEnabled);
-            }
             if (stripTargetReportState) {
                 stripTargetReportState.textContent = isEnabled ? 'ON' : 'OFF';
                 stripTargetReportState.classList.toggle('zones-report-on', isEnabled);
                 stripTargetReportState.classList.toggle('zones-report-off', !isEnabled);
-            }
-            if (targetReportValueLabel) {
-                const normalized = String(rawValue || '').trim();
-                targetReportValueLabel.textContent = normalized || (isEnabled ? 'Enable' : 'Disable');
             }
         }
 
@@ -2141,6 +2127,9 @@
             'ledColorForFanControlMode',
             'singleTapBehavior'
         ]);
+        const presenceConfigOnlyFieldKeys = new Set([
+            'mmWaveRoomSizePreset'
+        ]);
 
         const advancedFieldKeys = new Set([
             // Presence set-and-forget tuning.
@@ -2497,7 +2486,8 @@
         function renderAllSchemaFields() {
             if (!schemaModel || !Array.isArray(schemaModel.fields)) {
                 const unavailable = '<div class="schema-empty-note">Schema unavailable.</div>';
-                if (schemaPresenceFields) schemaPresenceFields.innerHTML = unavailable;
+                if (schemaPresenceControlsFields) schemaPresenceControlsFields.innerHTML = unavailable;
+                if (schemaPresenceConfigFields) schemaPresenceConfigFields.innerHTML = unavailable;
                 if (schemaLoadFields) schemaLoadFields.innerHTML = unavailable;
                 if (schemaLedFields) schemaLedFields.innerHTML = unavailable;
                 if (schemaButtonFields) schemaButtonFields.innerHTML = unavailable;
@@ -2555,7 +2545,10 @@
             const advancedFields = buckets.advanced;
             const fanFields = buckets.fan;
 
-            renderSchemaFieldCollection(schemaPresenceFields, presenceFields, 'No presence controls found.');
+            const presenceControlsFields = presenceFields.filter(field => !presenceConfigOnlyFieldKeys.has(field.name));
+            const presenceConfigFields = presenceFields.filter(field => presenceConfigOnlyFieldKeys.has(field.name));
+            renderSchemaFieldCollection(schemaPresenceControlsFields, presenceControlsFields, 'No presence controls found.');
+            renderSchemaFieldCollection(schemaPresenceConfigFields, presenceConfigFields, 'No presence configuration fields found.');
             renderSchemaFieldCollection(schemaLoadFields, loadFields, 'No load or dimming controls found.');
             renderSchemaFieldCollection(schemaLedFields, ledFields, 'No LED fields found in schema.');
             renderSchemaFieldCollection(schemaButtonFields, buttonFields, 'No button or scene fields found.');
@@ -2637,12 +2630,15 @@
             // Prevent mobile keyboard from triggering layout collapse
         });
 
-        // Resize Plotly when chart is toggled open/closed
-        document.getElementById('chartContainer').addEventListener('toggle', function(event) {
-            if (event.target.open) {
-                setTimeout(() => Plotly.Plots.resize('chart'), 50);
-            }
-        });
+        // Backward-compatible resize for legacy chart containers that still use <details>.
+        const chartContainer = document.getElementById('chartContainer');
+        if (chartContainer && chartContainer.tagName === 'DETAILS') {
+            chartContainer.addEventListener('toggle', function(event) {
+                if (event.target.open) {
+                    setTimeout(() => Plotly.Plots.resize('chart'), 50);
+                }
+            });
+        }
 
         // Helper: Update Timestamp
         function updateTimestamp() {
@@ -2769,18 +2765,78 @@
         if (vizToggleDetection3) vizToggleDetection3.addEventListener('change', (e) => { showDetection3 = e.target.checked; localStorage.setItem('vizShowDetection3', showDetection3); applyVizSettings(); });
         if (vizToggleDetection4) vizToggleDetection4.addEventListener('change', (e) => { showDetection4 = e.target.checked; localStorage.setItem('vizShowDetection4', showDetection4); applyVizSettings(); });
 
+        function getFovBoundaryPoint(halfAngleDegrees, direction) {
+            const halfAngleRad = (Math.PI / 180) * halfAngleDegrees;
+            const tanHalf = Math.tan(halfAngleRad);
+            if (!Number.isFinite(tanHalf) || tanHalf <= 0) return { x: 0, y: 0 };
+
+            const yCeiling = Math.max(0, chartYMax);
+            const isRight = direction >= 0;
+            const xLimit = isRight ? Math.max(0, chartXMax) : Math.min(0, chartXMin);
+            const xAtTop = (isRight ? 1 : -1) * yCeiling * tanHalf;
+
+            if ((isRight && xAtTop <= xLimit) || (!isRight && xAtTop >= xLimit)) {
+                return { x: xAtTop, y: yCeiling };
+            }
+            return { x: xLimit, y: Math.min(yCeiling, Math.abs(xLimit) / tanHalf) };
+        }
+
+        function buildFovSectorPath(halfAngleDegrees) {
+            const right = getFovBoundaryPoint(halfAngleDegrees, 1);
+            const left = getFovBoundaryPoint(halfAngleDegrees, -1);
+            const topY = Math.max(0, chartYMax);
+            const rightTouchesTop = Math.abs(right.y - topY) < 0.5;
+            const leftTouchesTop = Math.abs(left.y - topY) < 0.5;
+            const points = [[0, 0], [right.x, right.y]];
+
+            if (!rightTouchesTop) points.push([Math.max(0, chartXMax), topY]);
+            if (!leftTouchesTop) points.push([Math.min(0, chartXMin), topY]);
+            points.push([left.x, left.y], [0, 0]);
+
+            return `M ${points.map(([x, y]) => `${x} ${y}`).join(' L ')} Z`;
+        }
+
         // Radar Rings - Generate fresh objects
         function getRadarRings() {
             if (!showGrid) return []; // Grid Toggle
 
             const rings = [];
+            const fovOuterPath = buildFovSectorPath(75);  // 150-degree upper bound
+            const fovInnerPath = buildFovSectorPath(60);  // 120-degree lower bound
+
             rings.push({
                 type: 'path',
                 xref: 'x',
                 yref: 'y',
-                path: `M 0 0 L ${chartXMax} ${chartYMax} L ${chartXMin} ${chartYMax} Z`,
-                fillcolor: 'rgba(0, 188, 212, 0.06)',
+                path: fovOuterPath,
+                fillcolor: 'rgba(0, 188, 212, 0.08)',
                 line: { color: 'rgba(0, 188, 212, 0.0)', width: 0 },
+                editable: false,
+                layer: 'below'
+            });
+            rings.push({
+                type: 'path',
+                xref: 'x',
+                yref: 'y',
+                path: fovInnerPath,
+                fillcolor: 'rgba(0, 188, 212, 0.11)',
+                line: { color: 'rgba(0, 188, 212, 0.0)', width: 0 },
+                editable: false,
+                layer: 'below'
+            });
+            const fovBoundaryRight = getFovBoundaryPoint(60, 1);
+            const fovBoundaryLeft = getFovBoundaryPoint(60, -1);
+            rings.push({
+                type: 'line', xref: 'x', yref: 'y',
+                x0: 0, y0: 0, x1: fovBoundaryRight.x, y1: fovBoundaryRight.y,
+                line: { color: 'rgba(0, 188, 212, 0.42)', width: 1.4 },
+                editable: false,
+                layer: 'below'
+            });
+            rings.push({
+                type: 'line', xref: 'x', yref: 'y',
+                x0: 0, y0: 0, x1: fovBoundaryLeft.x, y1: fovBoundaryLeft.y,
+                line: { color: 'rgba(0, 188, 212, 0.42)', width: 1.4 },
                 editable: false,
                 layer: 'below'
             });
