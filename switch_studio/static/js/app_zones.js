@@ -342,6 +342,19 @@
         };
     }
 
+    function getMotionLabelFromDoppler(doppler) {
+        const dop = Number(doppler) || 0;
+        if (dop > 10 || dop < -10) return 'Moving';
+        return 'Stationary';
+    }
+
+    function getFriendlyTargetLabel(idValue) {
+        const id = Number(idValue) || 0;
+        const prefix = `D${id}`;
+        if (id === 1) return `${prefix} (Primary)`;
+        return `${prefix} (Secondary)`;
+    }
+
     function handleNewData(msg, currentTopic) {
         if (!msg || !msg.topic || !msg.payload) return false;
         if (!currentTopic || msg.topic !== currentTopic) return false;
@@ -400,7 +413,7 @@
             window.Plotly.restyle(chartEl, {
                 x: [data.targets.map((t) => t.x), historyX],
                 y: [data.targets.map((t) => t.y), historyY],
-                text: [data.targets.map((t) => `ID: ${t.id} [Z:${t.z}cm]`), null],
+                text: [data.targets.map((t) => `${getFriendlyTargetLabel(t.id)}<br>${getMotionLabelFromDoppler(t.dop)}`), null],
                 'marker.size': [sizes, null]
             }, [0, 1]);
         } else {
@@ -409,14 +422,14 @@
                 {
                     x: data.targets.map((t) => t.x),
                     y: data.targets.map((t) => t.y),
-                    text: data.targets.map((t) => `ID: ${t.id} [Z:${t.z}cm]`),
+                    text: data.targets.map((t) => `${getFriendlyTargetLabel(t.id)}<br>${getMotionLabelFromDoppler(t.dop)}`),
                     mode: 'markers+text',
                     textposition: 'top center',
-                    marker: { size: sizes, color: '#58d7f0', line: { color: '#e3f8fd', width: 1.6 } },
-                    textfont: { color: '#d7f5fb' },
+                    marker: { size: sizes, color: '#1bd2dc', line: { color: '#dcfaff', width: 1.2 } },
+                    textfont: { color: '#bde8ef', size: 10, family: 'DM Sans, sans-serif' },
                     type: 'scatter'
                 },
-                { x: historyX, y: historyY, mode: 'lines', line: { color: '#43cde8', width: 2 }, opacity: 0.26, type: 'scatter' }
+                { x: historyX, y: historyY, mode: 'lines', line: { color: '#2e93bc', width: 1.6 }, opacity: 0.2, type: 'scatter' }
             ], layout);
         }
 
@@ -431,14 +444,15 @@
             let dopStatus = 'Stationary';
             let dopClass = 'doppler-stationary';
             if (target.dop > 10) {
-                dopStatus = `Moving Away (${target.dop})`;
+                dopStatus = 'Moving';
                 dopClass = 'doppler-moving';
             } else if (target.dop < -10) {
-                dopStatus = `Approaching (${target.dop})`;
+                dopStatus = 'Approaching';
                 dopClass = 'doppler-approaching';
             }
-
-            dataTableBodyEl.innerHTML += `<tr><td class="target-id-cell"><span class="target-id-tag">${target.id}</span></td><td class="target-num">${target.x} cm</td><td class="target-num">${target.y} cm</td><td class="target-num">${target.z} cm</td><td class="doppler-cell"><span class="doppler-badge ${dopClass}">${dopStatus}</span></td></tr>`;
+            const targetLabel = getFriendlyTargetLabel(target.id);
+            const targetClass = Number(target.id) === 1 ? 'target-primary' : 'target-secondary';
+            dataTableBodyEl.innerHTML += `<tr><td class="target-id-cell"><span class="target-id-tag ${targetClass}"><span class="target-id-dot"></span>${targetLabel}</span></td><td class="target-num">${target.x}</td><td class="target-num">${target.y}</td><td class="target-num">${target.z}</td><td class="doppler-cell"><span class="doppler-badge ${dopClass}">${dopStatus}</span></td></tr>`;
         });
 
         return true;

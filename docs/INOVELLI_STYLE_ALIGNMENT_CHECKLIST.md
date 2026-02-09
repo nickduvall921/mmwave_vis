@@ -34,27 +34,27 @@ Acceptance:
 - Monitoring/status strip remains present and readable.
 
 ## Phase A3: Radar Workspace Fidelity
-- [ ] SA-301 Tune radar container styling (surface, borders, depth) to match target.
-- [ ] SA-302 Improve FOV rendering style (core + extended treatment) without changing behavior.
-- [ ] SA-303 Reduce grid/axis visual harshness and match target subtlety.
-- [ ] SA-304 Align standby chip styling and placement with target.
+- [x] SA-301 Tune radar container styling (surface, borders, depth) to match target.
+- [x] SA-302 Improve FOV rendering style (core + extended treatment) without changing behavior.
+- [x] SA-303 Reduce grid/axis visual harshness and match target subtlety.
+- [x] SA-304 Align standby chip styling and placement with target.
 
 Acceptance:
 - Map area looks visually aligned with target and remains responsive/stable.
 
 ## Phase A4: Right Panel Component System
-- [ ] SA-401 Restyle sidebar subtabs (`Controls & Zones`, `Configuration`, `View`) to target.
-- [ ] SA-402 Convert section styling from heavy cards to lighter grouped blocks.
-- [ ] SA-403 Align setting row pattern (`label + control`) with consistent rhythm.
-- [ ] SA-404 Upgrade controls (toggle/select/slider/button) to cohesive modern style.
+- [x] SA-401 Restyle sidebar subtabs (`Controls & Zones`, `Configuration`, `View`) to target.
+- [x] SA-402 Convert section styling from heavy cards to lighter grouped blocks.
+- [x] SA-403 Align setting row pattern (`label + control`) with consistent rhythm.
+- [x] SA-404 Upgrade controls (toggle/select/slider/button) to cohesive modern style.
 
 Acceptance:
 - Sidebar feels production-ready and visually consistent across all tabs.
 
 ## Phase A5: Data Table + Footer Actions
-- [ ] SA-501 Redesign target table to muted compact telemetry style.
-- [ ] SA-502 Align action badges (stationary/moving) to target look.
-- [ ] SA-503 Refine bottom dirty bar and button hierarchy to target.
+- [x] SA-501 Redesign target table to muted compact telemetry style.
+- [x] SA-502 Align action badges (stationary/moving) to target look.
+- [x] SA-503 Refine bottom dirty bar and button hierarchy to target.
 
 Acceptance:
 - Bottom data/action area matches desired polish and hierarchy.

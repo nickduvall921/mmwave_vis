@@ -524,15 +524,10 @@
             background: #0e121c;
             border-radius: var(--radius-md);
             overflow: hidden;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
         }
         #chartContainer .chart-panel-title {
-            font-size: 0.65rem;
-            letter-spacing: 0.08em;
-            font-weight: 600;
-            text-transform: uppercase;
-            color: var(--text-muted);
-            padding: 9px 12px;
-            border-bottom: 1px solid var(--border-subtle);
+            display: none;
         }
         #chart {
             width: 100%;
@@ -553,10 +548,10 @@
             bottom: 14px;
             border-radius: var(--radius-sm);
             border: 1px solid var(--border-subtle);
-            background: rgba(16, 23, 34, 0.86);
+            background: rgba(13, 16, 24, 0.88);
             backdrop-filter: blur(4px);
             color: var(--text-muted);
-            font-size: 0.77rem;
+            font-size: 0.64rem;
             padding: 5px 9px;
             pointer-events: none;
             opacity: 0;
@@ -585,15 +580,26 @@
         .target-id-tag {
             display: inline-flex;
             align-items: center;
-            justify-content: center;
-            min-width: 18px;
-            padding: 1px 7px;
-            border-radius: 999px;
-            border: 1px solid rgba(13, 212, 192, 0.5);
-            background: rgba(13, 212, 192, 0.12);
-            color: var(--accent);
-            font-weight: 600;
+            justify-content: flex-start;
+            gap: 6px;
+            color: #cfd7e5;
+            font-weight: 500;
             font-size: 0.68rem;
+        }
+        .target-id-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 7px currentColor;
+        }
+        .target-id-tag.target-primary .target-id-dot {
+            color: var(--accent);
+            background: var(--accent);
+        }
+        .target-id-tag.target-secondary .target-id-dot {
+            color: #60a5fa;
+            background: #60a5fa;
         }
         .target-num {
             text-align: right;
@@ -637,6 +643,26 @@
         details[open] > summary::after { transform: rotate(180deg); color: #aeb7ca; }
         details[open] > summary { border-bottom: 1px solid var(--border-subtle); }
         .config-content { padding: 10px; }
+        .panel-section {
+            background: var(--bg-elev-1);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+        }
+        .panel-section + .panel-section {
+            margin-top: 10px;
+        }
+        .panel-section-title {
+            font-weight: 600;
+            color: #8c98af;
+            padding: 9px 10px;
+            font-size: 0.64rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .panel-section .config-content {
+            padding: 10px;
+        }
 
         /* Radar Container needs flex to handle Plotly resizing */
         #chartContainer .config-content {
@@ -693,7 +719,39 @@
         }
         
         /* Settings Checkboxes */
-        .input-row input[type="checkbox"] { width: auto; cursor: pointer; }
+        .input-row input[type="checkbox"] {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 34px;
+            height: 18px;
+            border-radius: 999px;
+            border: 1px solid var(--border-strong);
+            background: var(--bg-elev-3);
+            cursor: pointer;
+            position: relative;
+            transition: border-color var(--anim-fast), background var(--anim-fast);
+            margin: 0;
+            justify-self: end;
+        }
+        .input-row input[type="checkbox"]::before {
+            content: '';
+            position: absolute;
+            top: 1px;
+            left: 1px;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #f2f6fb;
+            transition: transform var(--anim-fast);
+            box-shadow: 0 0 6px rgba(0, 0, 0, 0.24);
+        }
+        .input-row input[type="checkbox"]:checked {
+            background: rgba(13, 212, 192, 0.95);
+            border-color: rgba(13, 212, 192, 0.95);
+        }
+        .input-row input[type="checkbox"]:checked::before {
+            transform: translateX(16px);
+        }
 
         /* Grid for Raw Zone Data */
         .zone-data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
@@ -949,7 +1007,7 @@
                 <table class="target-table">
                     <thead>
                         <tr>
-                            <th>Target ID</th>
+                            <th>Target</th>
                             <th>X (Width)</th>
                             <th>Y (Depth)</th>
                             <th>Z (Height)</th>
@@ -983,8 +1041,8 @@
                 </div>
             </div>
 
-            <details open class="mobile-collapsed" id="zoneStatusSection" data-tab-panels="zones">
-                <summary>Zone Status</summary>
+            <section class="panel-section" id="zoneStatusSection" data-tab-panels="zones">
+                <div class="panel-section-title">Zone Status</div>
                 <div class="config-content">
                     <div class="sensor-row">
                         <span style="color: #ccc;">Area 1:</span>
@@ -1003,10 +1061,10 @@
                         <span id="area4Val" class="zone-badge">CLEAR</span>
                     </div>
                 </div>
-            </details>
+            </section>
 
-            <details open class="mobile-collapsed" data-tab-panels="zones">
-                <summary>Zone Editor</summary>
+            <section class="panel-section" data-tab-panels="zones">
+                <div class="panel-section-title">Zone Editor</div>
                 <div class="config-content">
                     <div style="margin-bottom: 10px; font-size: 0.9em; color: #ccc;">Select a zone to view, draw, or edit.</div>
                     
@@ -1049,9 +1107,9 @@
                     <button id="btnStartEdit" class="cmd-btn btn-full" onclick="startZoneEdit()" style="margin-top:5px; background: #00bcd4; color: #1a1a1a;">Draw / Edit Selected Zone</button>
                     <button class="cmd-btn btn-full btn-danger" onclick="deleteZone()" style="margin-top:5px;">Delete Selected Zone</button>
                 </div>
-            </details>
-            <details open class="mobile-collapsed" data-tab-panels="zones">
-                <summary>Presence Controls</summary>
+            </section>
+            <section class="panel-section" data-tab-panels="zones">
+                <div class="panel-section-title">Presence Controls</div>
                 <div class="config-content">
                     <div class="panel-lede">
                         Core motion behavior settings for occupancy timing, sensitivity, and load control.
@@ -1060,12 +1118,12 @@
                         <div class="schema-loading-note">Loading controls...</div>
                     </div>
                 </div>
-            </details>
+            </section>
             </div>
 
             <div class="zones-pane" id="zonesPaneConfig" role="tabpanel" aria-labelledby="zonesPaneTabConfig" data-zones-pane="config" data-tab-panels="zones">
-            <details open class="mobile-collapsed">
-                <summary>Presence Configuration</summary>
+            <section class="panel-section">
+                <div class="panel-section-title">Presence Configuration</div>
                 <div class="config-content">
                     <div class="panel-lede">
                         Room profile and set-and-forget motion configuration values.
@@ -1074,9 +1132,9 @@
                         <div class="schema-loading-note">Loading controls...</div>
                     </div>
                 </div>
-            </details>
-            <details open class="mobile-collapsed">
-                <summary>Maintenance Tools</summary>
+            </section>
+            <section class="panel-section">
+                <div class="panel-section-title">Maintenance Tools</div>
                 <div class="config-content">
                     <button class="cmd-btn btn-full" onclick="sendCommand(1)">Auto-Config Interference</button>
                     <button class="cmd-btn btn-full btn-danger" onclick="sendCommand(3)">Clear Interference</button>
@@ -1088,12 +1146,12 @@
                         <div class="command-log-empty">No command activity yet.</div>
                     </div>
                 </div>
-            </details>
+            </section>
             </div>
 
             <div class="zones-pane" id="zonesPaneView" role="tabpanel" aria-labelledby="zonesPaneTabView" data-zones-pane="view" data-tab-panels="zones">
-            <details open class="mobile-collapsed">
-                <summary>Studio View Settings</summary>
+            <section class="panel-section">
+                <div class="panel-section-title">Studio View Settings</div>
                 <div class="config-content">
                     <div style="margin-top:5px; padding-top:5px;">
                         <div style="font-size:0.9em; font-weight:bold; color:#00bcd4; margin-bottom:5px;">Connection Behavior</div>
@@ -1160,7 +1218,7 @@
                     </div>
                     <button class="cmd-btn btn-full" onclick="updateRadarScale()" style="margin-top:5px; background: #00bcd4; color: #1a1a1a;">Update Scale</button>
                 </div>
-            </details>
+            </section>
             </div>
 
             <details open class="mobile-collapsed" data-tab-panels="load">
@@ -2840,11 +2898,39 @@
             return `M ${points.map(([x, y]) => `${x} ${y}`).join(' L ')} Z`;
         }
 
+        function buildVerticalBandShapes() {
+            const bands = [];
+            const mapWidth = chartXMax - chartXMin;
+            if (!Number.isFinite(mapWidth) || mapWidth <= 0) return bands;
+            const bandCount = 22;
+            const slotWidth = mapWidth / bandCount;
+            const bandWidth = slotWidth * 0.56;
+            for (let i = 0; i < bandCount; i += 1) {
+                if (i % 2 !== 0) continue;
+                const x0 = chartXMin + i * slotWidth;
+                const x1 = x0 + bandWidth;
+                bands.push({
+                    type: 'rect',
+                    xref: 'x',
+                    yref: 'y',
+                    x0: x0,
+                    x1: x1,
+                    y0: chartYMin,
+                    y1: chartYMax,
+                    fillcolor: i % 4 === 0 ? 'rgba(13, 212, 192, 0.022)' : 'rgba(13, 212, 192, 0.014)',
+                    line: { width: 0, color: 'rgba(0,0,0,0)' },
+                    editable: false,
+                    layer: 'below'
+                });
+            }
+            return bands;
+        }
+
         // Radar Rings - Generate fresh objects
         function getRadarRings() {
             if (!showGrid) return []; // Grid Toggle
 
-            const rings = [];
+            const rings = buildVerticalBandShapes();
             const fovOuterPath = buildFovSectorPath(75);  // 150-degree upper bound
             const fovInnerPath = buildFovSectorPath(60);  // 120-degree lower bound
 
@@ -2853,7 +2939,7 @@
                 xref: 'x',
                 yref: 'y',
                 path: fovOuterPath,
-                fillcolor: 'rgba(0, 188, 212, 0.08)',
+                fillcolor: 'rgba(13, 212, 192, 0.06)',
                 line: { color: 'rgba(0, 188, 212, 0.0)', width: 0 },
                 editable: false,
                 layer: 'below'
@@ -2863,24 +2949,40 @@
                 xref: 'x',
                 yref: 'y',
                 path: fovInnerPath,
-                fillcolor: 'rgba(0, 188, 212, 0.11)',
+                fillcolor: 'rgba(13, 212, 192, 0.09)',
                 line: { color: 'rgba(0, 188, 212, 0.0)', width: 0 },
                 editable: false,
                 layer: 'below'
             });
+            const fovOuterRight = getFovBoundaryPoint(75, 1);
+            const fovOuterLeft = getFovBoundaryPoint(75, -1);
             const fovBoundaryRight = getFovBoundaryPoint(60, 1);
             const fovBoundaryLeft = getFovBoundaryPoint(60, -1);
             rings.push({
                 type: 'line', xref: 'x', yref: 'y',
                 x0: 0, y0: 0, x1: fovBoundaryRight.x, y1: fovBoundaryRight.y,
-                line: { color: 'rgba(0, 188, 212, 0.42)', width: 1.4 },
+                line: { color: 'rgba(13, 212, 192, 0.32)', width: 1.5 },
                 editable: false,
                 layer: 'below'
             });
             rings.push({
                 type: 'line', xref: 'x', yref: 'y',
                 x0: 0, y0: 0, x1: fovBoundaryLeft.x, y1: fovBoundaryLeft.y,
-                line: { color: 'rgba(0, 188, 212, 0.42)', width: 1.4 },
+                line: { color: 'rgba(13, 212, 192, 0.32)', width: 1.5 },
+                editable: false,
+                layer: 'below'
+            });
+            rings.push({
+                type: 'line', xref: 'x', yref: 'y',
+                x0: 0, y0: 0, x1: fovOuterRight.x, y1: fovOuterRight.y,
+                line: { color: 'rgba(13, 212, 192, 0.14)', width: 1.1, dash: 'dot' },
+                editable: false,
+                layer: 'below'
+            });
+            rings.push({
+                type: 'line', xref: 'x', yref: 'y',
+                x0: 0, y0: 0, x1: fovOuterLeft.x, y1: fovOuterLeft.y,
+                line: { color: 'rgba(13, 212, 192, 0.14)', width: 1.1, dash: 'dot' },
                 editable: false,
                 layer: 'below'
             });
@@ -2888,7 +2990,7 @@
                 rings.push({
                     type: 'circle', xref: 'x', yref: 'y',
                     x0: -dist, x1: dist, y0: -dist, y1: dist,
-                    line: { color: 'rgba(186, 221, 230, 0.14)', width: dist % 200 === 0 ? 1.2 : 1, dash: 'dot' },
+                    line: { color: 'rgba(176, 198, 216, 0.08)', width: dist % 200 === 0 ? 1.05 : 0.8, dash: 'dot' },
                     editable: false,
                     layer: 'below'
                 });
@@ -2896,22 +2998,22 @@
             rings.push({
                 type: 'line', xref: 'x', yref: 'y',
                 x0: chartXMin, y0: 0, x1: chartXMax, y1: 0,
-                line: { color: 'rgba(0, 188, 212, 0.35)', width: 1.4 },
+                line: { color: 'rgba(13, 212, 192, 0.3)', width: 1.2 },
                 editable: false,
                 layer: 'below'
             });
             rings.push({
                 type: 'circle', xref: 'x', yref: 'y',
                 x0: -18, x1: 18, y0: -18, y1: 18,
-                fillcolor: 'rgba(255, 82, 82, 0.28)',
-                line: { color: 'rgba(255, 82, 82, 0.65)', width: 1.4 },
+                fillcolor: 'rgba(255, 111, 111, 0.24)',
+                line: { color: 'rgba(255, 111, 111, 0.56)', width: 1.2 },
                 editable: false,
                 layer: 'below'
             });
             rings.push({
                 type: 'circle', xref: 'x', yref: 'y',
                 x0: -8, x1: 8, y0: -8, y1: 8,
-                fillcolor: 'rgba(255, 82, 82, 0.95)',
+                fillcolor: 'rgba(255, 111, 111, 0.92)',
                 line: { color: 'rgba(255, 255, 255, 0.85)', width: 1.2 },
                 editable: false,
                 layer: 'below'
@@ -3009,10 +3111,10 @@
                         xref: 'x', yref: 'y',
                         text: labelText,
                         showarrow: false,
-                        font: { color: 'white', size: 12, family: 'sans-serif', weight: 'bold' },
+                        font: { color: '#d8f9fc', size: 10, family: 'DM Sans, sans-serif' },
                         bgcolor: color,
                         borderpad: 2,
-                        opacity: 0.9
+                        opacity: 0.88
                     });
                 }
             };
@@ -3420,28 +3522,30 @@
 
         // --- PLOTLY INIT ---
         const layout = {
-            paper_bgcolor: '#0f171c',
-            plot_bgcolor: '#10242d',
+            paper_bgcolor: '#0c1019',
+            plot_bgcolor: '#08131d',
             xaxis: {
                 range: [chartXMin, chartXMax],
                 title: 'X - Width (cm)',
-                gridcolor: 'rgba(176, 214, 224, 0.12)',
-                zerolinecolor: 'rgba(0, 188, 212, 0.35)',
-                linecolor: 'rgba(129, 162, 172, 0.4)',
-                tickfont: { color: '#bdd9df' },
+                gridcolor: 'rgba(176, 214, 224, 0.045)',
+                zerolinecolor: 'rgba(13, 212, 192, 0.26)',
+                linecolor: 'rgba(128, 150, 176, 0.25)',
+                tickfont: { color: '#6f839d', size: 9 },
+                titlefont: { color: '#62758f', size: 9 },
                 fixedrange: true
             },
             yaxis: {
                 range: [chartYMin, chartYMax],
                 title: 'Y - Depth (cm)',
-                gridcolor: 'rgba(176, 214, 224, 0.12)',
-                zerolinecolor: 'rgba(0, 188, 212, 0.35)',
-                linecolor: 'rgba(129, 162, 172, 0.4)',
-                tickfont: { color: '#bdd9df' },
+                gridcolor: 'rgba(176, 214, 224, 0.045)',
+                zerolinecolor: 'rgba(13, 212, 192, 0.26)',
+                linecolor: 'rgba(128, 150, 176, 0.25)',
+                tickfont: { color: '#6f839d', size: 9 },
+                titlefont: { color: '#62758f', size: 9 },
                 fixedrange: true
             },
-            margin: { t: 10, b: 42, l: 46, r: 30 },
-            font: { color: '#d9edf1' },
+            margin: { t: 4, b: 34, l: 40, r: 14 },
+            font: { color: '#9eacbf', family: 'DM Sans, sans-serif', size: 11 },
             showlegend: false,
             shapes: getChartShapes(),
             annotations: getChartAnnotations()
@@ -3465,19 +3569,19 @@
                 text: [],
                 textposition: 'top center',
                 marker: {
-                    size: 12,
-                    color: '#58d7f0',
-                    line: { color: '#e3f8fd', width: 1.6 }
+                    size: 11,
+                    color: '#1bd2dc',
+                    line: { color: '#dcfaff', width: 1.2 }
                 },
-                textfont: { color: '#d7f5fb' },
+                textfont: { color: '#bde8ef', size: 10, family: 'DM Sans, sans-serif' },
                 type: 'scatter'
             },
             {
                 x: [],
                 y: [],
                 mode: 'lines',
-                line: { color: '#43cde8', width: 2 },
-                opacity: 0.26,
+                line: { color: '#2e93bc', width: 1.6 },
+                opacity: 0.2,
                 type: 'scatter'
             }
         ], layout, chartConfig);
