@@ -809,6 +809,16 @@
         /* Small badges for Zone Status */
         .zone-badge { font-size: 0.85em; padding: 2px 6px; border-radius: 3px; background: var(--bg-elev-3); color: var(--text-muted); border: 1px solid var(--border-subtle); }
         .zone-active { background: #2e7d32; color: #f4fff7; border-color: #3e9f45; }
+        .zone-status-inline .config-content {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+            padding: 8px;
+        }
+        .zone-status-inline .sensor-row {
+            margin-bottom: 0;
+            min-height: 36px;
+        }
 
         /* Buttons */
         .cmd-btn {
@@ -1126,6 +1136,10 @@
                 flex: 0 0 auto;
             }
 
+            .zone-status-inline .config-content {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
             .dirty-bar {
                 position: static;
                 bottom: auto;
@@ -1186,6 +1200,9 @@
             }
             .zones-status-item {
                 flex-basis: 100%;
+            }
+            .zone-status-inline .config-content {
+                grid-template-columns: 1fr;
             }
 
             table {
@@ -1281,6 +1298,28 @@
                 </div>
             </section>
 
+            <section class="panel-section zone-status-inline" id="zoneStatusSection" data-tab-panels="zones">
+                <div class="panel-section-title">Zone Status</div>
+                <div class="config-content">
+                    <div class="sensor-row">
+                        <span style="color: #ccc;">Area 1:</span>
+                        <span id="area1Val" class="zone-badge">CLEAR</span>
+                    </div>
+                    <div class="sensor-row">
+                        <span style="color: #ccc;">Area 2:</span>
+                        <span id="area2Val" class="zone-badge">CLEAR</span>
+                    </div>
+                    <div class="sensor-row">
+                        <span style="color: #ccc;">Area 3:</span>
+                        <span id="area3Val" class="zone-badge">CLEAR</span>
+                    </div>
+                    <div class="sensor-row">
+                        <span style="color: #ccc;">Area 4:</span>
+                        <span id="area4Val" class="zone-badge">CLEAR</span>
+                    </div>
+                </div>
+            </section>
+
             <div class="table-container" data-tab-panels="zones">
                 <table class="target-table">
                     <thead>
@@ -1318,28 +1357,6 @@
                     <span id="illuminanceVal" class="sensor-val">-- lx</span>
                 </div>
             </div>
-
-            <section class="panel-section" id="zoneStatusSection" data-tab-panels="zones">
-                <div class="panel-section-title">Zone Status</div>
-                <div class="config-content">
-                    <div class="sensor-row">
-                        <span style="color: #ccc;">Area 1:</span>
-                        <span id="area1Val" class="zone-badge">CLEAR</span>
-                    </div>
-                    <div class="sensor-row">
-                        <span style="color: #ccc;">Area 2:</span>
-                        <span id="area2Val" class="zone-badge">CLEAR</span>
-                    </div>
-                    <div class="sensor-row">
-                        <span style="color: #ccc;">Area 3:</span>
-                        <span id="area3Val" class="zone-badge">CLEAR</span>
-                    </div>
-                    <div class="sensor-row">
-                        <span style="color: #ccc;">Area 4:</span>
-                        <span id="area4Val" class="zone-badge">CLEAR</span>
-                    </div>
-                </div>
-            </section>
 
             <section class="panel-section" data-tab-panels="zones">
                 <div class="panel-section-title">Zone Editor</div>
