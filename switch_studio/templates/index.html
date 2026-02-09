@@ -968,42 +968,6 @@
             }
         }
 
-        /* Responsive Design: Mobile Layout Adjustments */
-        @media (max-width: 900px) {
-            .app-container { display: block; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-            .main-content { overflow: visible; height: auto; flex: none; padding-bottom: 20px; }
-            .sidebar { border-left: none; border-top: 1px solid var(--border-subtle); height: auto; overflow: visible; flex: none; padding-bottom: 40px; }
-            #chartContainer .config-content { height: 350px; }
-            #chart { min-height: 0; height: 100%; }
-            .table-container { width: 100%; margin-bottom: 15px; }
-            table { min-width: unset; font-size: 0.8rem; }
-            th, td { padding: 6px 3px; }
-            .header { padding: 7px 10px; flex-wrap: wrap; gap: 8px; }
-            .header h2 { display: none; }
-            .header-logo { height: 18px; }
-            .header-controls { width: 100%; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
-            .header-device-wrap { flex: 1 1 180px; width: auto; }
-            select#deviceSelect { flex-grow: 1; max-width: unset; margin-right: 0; }
-            .header-right { margin-left: 0; width: 100%; justify-content: space-between; flex-wrap: wrap; }
-            .status-chip { font-size: 0.72rem; padding: 4px 8px; }
-            .btn-force-sync { width: 100%; justify-content: center; }
-            .tab-bar { gap: 4px; padding: 0 10px; }
-            .tab-btn { padding: 8px 10px; font-size: 0.79em; }
-            .dirty-bar { padding: 8px 10px; flex-wrap: wrap; }
-            .dirty-actions { width: 100%; justify-content: flex-end; }
-            .dirty-btn { min-width: 88px; }
-            .zones-live-strip { padding: 8px 10px; flex-wrap: wrap; }
-            .zones-live-status { width: 100%; }
-            .zones-live-meta { width: 100%; margin-left: 0; justify-content: flex-end; }
-            .zones-meta-item { font-size: 0.74rem; }
-            .zones-sidebar-tabs { overflow-x: auto; padding: 5px; }
-            .zones-sidebar-tab { min-width: 126px; flex: 0 0 auto; }
-            .input-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-            .control-select,
-            .full-width-select { width: 100%; }
-            .map-standby-chip { left: 10px; bottom: 10px; font-size: 0.72rem; }
-        }
-
         @media (max-width: 1180px) {
             .zones-live-status {
                 gap: 6px;
@@ -1017,6 +981,266 @@
             }
             .zones-live-meta {
                 gap: 6px;
+            }
+        }
+
+        /* Responsive Design: Mobile Layout Adjustments */
+        @media (max-width: 900px) {
+            body {
+                height: auto;
+                min-height: 100dvh;
+                overflow-y: auto;
+            }
+            .header {
+                position: sticky;
+                top: 0;
+                z-index: 18;
+                padding: 7px 9px;
+                flex-wrap: wrap;
+                gap: 7px;
+            }
+            .header-brand {
+                display: none;
+            }
+            .header-controls {
+                width: 100%;
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) auto;
+                align-items: center;
+                gap: 8px;
+            }
+            .header-device-wrap {
+                min-width: 0;
+                width: 100%;
+            }
+            select#deviceSelect {
+                max-width: unset;
+                width: 100%;
+                margin-right: 0;
+            }
+            .header-right {
+                margin-left: 0;
+                width: auto;
+                justify-content: flex-end;
+                flex-wrap: nowrap;
+            }
+            .status-chip {
+                display: none;
+            }
+            .btn-force-sync {
+                width: auto;
+                justify-content: center;
+                padding: 6px 10px;
+                font-size: 0.72rem;
+                white-space: nowrap;
+            }
+
+            .tab-bar {
+                gap: 2px;
+                padding: 0 6px;
+            }
+            .tab-btn {
+                padding: 8px 8px;
+                font-size: 0.7rem;
+            }
+
+            .app-container {
+                display: block;
+                overflow: visible;
+                -webkit-overflow-scrolling: touch;
+            }
+            .main-content {
+                overflow: visible;
+                height: auto;
+                flex: none;
+                padding: 8px 6px 10px;
+                gap: 7px;
+            }
+            .sidebar {
+                border-left: none;
+                border-top: 1px solid var(--border-subtle);
+                height: auto;
+                overflow: visible;
+                flex: none;
+                padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+            }
+
+            #chartContainer .config-content {
+                height: min(56vh, 420px);
+                min-height: 280px;
+            }
+            #chart {
+                min-height: 280px;
+                height: 100%;
+                border-radius: var(--radius-md);
+            }
+
+            .zones-live-strip {
+                padding: 7px 8px;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 7px;
+            }
+            .zones-live-meta {
+                width: 100%;
+                margin-left: 0;
+                justify-content: flex-end;
+                order: 1;
+                gap: 6px;
+            }
+            .zones-live-status {
+                width: 100%;
+                order: 2;
+                gap: 6px;
+                overflow-x: auto;
+                padding-bottom: 1px;
+            }
+            .zones-status-item {
+                max-width: min(72vw, 30ch);
+                flex: 0 0 auto;
+            }
+            .zones-status-item.zones-last-packet {
+                max-width: min(92vw, 46ch);
+            }
+            .zones-meta-item,
+            .zones-report-toggle {
+                font-size: 0.68rem;
+                padding: 3px 7px;
+            }
+
+            .table-container {
+                width: 100%;
+                margin-bottom: 10px;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            table {
+                min-width: 430px;
+                font-size: 0.72rem;
+            }
+            th,
+            td {
+                padding: 5px 6px;
+            }
+            .target-table th {
+                font-size: 0.55rem;
+                letter-spacing: 0.06em;
+            }
+            .target-table td {
+                font-size: 0.66rem;
+            }
+            .target-id-tag,
+            .doppler-badge {
+                font-size: 0.62rem;
+            }
+
+            .zones-sidebar-tabs {
+                overflow-x: auto;
+                padding: 5px;
+                gap: 6px;
+            }
+            .zones-sidebar-tab {
+                min-width: 110px;
+                flex: 0 0 auto;
+            }
+
+            .dirty-bar {
+                position: static;
+                bottom: auto;
+                margin-top: 10px;
+                padding: 9px 10px;
+                box-shadow: none;
+            }
+            .dirty-actions {
+                width: auto;
+                margin-left: auto;
+                justify-content: flex-end;
+            }
+            .dirty-btn {
+                min-width: 84px;
+            }
+
+            .input-row {
+                grid-template-columns: minmax(0, 1fr);
+                gap: 6px;
+            }
+            .control-select,
+            .full-width-select {
+                width: 100%;
+            }
+            .map-standby-chip {
+                left: 10px;
+                bottom: 10px;
+                font-size: 0.68rem;
+                max-width: min(72vw, 320px);
+            }
+            #toastContainer {
+                right: 10px;
+                bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+                max-width: min(360px, 90vw);
+            }
+        }
+
+        @media (max-width: 640px) {
+            .header {
+                padding: 6px 8px;
+            }
+            .header-controls {
+                gap: 6px;
+            }
+            select#deviceSelect {
+                font-size: 11px;
+                padding: 6px 8px;
+            }
+            .btn-force-sync {
+                padding: 6px 9px;
+                font-size: 0.69rem;
+            }
+
+            .tab-btn {
+                padding: 7px 8px;
+                font-size: 0.66rem;
+            }
+
+            .zones-live-meta {
+                justify-content: flex-start;
+                flex-wrap: wrap;
+            }
+            .zones-status-item {
+                max-width: min(86vw, 28ch);
+            }
+
+            table {
+                min-width: 400px;
+            }
+            .target-table th {
+                font-size: 0.53rem;
+            }
+            .target-table td {
+                font-size: 0.63rem;
+            }
+
+            .dirty-bar {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 8px;
+            }
+            .dirty-actions {
+                width: 100%;
+                margin-left: 0;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+            }
+            .dirty-btn {
+                width: 100%;
+                min-width: 0;
+            }
+
+            .zones-sidebar-tab {
+                min-width: 102px;
+                padding: 7px 9px;
+                font-size: 0.65rem;
             }
         }
     </style>
