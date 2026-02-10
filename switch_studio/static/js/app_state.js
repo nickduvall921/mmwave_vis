@@ -126,6 +126,9 @@
             dirtyBarEl.hidden = !isDirty;
             dirtyBarEl.setAttribute('aria-hidden', String(!isDirty));
         }
+        if (typeof document !== 'undefined' && document && document.body && document.body.classList) {
+            document.body.classList.toggle('dirty-bar-visible', isDirty);
+        }
         if (dirtyTextEl) {
             dirtyTextEl.innerText = isDirty ? `${count} pending change${count === 1 ? '' : 's'}` : 'No pending changes';
         }

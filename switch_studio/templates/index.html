@@ -263,16 +263,33 @@
             border-radius: var(--radius-sm);
             padding: 10px 12px;
             color: var(--text-muted);
-            position: sticky;
-            bottom: 0;
-            margin-top: auto;
-            z-index: 6;
+            position: static;
+            margin-top: 10px;
+            z-index: 18;
             box-shadow: 0 -8px 18px rgba(0, 0, 0, 0.18);
         }
         .dirty-bar.dirty-active {
             display: flex;
             color: #ffd59c;
             border-color: var(--warning);
+            position: fixed;
+            right: 12px;
+            bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+            width: min(372px, calc(100vw - 24px));
+            margin-top: 0;
+            z-index: 60;
+        }
+        .app-container.focus-config .dirty-bar.dirty-active {
+            left: 50%;
+            right: auto;
+            transform: translateX(-50%);
+            width: min(920px, calc(100vw - 20px));
+        }
+        body.dirty-bar-visible .main-content {
+            padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+        }
+        body.dirty-bar-visible .sidebar {
+            padding-bottom: calc(94px + env(safe-area-inset-bottom, 0px));
         }
         .dirty-actions { display: flex; gap: 8px; }
         .dirty-btn {
@@ -1151,11 +1168,20 @@
             }
 
             .dirty-bar {
-                position: sticky;
-                bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+                position: static;
                 margin-top: 10px;
                 padding: 9px 10px;
                 box-shadow: 0 -6px 14px rgba(0, 0, 0, 0.18);
+            }
+            .dirty-bar.dirty-active {
+                left: 8px;
+                right: 8px;
+                width: auto;
+                bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+                transform: none;
+            }
+            body.dirty-bar-visible .sidebar {
+                padding-bottom: calc(106px + env(safe-area-inset-bottom, 0px));
             }
             .dirty-actions {
                 width: auto;
