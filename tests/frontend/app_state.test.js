@@ -29,6 +29,7 @@ class MockElement {
         this.tagName = String(tagName || 'div').toUpperCase();
         this.id = id || '';
         this.dataset = {};
+        this.attributes = {};
         this.style = {};
         this.listeners = {};
         this.classList = new MockClassList();
@@ -36,6 +37,7 @@ class MockElement {
         this.options = [];
         this.parentNode = null;
         this.disabled = false;
+        this.hidden = false;
         this.innerText = '';
         this.textContent = '';
         this.value = '';
@@ -72,6 +74,17 @@ class MockElement {
         if (this.parentNode) {
             this.parentNode.removeChild(this);
         }
+    }
+
+    setAttribute(name, value) {
+        this.attributes[name] = String(value);
+    }
+
+    getAttribute(name) {
+        if (Object.prototype.hasOwnProperty.call(this.attributes, name)) {
+            return this.attributes[name];
+        }
+        return null;
     }
 }
 
@@ -179,4 +192,33 @@ test('discard restores LED brightness slider and refreshes Sync label', () => {
     assert.equal(state.getPendingCount(), 0);
     assert.equal(slider.value, 101);
     assert.equal(sliderLabel.innerText, 'Sync');
+});
+
+test('dirty bar is only visible while pending changes exist', () => {
+    const document = new MockDocument();
+    const slider = createElement(document, 'input', 'ledIntensityWhenOn', { type: 'range' });
+    const dirtyBar = createElement(document, 'div', 'dirtyBar');
+
+    const state = loadStateModule(document);
+    state.init({
+        socket: { emit: () => {} },
+        packetInfoEl: createElement(document, 'span', 'packetInfo'),
+        dirtyBarEl: dirtyBar,
+        dirtyTextEl: createElement(document, 'span', 'dirtyText'),
+        applyBtnEl: createElement(document, 'button', 'applyBtn'),
+        discardBtnEl: createElement(document, 'button', 'discardBtn'),
+        toastContainerEl: null,
+    });
+
+    assert.equal(dirtyBar.hidden, true);
+    assert.equal(dirtyBar.classList.contains('dirty-active'), false);
+
+    state.syncConfig({ ledIntensityWhenOn: 90 });
+    state.queueChange('ledIntensityWhenOn', 50, slider);
+    assert.equal(dirtyBar.hidden, false);
+    assert.equal(dirtyBar.classList.contains('dirty-active'), true);
+
+    state.discardPendingChanges();
+    assert.equal(dirtyBar.hidden, true);
+    assert.equal(dirtyBar.classList.contains('dirty-active'), false);
 });

@@ -254,7 +254,7 @@
         }
 
         .dirty-bar {
-            display: flex;
+            display: none;
             justify-content: space-between;
             align-items: center;
             gap: 10px;
@@ -269,7 +269,11 @@
             z-index: 6;
             box-shadow: 0 -8px 18px rgba(0, 0, 0, 0.18);
         }
-        .dirty-bar.dirty-active { color: #ffd59c; border-color: var(--warning); }
+        .dirty-bar.dirty-active {
+            display: flex;
+            color: #ffd59c;
+            border-color: var(--warning);
+        }
         .dirty-actions { display: flex; gap: 8px; }
         .dirty-btn {
             border-radius: var(--radius-sm);
@@ -1147,11 +1151,11 @@
             }
 
             .dirty-bar {
-                position: static;
-                bottom: auto;
+                position: sticky;
+                bottom: calc(8px + env(safe-area-inset-bottom, 0px));
                 margin-top: 10px;
                 padding: 9px 10px;
-                box-shadow: none;
+                box-shadow: 0 -6px 14px rgba(0, 0, 0, 0.18);
             }
             .dirty-actions {
                 width: auto;
@@ -1599,7 +1603,7 @@
                 </section>
             </div>
 
-            <div class="dirty-bar" id="dirtyBar">
+            <div class="dirty-bar" id="dirtyBar" hidden>
                 <span id="dirtyText">No pending changes</span>
                 <div class="dirty-actions">
                     <button class="dirty-btn" id="btnDiscardChanges" type="button" disabled>Discard</button>

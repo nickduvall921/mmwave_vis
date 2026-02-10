@@ -121,7 +121,11 @@
         const count = pendingChanges.size;
         const isDirty = count > 0;
 
-        if (dirtyBarEl) dirtyBarEl.classList.toggle('dirty-active', isDirty);
+        if (dirtyBarEl) {
+            dirtyBarEl.classList.toggle('dirty-active', isDirty);
+            dirtyBarEl.hidden = !isDirty;
+            dirtyBarEl.setAttribute('aria-hidden', String(!isDirty));
+        }
         if (dirtyTextEl) {
             dirtyTextEl.innerText = isDirty ? `${count} pending change${count === 1 ? '' : 's'}` : 'No pending changes';
         }
