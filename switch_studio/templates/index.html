@@ -355,12 +355,20 @@
             color: #8d97ad;
             line-height: 1.45;
         }
-        details[data-tab-panels="load"],
-        details[data-tab-panels="led"],
-        details[data-tab-panels="buttons"],
-        details[data-tab-panels="power"],
-        details[data-tab-panels="advanced"] {
+        .config-tab-shell {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 12px 12px 0;
+        }
+        .config-tab-shell .panel-section + .panel-section {
+            margin-top: 0;
+        }
+        .config-tab-shell .panel-section {
             background: linear-gradient(180deg, rgba(30, 39, 56, 0.95) 0%, rgba(25, 33, 48, 0.97) 100%);
+        }
+        .conditional-section[hidden] {
+            display: none !important;
         }
 
         .zones-live-strip {
@@ -568,7 +576,7 @@
         .app-container.focus-config { display: block; overflow-y: auto; }
         .app-container.focus-config .main-content { padding: 10px 14px 2px; min-height: auto; }
         .app-container.focus-config .sidebar { border-left: none; background: transparent; max-width: 1200px; margin: 0 auto; padding: 8px 14px 24px; }
-        .app-container.focus-config .sidebar details,
+        .app-container.focus-config .sidebar .panel-section,
         .app-container.focus-config .sidebar .config-group {
             background: #232f40;
             border-color: var(--border-strong);
@@ -674,13 +682,7 @@
             color: #c7ffd6;
         }
 
-        /* Collapsible Sections */
-        details { background: var(--bg-elev-1); border-radius: var(--radius-md); border: 1px solid var(--border-subtle); }
-        details > summary { font-weight: 600; color: #93a0b8; padding: 9px 10px; font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; list-style: none; user-select: none; display: flex; justify-content: space-between; align-items: center; }
-        details > summary::-webkit-details-marker { display: none; }
-        details > summary::after { content: 'v'; font-size: 0.8em; color: var(--text-muted); transition: transform var(--anim-fast), color var(--anim-fast); }
-        details[open] > summary::after { transform: rotate(180deg); color: #aeb7ca; }
-        details[open] > summary { border-bottom: 1px solid var(--border-subtle); }
+        /* Panel Sections */
         .config-content { padding: 10px; }
         .panel-section {
             background: var(--bg-elev-1);
@@ -1135,6 +1137,10 @@
                 min-width: 110px;
                 flex: 0 0 auto;
             }
+            .config-tab-shell {
+                padding: 10px 10px 0;
+                gap: 8px;
+            }
 
             .zone-status-inline .config-content {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1236,6 +1242,9 @@
                 min-width: 102px;
                 padding: 7px 9px;
                 font-size: 0.65rem;
+            }
+            .config-tab-shell {
+                padding: 8px 8px 0;
             }
         }
     </style>
@@ -1516,69 +1525,79 @@
             </section>
             </div>
 
-            <details open class="mobile-collapsed" data-tab-panels="load">
-                <summary>Load & Dimming</summary>
-                <div class="config-content">
-                    <div class="panel-lede">Frequently adjusted dimming behavior, ramp timing, and paddle response settings.</div>
-                    <div id="schemaLoadFields" class="schema-fields-shell">
-                        <div class="schema-loading-note">Loading controls...</div>
+            <div class="config-tab-shell" data-tab-panels="load">
+                <section class="panel-section" data-tab-section="load-main">
+                    <div class="panel-section-title">Load & Dimming</div>
+                    <div class="config-content">
+                        <div class="panel-lede">Frequently adjusted dimming behavior, ramp timing, and paddle response settings.</div>
+                        <div id="schemaLoadFields" class="schema-fields-shell">
+                            <div class="schema-loading-note">Loading controls...</div>
+                        </div>
                     </div>
-                </div>
-            </details>
+                </section>
+            </div>
 
-            <details open class="mobile-collapsed" data-tab-panels="led">
-                <summary>LED & Notifications</summary>
-                <div class="config-content">
-                    <div class="panel-lede">Color presets, brightness levels, and notification effects that users tend to tune often.</div>
-                    <div id="schemaLedFields" class="schema-fields-shell">
-                        <div class="schema-loading-note">Loading controls...</div>
+            <div class="config-tab-shell" data-tab-panels="led">
+                <section class="panel-section" data-tab-section="led-main">
+                    <div class="panel-section-title">LED & Notifications</div>
+                    <div class="config-content">
+                        <div class="panel-lede">Color presets, brightness levels, and notification effects that users tend to tune often.</div>
+                        <div id="schemaLedFields" class="schema-fields-shell">
+                            <div class="schema-loading-note">Loading controls...</div>
+                        </div>
                     </div>
-                </div>
-            </details>
+                </section>
+            </div>
 
-            <details open class="mobile-collapsed" data-tab-panels="buttons">
-                <summary>Buttons & Scenes</summary>
-                <div class="config-content">
-                    <div class="panel-lede">Tap and scene behavior mappings for paddle actions and automation events.</div>
-                    <div id="schemaButtonFields" class="schema-fields-shell">
-                        <div class="schema-loading-note">Loading controls...</div>
+            <div class="config-tab-shell" data-tab-panels="buttons">
+                <section class="panel-section" data-tab-section="buttons-main">
+                    <div class="panel-section-title">Buttons & Scenes</div>
+                    <div class="config-content">
+                        <div class="panel-lede">Tap and scene behavior mappings for paddle actions and automation events.</div>
+                        <div id="schemaButtonFields" class="schema-fields-shell">
+                            <div class="schema-loading-note">Loading controls...</div>
+                        </div>
                     </div>
-                </div>
-            </details>
+                </section>
+            </div>
 
-            <details open class="mobile-collapsed" data-tab-panels="power">
-                <summary>Power & Device</summary>
-                <div class="config-content">
-                    <div class="panel-lede">Power reporting, protection, and device-level operational settings.</div>
-                    <div id="schemaPowerFields" class="schema-fields-shell">
-                        <div class="schema-loading-note">Loading controls...</div>
+            <div class="config-tab-shell" data-tab-panels="power">
+                <section class="panel-section" data-tab-section="power-main">
+                    <div class="panel-section-title">Power & Device</div>
+                    <div class="config-content">
+                        <div class="panel-lede">Power reporting, protection, and device-level operational settings.</div>
+                        <div id="schemaPowerFields" class="schema-fields-shell">
+                            <div class="schema-loading-note">Loading controls...</div>
+                        </div>
                     </div>
-                </div>
-            </details>
+                </section>
+            </div>
 
-            <details open class="mobile-collapsed" data-tab-panels="advanced">
-                <summary>Advanced Settings</summary>
-                <div class="config-content">
-                    <div class="panel-lede">
-                        Set-and-forget settings. Most users only need to change these during initial setup.
+            <div class="config-tab-shell" data-tab-panels="advanced">
+                <section class="panel-section" data-tab-section="advanced-main">
+                    <div class="panel-section-title">Advanced Settings</div>
+                    <div class="config-content">
+                        <div class="panel-lede">
+                            Set-and-forget settings. Most users only need to change these during initial setup.
+                        </div>
+                        <div id="schemaAdvancedFields" class="schema-fields-shell">
+                            <div class="schema-loading-note">Loading advanced settings...</div>
+                        </div>
                     </div>
-                    <div id="schemaAdvancedFields" class="schema-fields-shell">
-                        <div class="schema-loading-note">Loading advanced settings...</div>
-                    </div>
-                </div>
-            </details>
+                </section>
 
-            <details open class="mobile-collapsed" data-tab-panels="advanced">
-                <summary>Fan Parameters (May Not Apply)</summary>
-                <div class="config-content">
-                    <div class="panel-lede" style="color: #ffcc80;">
-                        These values are shared firmware fields and may not function on VZM32-SN.
+                <section class="panel-section conditional-section" data-tab-section="advanced-fan" data-conditional-section="fan-parameters">
+                    <div class="panel-section-title">Fan Parameters (May Not Apply)</div>
+                    <div class="config-content">
+                        <div class="panel-lede" style="color: #ffcc80;">
+                            These values are shared firmware fields and may not function on VZM32-SN.
+                        </div>
+                        <div id="schemaFanFields" class="schema-fields-shell">
+                            <div class="schema-loading-note">Loading fan-related fields...</div>
+                        </div>
                     </div>
-                    <div id="schemaFanFields" class="schema-fields-shell">
-                        <div class="schema-loading-note">Loading fan-related fields...</div>
-                    </div>
-                </div>
-            </details>
+                </section>
+            </div>
 
             <div class="dirty-bar" id="dirtyBar">
                 <span id="dirtyText">No pending changes</span>
@@ -3009,31 +3028,33 @@
         // Context-aware command tracking
         let lastCommandId = null; 
 
-        // Helper: Collapse sidebars on mobile automatically
-        function handleMobileView() {
-            if (window.innerWidth <= 900) {
-                document.querySelectorAll('.mobile-collapsed').forEach(el => el.removeAttribute('open'));
-            } else {
-                document.querySelectorAll('.mobile-collapsed').forEach(el => el.setAttribute('open', ''));
-            }
+        // Support future conditional tab sections without reworking layout scaffolding.
+        function setConditionalSectionVisibility(sectionName, isVisible) {
+            const key = String(sectionName || '').trim();
+            if (!key) return;
+            const sections = document.querySelectorAll(`[data-conditional-section="${key}"]`);
+            sections.forEach((section) => {
+                section.hidden = !isVisible;
+            });
         }
-        window.addEventListener('load', handleMobileView);
+
+        function applyConditionalSectionVisibility(map) {
+            if (!map || typeof map !== 'object') return;
+            Object.entries(map).forEach(([sectionName, isVisible]) => {
+                setConditionalSectionVisibility(sectionName, !!isVisible);
+            });
+        }
+
+        window.SwitchStudioSections = {
+            setSectionVisibility: setConditionalSectionVisibility,
+            setSectionsVisibility: applyConditionalSectionVisibility
+        };
 
         // Responsive Resize Handler
         window.addEventListener('resize', function() {
             Plotly.Plots.resize('chart');
             // Prevent mobile keyboard from triggering layout collapse
         });
-
-        // Backward-compatible resize for legacy chart containers that still use <details>.
-        const chartContainer = document.getElementById('chartContainer');
-        if (chartContainer && chartContainer.tagName === 'DETAILS') {
-            chartContainer.addEventListener('toggle', function(event) {
-                if (event.target.open) {
-                    setTimeout(() => Plotly.Plots.resize('chart'), 50);
-                }
-            });
-        }
 
         // Helper: Update Timestamp
         function updateTimestamp() {
