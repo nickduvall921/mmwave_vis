@@ -92,6 +92,37 @@ def _as_bool(value, default=False):
             return False
     return bool(default)
 
+
+def _normalize_basic_state(value):
+    if isinstance(value, bool):
+        return 'ON' if value else 'OFF', None
+
+    if isinstance(value, (int, float)):
+        return ('ON' if int(value) != 0 else 'OFF'), None
+
+    if isinstance(value, str):
+        normalized = value.strip().upper()
+        if normalized in {'ON', 'OFF', 'TOGGLE'}:
+            return normalized, None
+        if normalized in {'TRUE', 'YES', '1'}:
+            return 'ON', None
+        if normalized in {'FALSE', 'NO', '0'}:
+            return 'OFF', None
+
+    return None, "State must be ON, OFF, TOGGLE, or a boolean"
+
+
+def _normalize_basic_brightness(value):
+    parsed = _as_int_or_none(value)
+    if parsed is None:
+        return None, "Brightness must be a numeric value from 0 to 254"
+
+    if parsed < 0:
+        parsed = 0
+    if parsed > 254:
+        parsed = 254
+    return parsed, None
+
 try:
     with open(CONFIG_PATH) as f:
         config = json.load(f)
@@ -303,12 +334,17 @@ def build_force_sync_payload():
             continue
         payload[name] = ""
 
+    # The Zigbee2MQTT definition can expose light controls through nested features.
+    # Keep these keys explicitly requested so quick controls stay in sync.
+    payload.setdefault("state", "")
+    payload.setdefault("brightness", "")
+
     if payload:
         return payload
 
     # Conservative fallback if schema is unavailable.
     return {
-        "state": "", "occupancy": "", "illuminance": "",
+        "state": "", "brightness": "", "occupancy": "", "illuminance": "",
         "mmWaveDepthMax": "", "mmWaveDepthMin": "", "mmWaveWidthMax": "", "mmWaveWidthMin": "",
         "mmWaveHeightMax": "", "mmWaveHeightMin": "", "mmWaveDetectSensitivity": "",
         "mmWaveDetectTrigger": "", "mmWaveHoldTime": "", "mmWaveStayLife": "",
@@ -702,6 +738,89 @@ def handle_set_target_reporting(data):
         topic=current_topic,
         request_id=request_id,
         payload={'enabled': enabled, 'value': target_value},
+        rc=rc,
+        message=None if ok else 'MQTT publish failed'
+    )
+
+
+@socketio.on('set_basic_control')
+def handle_set_basic_control(data):
+    request_id = data.get('request_id') if isinstance(data, dict) else None
+    current_topic = get_session_topic(request.sid)
+    if not current_topic:
+        emit_command_result(
+            request.sid,
+            action='set_basic_control',
+            status='error',
+            request_id=request_id,
+            message='No device selected'
+        )
+        return
+
+    if not isinstance(data, dict):
+        emit_command_result(
+            request.sid,
+            action='set_basic_control',
+            status='error',
+            topic=current_topic,
+            request_id=request_id,
+            message='Invalid payload'
+        )
+        return
+
+    control_payload = {}
+    errors = []
+
+    if 'state' in data:
+        normalized_state, state_error = _normalize_basic_state(data.get('state'))
+        if state_error:
+            errors.append(state_error)
+        else:
+            control_payload['state'] = normalized_state
+
+    if 'brightness' in data:
+        normalized_brightness, brightness_error = _normalize_basic_brightness(data.get('brightness'))
+        if brightness_error:
+            errors.append(brightness_error)
+        else:
+            control_payload['brightness'] = normalized_brightness
+
+    if errors:
+        emit_command_result(
+            request.sid,
+            action='set_basic_control',
+            status='error',
+            topic=current_topic,
+            request_id=request_id,
+            payload={k: v for k, v in data.items() if k in {'state', 'brightness'}},
+            message='; '.join(errors)
+        )
+        return
+
+    if not control_payload:
+        emit_command_result(
+            request.sid,
+            action='set_basic_control',
+            status='error',
+            topic=current_topic,
+            request_id=request_id,
+            message='Missing state or brightness'
+        )
+        return
+
+    ok, rc = publish_json(
+        f"{current_topic}/set",
+        control_payload,
+        origin='set_basic_control',
+        sid=request.sid
+    )
+    emit_command_result(
+        request.sid,
+        action='set_basic_control',
+        status='sent' if ok else 'error',
+        topic=current_topic,
+        request_id=request_id,
+        payload=control_payload,
         rc=rc,
         message=None if ok else 'MQTT publish failed'
     )

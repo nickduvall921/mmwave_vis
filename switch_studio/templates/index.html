@@ -172,6 +172,112 @@
             gap: 8px;
             flex-wrap: nowrap;
         }
+        .header-quick-controls {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-height: 34px;
+            min-width: 0;
+            flex: 1 1 360px;
+            max-width: 520px;
+            padding: 4px 8px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-subtle);
+            background: rgba(18, 23, 35, 0.82);
+        }
+        .header-quick-controls[hidden] {
+            display: none !important;
+        }
+        .quick-control-group {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
+        }
+        .quick-power-group {
+            flex: 0 0 auto;
+        }
+        .quick-brightness-group {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+        .quick-label {
+            color: var(--text-secondary);
+            font-size: 0.68rem;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+        .quick-power-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .quick-power-toggle input[type="checkbox"] {
+            appearance: none;
+            width: 36px;
+            height: 20px;
+            border-radius: 999px;
+            border: 1px solid var(--border-strong);
+            background: #2b2f3b;
+            position: relative;
+            cursor: pointer;
+            transition: background var(--anim-fast), border-color var(--anim-fast), box-shadow var(--anim-fast);
+            margin: 0;
+        }
+        .quick-power-toggle input[type="checkbox"]::before {
+            content: '';
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #d9dde7;
+            top: 2px;
+            left: 2px;
+            transition: transform var(--anim-fast), background var(--anim-fast);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.38);
+        }
+        .quick-power-toggle input[type="checkbox"]:checked {
+            background: linear-gradient(135deg, rgba(13, 212, 192, 0.92), rgba(9, 183, 170, 0.9));
+            border-color: rgba(13, 212, 192, 0.9);
+            box-shadow: 0 0 0 2px rgba(13, 212, 192, 0.18);
+        }
+        .quick-power-toggle input[type="checkbox"]:checked::before {
+            transform: translateX(16px);
+            background: #0d1e25;
+        }
+        .quick-brightness-slider {
+            flex: 1 1 auto;
+            min-width: 110px;
+            accent-color: var(--accent);
+        }
+        .quick-brightness-input {
+            width: 58px;
+            min-width: 58px;
+            background: var(--bg-elev-3);
+            color: var(--text-primary);
+            border: 1px solid var(--border-strong);
+            border-radius: var(--radius-sm);
+            padding: 4px 6px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-align: right;
+        }
+        .quick-brightness-unit {
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            min-width: 14px;
+            text-align: left;
+        }
+        .header-quick-controls.quick-disabled {
+            opacity: 0.64;
+        }
+        .header-quick-controls.quick-disabled .quick-power-toggle input[type="checkbox"],
+        .header-quick-controls.quick-disabled .quick-brightness-slider,
+        .header-quick-controls.quick-disabled .quick-brightness-input {
+            cursor: not-allowed;
+        }
         .status-chip {
             display: inline-flex;
             align-items: center;
@@ -1048,12 +1154,23 @@
                 width: 100%;
                 display: grid;
                 grid-template-columns: minmax(0, 1fr) auto;
+                grid-template-areas:
+                    "device actions"
+                    "quick quick";
                 align-items: center;
                 gap: 8px;
             }
             .header-device-wrap {
+                grid-area: device;
                 min-width: 0;
                 width: 100%;
+            }
+            .header-quick-controls {
+                grid-area: quick;
+                width: 100%;
+                max-width: none;
+                padding: 6px 8px;
+                gap: 7px;
             }
             select#deviceSelect {
                 max-width: unset;
@@ -1061,6 +1178,7 @@
                 margin-right: 0;
             }
             .header-right {
+                grid-area: actions;
                 margin-left: 0;
                 width: auto;
                 justify-content: flex-end;
@@ -1075,6 +1193,13 @@
                 padding: 6px 10px;
                 font-size: 0.72rem;
                 white-space: nowrap;
+            }
+            .quick-label {
+                font-size: 0.64rem;
+            }
+            .quick-brightness-input {
+                width: 54px;
+                min-width: 54px;
             }
 
             .tab-bar {
@@ -1256,6 +1381,21 @@
             .header-controls {
                 gap: 6px;
             }
+            .header-quick-controls {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 6px;
+                padding: 7px 8px;
+            }
+            .quick-control-group {
+                width: 100%;
+            }
+            .quick-brightness-group {
+                display: grid;
+                grid-template-columns: auto minmax(0, 1fr) auto auto;
+                align-items: center;
+                gap: 7px;
+            }
             select#deviceSelect {
                 font-size: 11px;
                 padding: 6px 8px;
@@ -1341,6 +1481,21 @@
         <div class="header-controls">
             <div class="header-device-wrap">
                 <select id="deviceSelect"><option value="" disabled selected>Loading devices...</option></select>
+            </div>
+            <div class="header-quick-controls" id="headerQuickControls" hidden>
+                <div class="quick-control-group quick-power-group" id="quickPowerGroup">
+                    <span class="quick-label">Power</span>
+                    <label class="quick-power-toggle" for="headerPowerToggle">
+                        <input type="checkbox" id="headerPowerToggle" aria-label="Toggle device power">
+                        <span id="headerPowerState" class="zones-report-state zones-report-off">OFF</span>
+                    </label>
+                </div>
+                <div class="quick-control-group quick-brightness-group" id="quickBrightnessGroup">
+                    <span class="quick-label">Brightness</span>
+                    <input class="quick-brightness-slider" type="range" id="headerBrightnessSlider" min="0" max="100" step="1" value="0" aria-label="Brightness slider (percent)">
+                    <input class="quick-brightness-input" type="number" id="headerBrightnessInput" min="0" max="100" step="1" value="0" aria-label="Brightness percent">
+                    <span class="quick-brightness-unit">%</span>
+                </div>
             </div>
             <div class="header-right">
                 <span class="status-chip" id="connectionChip"><span class="status-dot" id="connectionDot"></span><span id="connectionText">Connecting...</span></span>
@@ -1710,6 +1865,13 @@
         const targetReportAutoOffToggle = document.getElementById('targetReportAutoOffToggle');
         const stripIlluminanceVal = document.getElementById('stripIlluminanceVal');
         const stripTargetReportState = document.getElementById('stripTargetReportState');
+        const headerQuickControls = document.getElementById('headerQuickControls');
+        const quickPowerGroup = document.getElementById('quickPowerGroup');
+        const quickBrightnessGroup = document.getElementById('quickBrightnessGroup');
+        const headerPowerToggle = document.getElementById('headerPowerToggle');
+        const headerPowerState = document.getElementById('headerPowerState');
+        const headerBrightnessSlider = document.getElementById('headerBrightnessSlider');
+        const headerBrightnessInput = document.getElementById('headerBrightnessInput');
         const zonesSidebarTabs = document.getElementById('zonesSidebarTabs');
         const zonesSidebarTabButtons = Array.from(document.querySelectorAll('[data-zones-pane-target]'));
         const zonesSidebarPanes = Array.from(document.querySelectorAll('[data-zones-pane]'));
@@ -1727,6 +1889,12 @@
         let targetHistory = {}; 
         const HISTORY_LENGTH = 15; 
         let activeZonesSidebarPane = 'controls';
+        const basicControlSupport = { state: false, brightness: false };
+        const basicControlLastKnown = { state: null, brightness: null };
+        const basicControlPending = new Map();
+        let basicControlRequestCounter = 0;
+        let basicControlBrightnessTimer = null;
+        let suppressBasicControlEvents = false;
         
         // Interaction Lock for Jitter Prevention
         let isInteracting = false;
@@ -1938,11 +2106,201 @@
             connectionText.textContent = connected ? 'Connected' : 'Disconnected';
         }
 
+        function parseBasicStateValue(value) {
+            if (value === true) return true;
+            if (value === false) return false;
+            if (typeof value === 'number') return value !== 0;
+            const raw = String(value || '').trim().toUpperCase();
+            if (raw === 'ON' || raw === 'TRUE' || raw === '1') return true;
+            if (raw === 'OFF' || raw === 'FALSE' || raw === '0') return false;
+            return null;
+        }
+
+        function clampBrightnessRaw(value) {
+            const parsed = Number(value);
+            if (!Number.isFinite(parsed)) return null;
+            return Math.min(254, Math.max(0, Math.round(parsed)));
+        }
+
+        function percentToBrightnessRaw(value) {
+            const parsed = Number(value);
+            if (!Number.isFinite(parsed)) return null;
+            const clampedPercent = Math.min(100, Math.max(0, parsed));
+            return Math.min(254, Math.max(0, Math.round((clampedPercent / 100) * 254)));
+        }
+
+        function brightnessRawToPercent(value) {
+            const raw = clampBrightnessRaw(value);
+            if (raw === null) return null;
+            return Math.min(100, Math.max(0, Math.round((raw / 254) * 100)));
+        }
+
+        function setQuickPowerStateBadge(isOn) {
+            if (!headerPowerState) return;
+            const enabled = !!isOn;
+            headerPowerState.textContent = enabled ? 'ON' : 'OFF';
+            headerPowerState.classList.toggle('zones-report-on', enabled);
+            headerPowerState.classList.toggle('zones-report-off', !enabled);
+        }
+
+        function applyBasicControlUiState() {
+            suppressBasicControlEvents = true;
+            if (headerPowerToggle && basicControlLastKnown.state !== null) {
+                headerPowerToggle.checked = !!basicControlLastKnown.state;
+            }
+            if (headerBrightnessSlider && basicControlLastKnown.brightness !== null) {
+                const percent = brightnessRawToPercent(basicControlLastKnown.brightness);
+                if (percent !== null) headerBrightnessSlider.value = String(percent);
+            }
+            if (headerBrightnessInput && basicControlLastKnown.brightness !== null) {
+                const percent = brightnessRawToPercent(basicControlLastKnown.brightness);
+                if (percent !== null) headerBrightnessInput.value = String(percent);
+            }
+            setQuickPowerStateBadge(basicControlLastKnown.state === true);
+            suppressBasicControlEvents = false;
+        }
+
+        function setBasicControlInputsEnabled(enabled) {
+            const isEnabled = !!enabled;
+            if (headerPowerToggle) headerPowerToggle.disabled = !isEnabled || !basicControlSupport.state;
+            if (headerBrightnessSlider) headerBrightnessSlider.disabled = !isEnabled || !basicControlSupport.brightness;
+            if (headerBrightnessInput) headerBrightnessInput.disabled = !isEnabled || !basicControlSupport.brightness;
+            if (headerQuickControls) headerQuickControls.classList.toggle('quick-disabled', !isEnabled);
+        }
+
+        function updateBasicControlVisibility() {
+            if (!headerQuickControls) return;
+            const hasAnyControl = basicControlSupport.state || basicControlSupport.brightness;
+            headerQuickControls.hidden = !hasAnyControl;
+            if (!hasAnyControl) return;
+
+            if (quickPowerGroup) {
+                quickPowerGroup.style.display = basicControlSupport.state ? '' : 'none';
+            }
+            if (quickBrightnessGroup) {
+                quickBrightnessGroup.style.display = basicControlSupport.brightness ? '' : 'none';
+            }
+        }
+
+        function updateBasicControlSupportFromSchema(schema) {
+            if (!schema || typeof schema !== 'object') return;
+            const stack = [];
+            const fields = Array.isArray(schema.fields) ? schema.fields : [];
+            const options = Array.isArray(schema.options) ? schema.options : [];
+            stack.push(...fields, ...options);
+
+            while (stack.length > 0) {
+                const entry = stack.pop();
+                if (!entry || typeof entry !== 'object') continue;
+                const key = String(entry.name || entry.property || '').trim().toLowerCase();
+                if (key === 'state') basicControlSupport.state = true;
+                if (key === 'brightness') basicControlSupport.brightness = true;
+
+                const features = Array.isArray(entry.features) ? entry.features : [];
+                if (features.length > 0) stack.push(...features);
+            }
+
+            updateBasicControlVisibility();
+        }
+
+        function emitBasicControl(payload, statusMessage, previousSnapshot) {
+            if (!payload || typeof payload !== 'object') return;
+            if (!deviceSelect || !String(deviceSelect.value || '').trim()) return;
+
+            const requestId = `basic-control-${Date.now()}-${basicControlRequestCounter++}`;
+            basicControlPending.set(requestId, {
+                state: previousSnapshot && Object.prototype.hasOwnProperty.call(previousSnapshot, 'state')
+                    ? previousSnapshot.state
+                    : basicControlLastKnown.state,
+                brightness: previousSnapshot && Object.prototype.hasOwnProperty.call(previousSnapshot, 'brightness')
+                    ? previousSnapshot.brightness
+                    : basicControlLastKnown.brightness
+            });
+            socket.emit('set_basic_control', {
+                ...payload,
+                request_id: requestId
+            });
+
+            if (window.SwitchStudioState) {
+                window.SwitchStudioState.setPacketStatus('syncing', statusMessage || 'Updating quick control...');
+            }
+        }
+
+        function commitBrightnessPercent(percentValue) {
+            const percent = Number(percentValue);
+            if (!Number.isFinite(percent)) return;
+            const boundedPercent = Math.min(100, Math.max(0, Math.round(percent)));
+            const rawBrightness = percentToBrightnessRaw(boundedPercent);
+            if (rawBrightness === null) return;
+            const previousSnapshot = {
+                state: basicControlLastKnown.state,
+                brightness: basicControlLastKnown.brightness
+            };
+
+            const payload = { brightness: rawBrightness };
+            if (basicControlSupport.state && basicControlLastKnown.state === false) {
+                payload.state = 'ON';
+                basicControlLastKnown.state = true;
+            }
+            basicControlLastKnown.brightness = rawBrightness;
+            applyBasicControlUiState();
+            emitBasicControl(payload, 'Updating brightness...', previousSnapshot);
+        }
+
+        function queueBrightnessCommit(percentValue) {
+            if (basicControlBrightnessTimer) {
+                clearTimeout(basicControlBrightnessTimer);
+            }
+            basicControlBrightnessTimer = setTimeout(() => {
+                basicControlBrightnessTimer = null;
+                commitBrightnessPercent(percentValue);
+            }, 180);
+        }
+
+        function syncBasicControlsFromConfig(config) {
+            if (!config || typeof config !== 'object') return;
+
+            if (Object.prototype.hasOwnProperty.call(config, 'state')) {
+                basicControlSupport.state = true;
+                const parsedState = parseBasicStateValue(config.state);
+                if (parsedState !== null) {
+                    basicControlLastKnown.state = parsedState;
+                }
+            }
+            if (Object.prototype.hasOwnProperty.call(config, 'brightness')) {
+                basicControlSupport.brightness = true;
+                const parsedBrightness = clampBrightnessRaw(config.brightness);
+                if (parsedBrightness !== null) {
+                    basicControlLastKnown.brightness = parsedBrightness;
+                }
+            }
+
+            updateBasicControlVisibility();
+            applyBasicControlUiState();
+        }
+
+        function resetBasicControlsForDeviceChange() {
+            if (basicControlBrightnessTimer) {
+                clearTimeout(basicControlBrightnessTimer);
+                basicControlBrightnessTimer = null;
+            }
+            basicControlPending.clear();
+            basicControlLastKnown.state = null;
+            basicControlLastKnown.brightness = null;
+            suppressBasicControlEvents = true;
+            if (headerPowerToggle) headerPowerToggle.checked = false;
+            if (headerBrightnessSlider) headerBrightnessSlider.value = '0';
+            if (headerBrightnessInput) headerBrightnessInput.value = '0';
+            setQuickPowerStateBadge(false);
+            suppressBasicControlEvents = false;
+        }
+
         function updateDeviceSelectState() {
             if (!deviceSelect) return;
             const hasSelection = !!String(deviceSelect.value || '').trim();
             deviceSelect.classList.toggle('device-unselected', !hasSelection);
             deviceSelect.setAttribute('aria-label', hasSelection ? 'Select a Device' : 'Select a Device (required)');
+            setBasicControlInputsEnabled(hasSelection);
         }
 
         function applyLegacyLayout() {
@@ -1986,6 +2344,8 @@
             applyLayoutMode('zones');
         }
         updateDeviceSelectState();
+        updateBasicControlVisibility();
+        setQuickPowerStateBadge(false);
         initZonesSidebarTabs();
 
         if (window.SwitchStudioState && typeof window.SwitchStudioState.init === 'function') {
@@ -2067,6 +2427,62 @@
             });
         }
         setTargetReportingState(false, 'Disable');
+
+        if (headerPowerToggle) {
+            headerPowerToggle.addEventListener('change', () => {
+                if (suppressBasicControlEvents) return;
+                const nextState = !!headerPowerToggle.checked;
+                const previousSnapshot = {
+                    state: basicControlLastKnown.state,
+                    brightness: basicControlLastKnown.brightness
+                };
+                basicControlLastKnown.state = nextState;
+                setQuickPowerStateBadge(nextState);
+                emitBasicControl(
+                    { state: nextState ? 'ON' : 'OFF' },
+                    nextState ? 'Turning switch on...' : 'Turning switch off...',
+                    previousSnapshot
+                );
+            });
+        }
+
+        if (headerBrightnessSlider) {
+            headerBrightnessSlider.addEventListener('input', () => {
+                if (suppressBasicControlEvents) return;
+                if (headerBrightnessInput) headerBrightnessInput.value = headerBrightnessSlider.value;
+                queueBrightnessCommit(headerBrightnessSlider.value);
+            });
+            headerBrightnessSlider.addEventListener('change', () => {
+                if (suppressBasicControlEvents) return;
+                if (basicControlBrightnessTimer) {
+                    clearTimeout(basicControlBrightnessTimer);
+                    basicControlBrightnessTimer = null;
+                }
+                commitBrightnessPercent(headerBrightnessSlider.value);
+            });
+        }
+
+        if (headerBrightnessInput) {
+            const commitFromInput = () => {
+                if (suppressBasicControlEvents) return;
+                const parsed = Number(headerBrightnessInput.value);
+                if (!Number.isFinite(parsed)) {
+                    applyBasicControlUiState();
+                    return;
+                }
+                const bounded = Math.min(100, Math.max(0, Math.round(parsed)));
+                headerBrightnessInput.value = String(bounded);
+                if (headerBrightnessSlider) headerBrightnessSlider.value = String(bounded);
+                commitBrightnessPercent(bounded);
+            };
+            headerBrightnessInput.addEventListener('change', commitFromInput);
+            headerBrightnessInput.addEventListener('blur', commitFromInput);
+            headerBrightnessInput.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                commitFromInput();
+            });
+        }
 
         function getInputValueForEmit(input) {
             if (!input) return '';
@@ -3608,6 +4024,8 @@
 
         socket.on('schema_model', function(schema) {
             schemaModel = schema || null;
+            updateBasicControlSupportFromSchema(schemaModel);
+            updateDeviceSelectState();
             renderAllSchemaFields();
         });
 
@@ -3632,6 +4050,44 @@
                     setTargetReportingState(enabled, payload.value);
                     if (window.SwitchStudioState) {
                         window.SwitchStudioState.showToast('saved', enabled ? 'Target reporting enabled' : 'Target reporting disabled', 1500);
+                    }
+                }
+            }
+
+            if (result.action === 'set_basic_control') {
+                const requestId = result.request_id || null;
+                const previousState = requestId ? basicControlPending.get(requestId) : null;
+                if (requestId) basicControlPending.delete(requestId);
+
+                if (result.topic && deviceSelect && deviceSelect.value && result.topic !== deviceSelect.value) {
+                    return;
+                }
+
+                if (result.status === 'error') {
+                    if (previousState) {
+                        basicControlLastKnown.state = previousState.state;
+                        basicControlLastKnown.brightness = previousState.brightness;
+                        applyBasicControlUiState();
+                    }
+                    if (window.SwitchStudioState) {
+                        window.SwitchStudioState.setPacketStatus('error', result.message ? `Error: ${result.message}` : 'Quick control update failed');
+                        window.SwitchStudioState.showToast('error', result.message || 'Quick control update failed', 2200);
+                    } else {
+                        packetInfo.innerText = result.message ? `Error: ${result.message}` : 'Quick control update failed';
+                    }
+                } else if (result.status === 'sent') {
+                    const payload = result.payload || {};
+                    if (Object.prototype.hasOwnProperty.call(payload, 'state')) {
+                        const parsedState = parseBasicStateValue(payload.state);
+                        if (parsedState !== null) basicControlLastKnown.state = parsedState;
+                    }
+                    if (Object.prototype.hasOwnProperty.call(payload, 'brightness')) {
+                        const parsedBrightness = clampBrightnessRaw(payload.brightness);
+                        if (parsedBrightness !== null) basicControlLastKnown.brightness = parsedBrightness;
+                    }
+                    applyBasicControlUiState();
+                    if (window.SwitchStudioState) {
+                        window.SwitchStudioState.showToast('saved', 'Quick control updated', 1300);
                     }
                 }
             }
@@ -3664,6 +4120,7 @@
 
         deviceSelect.addEventListener('change', function() {
             updateDeviceSelectState();
+            resetBasicControlsForDeviceChange();
             socket.emit('change_device', this.value);
             
             // FIRE A FORCE SYNC TO PREVENT STALE DATA ON LOAD
@@ -3711,6 +4168,16 @@
             nonMmwaveWarning.style.display = 'none'; 
         });
 
+        socket.on('device_snapshot', function(msg) {
+            if (!msg || !msg.topic || !msg.payload) return;
+            if (msg.topic !== deviceSelect.value) return;
+
+            const snapshotConfig = msg.payload.last_config;
+            if (snapshotConfig && typeof snapshotConfig === 'object') {
+                syncBasicControlsFromConfig(snapshotConfig);
+            }
+        });
+
         // Helper: Convert Z2M area object to internal format and handle zeroed-out zones
         function parseZ2MArea(area) {
             if (!area) return null;
@@ -3751,6 +4218,8 @@
             
             // FILTER: IGNORE DATA FROM OTHER DEVICES
             if (msg.topic !== deviceSelect.value) return;
+
+            syncBasicControlsFromConfig(config);
 
             updateTimestamp(); 
 
