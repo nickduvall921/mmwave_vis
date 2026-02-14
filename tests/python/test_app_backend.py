@@ -220,6 +220,40 @@ class AppBackendTests(unittest.TestCase):
         self.assertEqual(results[-1]["status"], "error")
         self.assertEqual(results[-1]["message"], "No device selected")
 
+    def test_set_basic_control_includes_transition_when_present(self):
+        published = []
+
+        def fake_publish(topic, payload, origin, sid=None):
+            published.append({"topic": topic, "payload": payload, "origin": origin, "sid": sid})
+            return True, 0
+
+        client = self._client()
+        client.get_received()
+
+        with patch.object(app_module, "publish_json", side_effect=fake_publish):
+            client.emit("change_device", "zigbee2mqtt/device_a")
+            client.get_received()
+            client.emit(
+                "set_basic_control",
+                {"brightness": 110, "transition": 1.5, "request_id": "basic-transition"},
+            )
+
+        self.assertEqual(len(published), 1)
+        self.assertEqual(published[0]["payload"], {"brightness": 110, "transition": 1.5})
+
+    def test_set_basic_control_rejects_transition_only_payload(self):
+        client = self._client()
+        client.get_received()
+        client.emit("change_device", "zigbee2mqtt/device_a")
+        client.get_received()
+        client.emit("set_basic_control", {"transition": 1, "request_id": "basic-transition-only"})
+
+        results = [event["args"][0] for event in client.get_received() if event["name"] == "command_result"]
+        matching = [result for result in results if result.get("action") == "set_basic_control"]
+        self.assertTrue(matching)
+        self.assertEqual(matching[-1]["status"], "error")
+        self.assertEqual(matching[-1]["message"], "Missing state or brightness")
+
     def test_auto_off_disconnect_only_when_last_session_on_topic(self):
         published = []
 

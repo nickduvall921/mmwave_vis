@@ -123,6 +123,27 @@ def _normalize_basic_brightness(value):
         parsed = 254
     return parsed, None
 
+
+def _normalize_basic_transition(value):
+    if value is None:
+        return None, None
+    if isinstance(value, str) and value.strip() == "":
+        return None, None
+
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None, "Transition must be a numeric value from 0 to 30 seconds"
+
+    if parsed < 0:
+        parsed = 0.0
+    if parsed > 30:
+        parsed = 30.0
+
+    if float(parsed).is_integer():
+        return int(parsed), None
+    return round(parsed, 2), None
+
 try:
     with open(CONFIG_PATH) as f:
         config = json.load(f)
@@ -785,6 +806,13 @@ def handle_set_basic_control(data):
         else:
             control_payload['brightness'] = normalized_brightness
 
+    if 'transition' in data:
+        normalized_transition, transition_error = _normalize_basic_transition(data.get('transition'))
+        if transition_error:
+            errors.append(transition_error)
+        elif normalized_transition is not None:
+            control_payload['transition'] = normalized_transition
+
     if errors:
         emit_command_result(
             request.sid,
@@ -792,12 +820,12 @@ def handle_set_basic_control(data):
             status='error',
             topic=current_topic,
             request_id=request_id,
-            payload={k: v for k, v in data.items() if k in {'state', 'brightness'}},
+            payload={k: v for k, v in data.items() if k in {'state', 'brightness', 'transition'}},
             message='; '.join(errors)
         )
         return
 
-    if not control_payload:
+    if 'state' not in control_payload and 'brightness' not in control_payload:
         emit_command_result(
             request.sid,
             action='set_basic_control',

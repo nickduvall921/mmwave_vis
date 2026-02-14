@@ -179,7 +179,7 @@
             min-height: 34px;
             min-width: 0;
             flex: 1 1 360px;
-            max-width: 520px;
+            max-width: 660px;
             padding: 4px 8px;
             border-radius: var(--radius-sm);
             border: 1px solid var(--border-subtle);
@@ -200,6 +200,9 @@
         .quick-brightness-group {
             flex: 1 1 auto;
             min-width: 0;
+        }
+        .quick-transition-group {
+            flex: 0 0 auto;
         }
         .quick-label {
             color: var(--text-secondary);
@@ -270,12 +273,28 @@
             min-width: 14px;
             text-align: left;
         }
+        .quick-transition-select {
+            background: var(--bg-elev-3);
+            color: var(--text-primary);
+            border: 1px solid var(--border-strong);
+            border-radius: var(--radius-sm);
+            padding: 4px 6px;
+            font-size: 0.7rem;
+            min-height: 26px;
+            min-width: 108px;
+            cursor: pointer;
+        }
+        .quick-transition-select:hover,
+        .quick-transition-select:focus-visible {
+            border-color: var(--accent);
+        }
         .header-quick-controls.quick-disabled {
             opacity: 0.64;
         }
         .header-quick-controls.quick-disabled .quick-power-toggle input[type="checkbox"],
         .header-quick-controls.quick-disabled .quick-brightness-slider,
-        .header-quick-controls.quick-disabled .quick-brightness-input {
+        .header-quick-controls.quick-disabled .quick-brightness-input,
+        .header-quick-controls.quick-disabled .quick-transition-select {
             cursor: not-allowed;
         }
         .status-chip {
@@ -1201,6 +1220,9 @@
                 width: 54px;
                 min-width: 54px;
             }
+            .quick-transition-select {
+                min-width: 94px;
+            }
 
             .tab-bar {
                 gap: 6px;
@@ -1390,11 +1412,28 @@
             .quick-control-group {
                 width: 100%;
             }
+            .quick-power-group {
+                justify-content: center;
+            }
+            .quick-power-toggle {
+                justify-content: center;
+                margin: 0 auto;
+            }
             .quick-brightness-group {
                 display: grid;
                 grid-template-columns: auto minmax(0, 1fr) auto auto;
                 align-items: center;
                 gap: 7px;
+            }
+            .quick-transition-group {
+                display: grid;
+                grid-template-columns: auto minmax(0, 1fr);
+                align-items: center;
+                gap: 7px;
+            }
+            .quick-transition-select {
+                width: 100%;
+                min-width: 0;
             }
             select#deviceSelect {
                 font-size: 11px;
@@ -1495,6 +1534,16 @@
                     <input class="quick-brightness-slider" type="range" id="headerBrightnessSlider" min="0" max="100" step="1" value="0" aria-label="Brightness slider (percent)">
                     <input class="quick-brightness-input" type="number" id="headerBrightnessInput" min="0" max="100" step="1" value="0" aria-label="Brightness percent">
                     <span class="quick-brightness-unit">%</span>
+                </div>
+                <div class="quick-control-group quick-transition-group" id="quickTransitionGroup">
+                    <span class="quick-label">Transition</span>
+                    <select class="quick-transition-select" id="headerTransitionMode" aria-label="Quick control transition mode">
+                        <option value="auto">Auto</option>
+                        <option value="instant">Instant</option>
+                        <option value="0.5">0.5s</option>
+                        <option value="1">1.0s</option>
+                        <option value="2">2.0s</option>
+                    </select>
                 </div>
             </div>
             <div class="header-right">
@@ -1868,10 +1917,12 @@
         const headerQuickControls = document.getElementById('headerQuickControls');
         const quickPowerGroup = document.getElementById('quickPowerGroup');
         const quickBrightnessGroup = document.getElementById('quickBrightnessGroup');
+        const quickTransitionGroup = document.getElementById('quickTransitionGroup');
         const headerPowerToggle = document.getElementById('headerPowerToggle');
         const headerPowerState = document.getElementById('headerPowerState');
         const headerBrightnessSlider = document.getElementById('headerBrightnessSlider');
         const headerBrightnessInput = document.getElementById('headerBrightnessInput');
+        const headerTransitionMode = document.getElementById('headerTransitionMode');
         const zonesSidebarTabs = document.getElementById('zonesSidebarTabs');
         const zonesSidebarTabButtons = Array.from(document.querySelectorAll('[data-zones-pane-target]'));
         const zonesSidebarPanes = Array.from(document.querySelectorAll('[data-zones-pane]'));
@@ -1879,6 +1930,7 @@
         const connectionText = document.getElementById('connectionText');
         const TARGET_REPORT_AUTO_OFF_STORAGE_KEY = 'switchStudio.targetReportAutoOff';
         const ZONES_SIDEBAR_TAB_STORAGE_KEY = 'switchStudio.zonesSidebarTab';
+        const QUICK_TRANSITION_MODE_STORAGE_KEY = 'switchStudio.quickTransitionMode';
 
         // Visualizer Scale Inputs
         const vizXMin = document.getElementById('vizXMin');
@@ -1892,8 +1944,22 @@
         const basicControlSupport = { state: false, brightness: false };
         const basicControlLastKnown = { state: null, brightness: null };
         const basicControlPending = new Map();
+        const dimmingTimingState = {
+            dimmingSpeedUpRemote: null,
+            dimmingSpeedUpLocal: null,
+            rampRateOffToOnRemote: null,
+            rampRateOffToOnLocal: null,
+            dimmingSpeedDownRemote: null,
+            dimmingSpeedDownLocal: null,
+            rampRateOnToOffRemote: null,
+            rampRateOnToOffLocal: null
+        };
         let basicControlRequestCounter = 0;
         let basicControlBrightnessTimer = null;
+        let brightnessUiAnimationFrame = null;
+        let brightnessUiAnimationToken = 0;
+        let basicControlDisplayedBrightnessRaw = null;
+        let quickTransitionModeValue = 'auto';
         let suppressBasicControlEvents = false;
         
         // Interaction Lock for Jitter Prevention
@@ -2116,6 +2182,30 @@
             return null;
         }
 
+        function normalizeQuickTransitionMode(value) {
+            const raw = String(value || '').trim().toLowerCase();
+            if (raw === 'auto' || raw === 'instant' || raw === '0.5' || raw === '1' || raw === '2') {
+                return raw;
+            }
+            return 'auto';
+        }
+
+        function getStoredQuickTransitionMode() {
+            try {
+                return normalizeQuickTransitionMode(localStorage.getItem(QUICK_TRANSITION_MODE_STORAGE_KEY));
+            } catch (err) {
+                return 'auto';
+            }
+        }
+
+        function persistQuickTransitionMode(mode) {
+            try {
+                localStorage.setItem(QUICK_TRANSITION_MODE_STORAGE_KEY, normalizeQuickTransitionMode(mode));
+            } catch (err) {
+                // Ignore storage failures.
+            }
+        }
+
         function clampBrightnessRaw(value) {
             const parsed = Number(value);
             if (!Number.isFinite(parsed)) return null;
@@ -2135,6 +2225,165 @@
             return Math.min(100, Math.max(0, Math.round((raw / 254) * 100)));
         }
 
+        function clampDimmingStep(value) {
+            const parsed = Number(value);
+            if (!Number.isFinite(parsed)) return null;
+            return Math.min(127, Math.max(0, Math.round(parsed)));
+        }
+
+        function updateDimmingTimingFromConfig(config) {
+            if (!config || typeof config !== 'object') return;
+            Object.keys(dimmingTimingState).forEach((key) => {
+                if (!Object.prototype.hasOwnProperty.call(config, key)) return;
+                const parsed = clampDimmingStep(config[key]);
+                if (parsed !== null) dimmingTimingState[key] = parsed;
+            });
+        }
+
+        function resolveSyncedDimmingStep(key, depth = 0) {
+            if (!key || depth > 8) return null;
+            const value = dimmingTimingState[key];
+            if (value === null || value === undefined) return null;
+            if (value !== 127) return value;
+
+            const syncMap = {
+                dimmingSpeedUpLocal: 'dimmingSpeedUpRemote',
+                rampRateOffToOnRemote: 'dimmingSpeedUpRemote',
+                rampRateOffToOnLocal: 'dimmingSpeedUpRemote',
+                dimmingSpeedDownRemote: 'dimmingSpeedUpRemote',
+                dimmingSpeedDownLocal: 'dimmingSpeedUpLocal',
+                rampRateOnToOffRemote: 'rampRateOffToOnRemote',
+                rampRateOnToOffLocal: 'rampRateOffToOnLocal'
+            };
+            const fallbackKey = syncMap[key];
+            if (!fallbackKey) return value;
+            const resolved = resolveSyncedDimmingStep(fallbackKey, depth + 1);
+            return resolved === null ? value : resolved;
+        }
+
+        function resolveAutoVisualDurationMs(fromRaw, toRaw) {
+            const from = clampBrightnessRaw(fromRaw);
+            const to = clampBrightnessRaw(toRaw);
+            const isUp = from === null || to === null ? true : to >= from;
+
+            let fullRangeStep = isUp
+                ? resolveSyncedDimmingStep('dimmingSpeedUpRemote')
+                : resolveSyncedDimmingStep('dimmingSpeedDownRemote');
+
+            if (fullRangeStep === null) {
+                fullRangeStep = isUp
+                    ? resolveSyncedDimmingStep('rampRateOffToOnRemote')
+                    : resolveSyncedDimmingStep('rampRateOnToOffRemote');
+            }
+            if (fullRangeStep === null) {
+                fullRangeStep = resolveSyncedDimmingStep('dimmingSpeedUpRemote');
+            }
+            if (fullRangeStep === null) return 0;
+
+            const fullRangeMs = Math.max(0, fullRangeStep * 100);
+            if (from === null || to === null) {
+                return Math.min(8000, fullRangeMs);
+            }
+
+            const deltaRatio = Math.abs(to - from) / 254;
+            const scaled = Math.round(fullRangeMs * deltaRatio);
+            return Math.min(8000, Math.max(90, scaled));
+        }
+
+        function getTransitionSecondsForPayload() {
+            if (quickTransitionModeValue === 'instant') return 0;
+            if (quickTransitionModeValue === 'auto') return null;
+            const parsed = Number(quickTransitionModeValue);
+            if (!Number.isFinite(parsed)) return null;
+            return Math.max(0, parsed);
+        }
+
+        function getVisualTransitionDurationMs(fromRaw, toRaw) {
+            if (quickTransitionModeValue === 'instant') return 0;
+            if (quickTransitionModeValue === 'auto') return resolveAutoVisualDurationMs(fromRaw, toRaw);
+            const parsed = Number(quickTransitionModeValue);
+            if (!Number.isFinite(parsed)) return resolveAutoVisualDurationMs(fromRaw, toRaw);
+            return Math.min(8000, Math.max(0, Math.round(parsed * 1000)));
+        }
+
+        function applyStoredQuickTransitionMode() {
+            quickTransitionModeValue = getStoredQuickTransitionMode();
+            if (headerTransitionMode) {
+                headerTransitionMode.value = quickTransitionModeValue;
+            }
+        }
+
+        function cancelBrightnessUiAnimation() {
+            if (brightnessUiAnimationFrame !== null) {
+                cancelAnimationFrame(brightnessUiAnimationFrame);
+                brightnessUiAnimationFrame = null;
+            }
+            brightnessUiAnimationToken += 1;
+        }
+
+        function setBrightnessUiPercent(percentValue) {
+            const bounded = Math.min(100, Math.max(0, Math.round(Number(percentValue) || 0)));
+            suppressBasicControlEvents = true;
+            if (headerBrightnessSlider) headerBrightnessSlider.value = String(bounded);
+            if (headerBrightnessInput) headerBrightnessInput.value = String(bounded);
+            suppressBasicControlEvents = false;
+        }
+
+        function setBrightnessUiRawImmediate(rawValue) {
+            const raw = clampBrightnessRaw(rawValue);
+            if (raw === null) return;
+            cancelBrightnessUiAnimation();
+            const percent = brightnessRawToPercent(raw);
+            if (percent !== null) setBrightnessUiPercent(percent);
+            basicControlDisplayedBrightnessRaw = raw;
+        }
+
+        function animateBrightnessUiRaw(targetRawValue, durationMs) {
+            const targetRaw = clampBrightnessRaw(targetRawValue);
+            if (targetRaw === null) return;
+
+            const effectiveDuration = Math.max(0, Number(durationMs) || 0);
+            if (effectiveDuration <= 0) {
+                setBrightnessUiRawImmediate(targetRaw);
+                return;
+            }
+
+            const fallbackStart = clampBrightnessRaw(basicControlDisplayedBrightnessRaw);
+            const startRaw = fallbackStart !== null
+                ? fallbackStart
+                : (clampBrightnessRaw(basicControlLastKnown.brightness) ?? targetRaw);
+            const startPercent = brightnessRawToPercent(startRaw);
+            const targetPercent = brightnessRawToPercent(targetRaw);
+            if (startPercent === null || targetPercent === null || startPercent === targetPercent) {
+                setBrightnessUiRawImmediate(targetRaw);
+                return;
+            }
+
+            cancelBrightnessUiAnimation();
+            const token = brightnessUiAnimationToken;
+            const startedAt = performance.now();
+
+            const tick = (now) => {
+                if (token !== brightnessUiAnimationToken) return;
+                const elapsed = now - startedAt;
+                const progress = Math.min(1, elapsed / effectiveDuration);
+                const currentPercent = startPercent + ((targetPercent - startPercent) * progress);
+                setBrightnessUiPercent(currentPercent);
+                const currentRaw = percentToBrightnessRaw(currentPercent);
+                if (currentRaw !== null) basicControlDisplayedBrightnessRaw = currentRaw;
+
+                if (progress < 1) {
+                    brightnessUiAnimationFrame = requestAnimationFrame(tick);
+                    return;
+                }
+
+                brightnessUiAnimationFrame = null;
+                basicControlDisplayedBrightnessRaw = targetRaw;
+            };
+
+            brightnessUiAnimationFrame = requestAnimationFrame(tick);
+        }
+
         function setQuickPowerStateBadge(isOn) {
             if (!headerPowerState) return;
             const enabled = !!isOn;
@@ -2143,21 +2392,25 @@
             headerPowerState.classList.toggle('zones-report-off', !enabled);
         }
 
-        function applyBasicControlUiState() {
+        function applyBasicControlUiState(options) {
+            const opts = options || {};
+            const animateBrightness = !!opts.animateBrightness;
+            const animationDurationMs = Math.max(0, Number(opts.durationMs) || 0);
+
             suppressBasicControlEvents = true;
             if (headerPowerToggle && basicControlLastKnown.state !== null) {
                 headerPowerToggle.checked = !!basicControlLastKnown.state;
             }
-            if (headerBrightnessSlider && basicControlLastKnown.brightness !== null) {
-                const percent = brightnessRawToPercent(basicControlLastKnown.brightness);
-                if (percent !== null) headerBrightnessSlider.value = String(percent);
-            }
-            if (headerBrightnessInput && basicControlLastKnown.brightness !== null) {
-                const percent = brightnessRawToPercent(basicControlLastKnown.brightness);
-                if (percent !== null) headerBrightnessInput.value = String(percent);
-            }
             setQuickPowerStateBadge(basicControlLastKnown.state === true);
             suppressBasicControlEvents = false;
+
+            if (basicControlLastKnown.brightness !== null) {
+                if (animateBrightness) {
+                    animateBrightnessUiRaw(basicControlLastKnown.brightness, animationDurationMs);
+                } else {
+                    setBrightnessUiRawImmediate(basicControlLastKnown.brightness);
+                }
+            }
         }
 
         function setBasicControlInputsEnabled(enabled) {
@@ -2165,6 +2418,7 @@
             if (headerPowerToggle) headerPowerToggle.disabled = !isEnabled || !basicControlSupport.state;
             if (headerBrightnessSlider) headerBrightnessSlider.disabled = !isEnabled || !basicControlSupport.brightness;
             if (headerBrightnessInput) headerBrightnessInput.disabled = !isEnabled || !basicControlSupport.brightness;
+            if (headerTransitionMode) headerTransitionMode.disabled = !isEnabled || !basicControlSupport.brightness;
             if (headerQuickControls) headerQuickControls.classList.toggle('quick-disabled', !isEnabled);
         }
 
@@ -2180,10 +2434,15 @@
             if (quickBrightnessGroup) {
                 quickBrightnessGroup.style.display = basicControlSupport.brightness ? '' : 'none';
             }
+            if (quickTransitionGroup) {
+                quickTransitionGroup.style.display = basicControlSupport.brightness ? '' : 'none';
+            }
         }
 
         function updateBasicControlSupportFromSchema(schema) {
             if (!schema || typeof schema !== 'object') return;
+            basicControlSupport.state = false;
+            basicControlSupport.brightness = false;
             const stack = [];
             const fields = Array.isArray(schema.fields) ? schema.fields : [];
             const options = Array.isArray(schema.options) ? schema.options : [];
@@ -2207,6 +2466,12 @@
             if (!payload || typeof payload !== 'object') return;
             if (!deviceSelect || !String(deviceSelect.value || '').trim()) return;
 
+            const emitPayload = { ...payload };
+            const transitionSeconds = getTransitionSecondsForPayload();
+            if (transitionSeconds !== null) {
+                emitPayload.transition = transitionSeconds;
+            }
+
             const requestId = `basic-control-${Date.now()}-${basicControlRequestCounter++}`;
             basicControlPending.set(requestId, {
                 state: previousSnapshot && Object.prototype.hasOwnProperty.call(previousSnapshot, 'state')
@@ -2217,7 +2482,7 @@
                     : basicControlLastKnown.brightness
             });
             socket.emit('set_basic_control', {
-                ...payload,
+                ...emitPayload,
                 request_id: requestId
             });
 
@@ -2243,7 +2508,7 @@
                 basicControlLastKnown.state = true;
             }
             basicControlLastKnown.brightness = rawBrightness;
-            applyBasicControlUiState();
+            applyBasicControlUiState({ animateBrightness: false });
             emitBasicControl(payload, 'Updating brightness...', previousSnapshot);
         }
 
@@ -2259,6 +2524,10 @@
 
         function syncBasicControlsFromConfig(config) {
             if (!config || typeof config !== 'object') return;
+            updateDimmingTimingFromConfig(config);
+            const previousBrightness = clampBrightnessRaw(basicControlLastKnown.brightness);
+            let didReceiveBrightness = false;
+            let brightnessChanged = false;
 
             if (Object.prototype.hasOwnProperty.call(config, 'state')) {
                 basicControlSupport.state = true;
@@ -2271,12 +2540,19 @@
                 basicControlSupport.brightness = true;
                 const parsedBrightness = clampBrightnessRaw(config.brightness);
                 if (parsedBrightness !== null) {
+                    didReceiveBrightness = true;
+                    brightnessChanged = previousBrightness !== null && previousBrightness !== parsedBrightness;
                     basicControlLastKnown.brightness = parsedBrightness;
                 }
             }
 
             updateBasicControlVisibility();
-            applyBasicControlUiState();
+            if (didReceiveBrightness && brightnessChanged) {
+                const durationMs = getVisualTransitionDurationMs(previousBrightness, basicControlLastKnown.brightness);
+                applyBasicControlUiState({ animateBrightness: durationMs > 0, durationMs: durationMs });
+            } else {
+                applyBasicControlUiState({ animateBrightness: false });
+            }
         }
 
         function resetBasicControlsForDeviceChange() {
@@ -2284,9 +2560,11 @@
                 clearTimeout(basicControlBrightnessTimer);
                 basicControlBrightnessTimer = null;
             }
+            cancelBrightnessUiAnimation();
             basicControlPending.clear();
             basicControlLastKnown.state = null;
             basicControlLastKnown.brightness = null;
+            basicControlDisplayedBrightnessRaw = null;
             suppressBasicControlEvents = true;
             if (headerPowerToggle) headerPowerToggle.checked = false;
             if (headerBrightnessSlider) headerBrightnessSlider.value = '0';
@@ -2345,8 +2623,17 @@
         }
         updateDeviceSelectState();
         updateBasicControlVisibility();
+        applyStoredQuickTransitionMode();
         setQuickPowerStateBadge(false);
         initZonesSidebarTabs();
+
+        if (headerTransitionMode) {
+            headerTransitionMode.addEventListener('change', () => {
+                quickTransitionModeValue = normalizeQuickTransitionMode(headerTransitionMode.value);
+                headerTransitionMode.value = quickTransitionModeValue;
+                persistQuickTransitionMode(quickTransitionModeValue);
+            });
+        }
 
         if (window.SwitchStudioState && typeof window.SwitchStudioState.init === 'function') {
             window.SwitchStudioState.init({
@@ -2449,7 +2736,9 @@
         if (headerBrightnessSlider) {
             headerBrightnessSlider.addEventListener('input', () => {
                 if (suppressBasicControlEvents) return;
+                cancelBrightnessUiAnimation();
                 if (headerBrightnessInput) headerBrightnessInput.value = headerBrightnessSlider.value;
+                basicControlDisplayedBrightnessRaw = percentToBrightnessRaw(headerBrightnessSlider.value);
                 queueBrightnessCommit(headerBrightnessSlider.value);
             });
             headerBrightnessSlider.addEventListener('change', () => {
@@ -2458,6 +2747,7 @@
                     clearTimeout(basicControlBrightnessTimer);
                     basicControlBrightnessTimer = null;
                 }
+                basicControlDisplayedBrightnessRaw = percentToBrightnessRaw(headerBrightnessSlider.value);
                 commitBrightnessPercent(headerBrightnessSlider.value);
             });
         }
@@ -2473,6 +2763,7 @@
                 const bounded = Math.min(100, Math.max(0, Math.round(parsed)));
                 headerBrightnessInput.value = String(bounded);
                 if (headerBrightnessSlider) headerBrightnessSlider.value = String(bounded);
+                basicControlDisplayedBrightnessRaw = percentToBrightnessRaw(bounded);
                 commitBrightnessPercent(bounded);
             };
             headerBrightnessInput.addEventListener('change', commitFromInput);
