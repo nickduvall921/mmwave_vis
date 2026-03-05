@@ -226,36 +226,40 @@ def on_message(client, userdata, msg):
             return
 
         # --- DEVICE DISCOVERY ---
-        if topic.startswith(MQTT_BASE_TOPIC):
-            if "mmWaveVersion" in payload:
-                parts = topic.split('/')
-                if len(parts) >= 2:
-                    friendly_name = parts[1]
+        # Isolated: discovery failures must not block state processing
+        try:
+            if topic.startswith(MQTT_BASE_TOPIC):
+                if "mmWaveVersion" in payload:
+                    parts = topic.split('/')
+                    if len(parts) >= 2:
+                        friendly_name = parts[1]
 
-                    with device_list_lock:
-                        is_new = friendly_name not in device_list
+                        with device_list_lock:
+                            is_new = friendly_name not in device_list
+                            if is_new:
+                                print(f"Discovered Inovelli mmWave Switch: {friendly_name}", flush=True)
+                                device_list[friendly_name] = {
+                                    'friendly_name': friendly_name,
+                                    'topic': f"{MQTT_BASE_TOPIC}/{friendly_name}",
+                                    'interference_zones': [],
+                                    'detection_zones': [],
+                                    'stay_zones': [],
+                                    'use_nested_area1': False,
+                                    'zone_config': {
+                                        "x_min": -100, "x_max": 100,
+                                        "y_min": 0, "y_max": 600,
+                                        "z_min": -300, "z_max": 300
+                                    },
+                                    'last_update': 0,
+                                    'last_seen': time.time()
+                                }
+                            else:
+                                device_list[friendly_name]['last_seen'] = time.time()
+
                         if is_new:
-                            print(f"Discovered Inovelli mmWave Switch: {friendly_name}", flush=True)
-                            device_list[friendly_name] = {
-                                'friendly_name': friendly_name,
-                                'topic': f"{MQTT_BASE_TOPIC}/{friendly_name}",
-                                'interference_zones': [],
-                                'detection_zones': [],
-                                'stay_zones': [],
-                                'use_nested_area1': False,
-                                'zone_config': {
-                                    "x_min": -100, "x_max": 100,
-                                    "y_min": 0, "y_max": 600,
-                                    "z_min": -300, "z_max": 300
-                                },
-                                'last_update': 0,
-                                'last_seen': time.time()
-                            }
-                        else:
-                            device_list[friendly_name]['last_seen'] = time.time()
-
-                    if is_new:
-                        socketio.emit('device_list', get_device_list_snapshot())
+                            socketio.emit('device_list', get_device_list_snapshot())
+        except Exception as e:
+            print(f"Warning: Device discovery failed for {topic}: {e}", flush=True)
 
         # --- IDENTIFY DEVICE ---
         with device_list_lock:
@@ -273,137 +277,175 @@ def on_message(client, userdata, msg):
         if is_raw_packet:
             cmd_id = payload.get("4")
 
-            # --- 0x01: Target Info Reporting (Movement Data) ---
+            # --- 0x01: Target Info Reporting ---
             if cmd_id == 1:
-                current_time = time.time()
-                with device_list_lock:
-                    last_update = device_list[fname].get('last_update', 0)
+                try:
+                    _process_target_data(payload, fname, device_topic)
+                except Exception as e:
+                    print(f"Warning: Target data processing failed: {e}", flush=True)
 
-                if (current_time - last_update) >= 0.1:
-                    with device_list_lock:
-                        device_list[fname]['last_update'] = current_time
-
-                    seq_num = payload.get("3")
-                    num_targets = payload.get("5", 0)
-                    targets = []
-                    offset = 6
-
-                    for _ in range(num_targets):
-                        if str(offset + 8) not in payload:
-                            break
-                        targets.append({
-                            "id": int(payload.get(str(offset + 8)) or 0),
-                            "x": parse_signed_16(payload, offset),
-                            "y": parse_signed_16(payload, offset + 2),
-                            "z": parse_signed_16(payload, offset + 4),
-                            "dop": parse_signed_16(payload, offset + 6)
-                        })
-                        offset += 9
-
-                    emit_to_topic_subscribers(
-                        'new_data',
-                        {'topic': device_topic, 'payload': {"seq": seq_num, "targets": targets}},
-                        device_topic
-                    )
-
-            # --- 0x02 (Interference), 0x03 (Detection), 0x04 (Stay) Areas ---
+            # --- 0x02/0x03/0x04: Zone Area Reports ---
             elif cmd_id in [2, 3, 4]:
                 try:
-                    zones = []
-                    offset = 6
-                    num_zones = payload.get("5", 0)
-
-                    for _ in range(num_zones):
-                        if str(offset + 11) not in payload:
-                            break
-
-                        x_min = parse_signed_16(payload, offset)
-                        x_max = parse_signed_16(payload, offset + 2)
-                        y_min = parse_signed_16(payload, offset + 4)
-                        y_max = parse_signed_16(payload, offset + 6)
-                        z_min = parse_signed_16(payload, offset + 8)
-                        z_max = parse_signed_16(payload, offset + 10)
-
-                        if (x_max != 0 or x_min != 0 or y_max != 0 or y_min != 0):
-                            zones.append({
-                                "x_min": x_min, "x_max": x_max,
-                                "y_min": y_min, "y_max": y_max,
-                                "z_min": z_min, "z_max": z_max
-                            })
-
-                        offset += 12
-
-                    # Store and emit based on Command ID
-                    event_map = {
-                        2: ('interference_zones', 'Interference'),
-                        3: ('detection_zones', 'Detection'),
-                        4: ('stay_zones', 'Stay')
-                    }
-                    event_name, zone_label = event_map[cmd_id]
-
-                    with device_list_lock:
-                        device_list[fname][event_name] = zones
-
-                    emit_to_topic_subscribers(
-                        event_name,
-                        {'topic': device_topic, 'payload': zones},
-                        device_topic
-                    )
-                    print(f"{zone_label} Zones Updated: {zones}", flush=True)
-
-                except Exception as parse_error:
-                    print(f"Warning: Zone packet offset mismatch: {parse_error}", flush=True)
+                    _process_zone_report(payload, cmd_id, fname, device_topic)
+                except Exception as e:
+                    print(f"Warning: Zone report (cmd={cmd_id}) processing failed: {e}", flush=True)
 
         # --- STANDARD STATE UPDATE ---
-        config_payload = {k: v for k, v in payload.items() if not k.isdigit()}
-
-        if config_payload:
-            emit_to_topic_subscribers(
-                'device_config',
-                {'topic': device_topic, 'payload': config_payload},
-                device_topic
-            )
-
-            with device_list_lock:
-                # Check nested mode for Zone 1
-                if "mmwave_detection_areas" in config_payload:
-                    a1 = config_payload["mmwave_detection_areas"].get("area1")
-                    has_data = False
-                    if a1 and isinstance(a1, dict):
-                        for val in a1.values():
-                            if isinstance(val, (int, float)) and val != 0:
-                                has_data = True
-                                break
-                    device_list[fname]['use_nested_area1'] = has_data
-
-                # Update standard global zone
-                needs_emit = False
-                current_zone = device_list[fname]['zone_config']
-
-                field_map = {
-                    "mmWaveWidthMin": "x_min", "mmWaveWidthMax": "x_max",
-                    "mmWaveDepthMin": "y_min", "mmWaveDepthMax": "y_max",
-                    "mmWaveHeightMin": "z_min", "mmWaveHeightMax": "z_max"
-                }
-                for mqtt_key, zone_key in field_map.items():
-                    if mqtt_key in config_payload:
-                        current_zone[zone_key] = safe_int(config_payload[mqtt_key])
-                        needs_emit = True
-
-                if needs_emit:
-                    device_list[fname]['zone_config'] = current_zone
-                    zone_snapshot = dict(current_zone)
-
-            if needs_emit:
-                emit_to_topic_subscribers(
-                    'zone_config',
-                    {'topic': device_topic, 'payload': zone_snapshot},
-                    device_topic
-                )
+        # Isolated: config processing failures must not block other messages
+        try:
+            _process_state_update(payload, fname, device_topic)
+        except Exception as e:
+            print(f"Warning: State update failed for {fname}: {e}", flush=True)
 
     except Exception as e:
         print(f"Error processing message on {msg.topic}: {e}", flush=True)
         traceback.print_exc()
+
+
+def _process_target_data(payload, fname, device_topic):
+    """Process cmd_id=1 target info reporting packets."""
+    current_time = time.time()
+    with device_list_lock:
+        last_update = device_list.get(fname, {}).get('last_update', 0)
+
+    if (current_time - last_update) < 0.1:
+        return  # Throttle
+
+    with device_list_lock:
+        if fname in device_list:
+            device_list[fname]['last_update'] = current_time
+
+    seq_num = payload.get("3")
+    num_targets = safe_int(payload.get("5"), 0)
+    if num_targets < 0 or num_targets > 10:
+        return  # Sanity bound
+
+    targets = []
+    offset = 6
+
+    for _ in range(num_targets):
+        if str(offset + 8) not in payload:
+            break
+        targets.append({
+            "id": safe_int(payload.get(str(offset + 8)), 0),
+            "x": parse_signed_16(payload, offset),
+            "y": parse_signed_16(payload, offset + 2),
+            "z": parse_signed_16(payload, offset + 4),
+            "dop": parse_signed_16(payload, offset + 6)
+        })
+        offset += 9
+
+    emit_to_topic_subscribers(
+        'new_data',
+        {'topic': device_topic, 'payload': {"seq": seq_num, "targets": targets}},
+        device_topic
+    )
+
+
+def _process_zone_report(payload, cmd_id, fname, device_topic):
+    """Process cmd_id 2/3/4 zone area report packets."""
+    zones = []
+    offset = 6
+    num_zones = safe_int(payload.get("5"), 0)
+    if num_zones < 0 or num_zones > 10:
+        return  # Sanity bound
+
+    for _ in range(num_zones):
+        if str(offset + 11) not in payload:
+            break
+
+        x_min = parse_signed_16(payload, offset)
+        x_max = parse_signed_16(payload, offset + 2)
+        y_min = parse_signed_16(payload, offset + 4)
+        y_max = parse_signed_16(payload, offset + 6)
+        z_min = parse_signed_16(payload, offset + 8)
+        z_max = parse_signed_16(payload, offset + 10)
+
+        if (x_max != 0 or x_min != 0 or y_max != 0 or y_min != 0):
+            zones.append({
+                "x_min": x_min, "x_max": x_max,
+                "y_min": y_min, "y_max": y_max,
+                "z_min": z_min, "z_max": z_max
+            })
+
+        offset += 12
+
+    event_map = {
+        2: ('interference_zones', 'Interference'),
+        3: ('detection_zones', 'Detection'),
+        4: ('stay_zones', 'Stay')
+    }
+    event_name, zone_label = event_map[cmd_id]
+
+    with device_list_lock:
+        if fname in device_list:
+            device_list[fname][event_name] = zones
+
+    emit_to_topic_subscribers(
+        event_name,
+        {'topic': device_topic, 'payload': zones},
+        device_topic
+    )
+    print(f"{zone_label} Zones Updated: {zones}", flush=True)
+
+
+def _process_state_update(payload, fname, device_topic):
+    """Process standard (non-raw) Z2M state updates."""
+    config_payload = {k: v for k, v in payload.items() if not k.isdigit()}
+
+    if not config_payload:
+        return
+
+    emit_to_topic_subscribers(
+        'device_config',
+        {'topic': device_topic, 'payload': config_payload},
+        device_topic
+    )
+
+    zone_snapshot = None
+    needs_emit = False
+
+    with device_list_lock:
+        if fname not in device_list:
+            return
+
+        # Check nested mode for Zone 1
+        if "mmwave_detection_areas" in config_payload:
+            areas = config_payload["mmwave_detection_areas"]
+            has_data = False
+            if isinstance(areas, dict):
+                a1 = areas.get("area1")
+                if isinstance(a1, dict):
+                    for val in a1.values():
+                        if isinstance(val, (int, float)) and val != 0:
+                            has_data = True
+                            break
+            device_list[fname]['use_nested_area1'] = has_data
+
+        # Update standard global zone
+        current_zone = device_list[fname]['zone_config']
+
+        field_map = {
+            "mmWaveWidthMin": "x_min", "mmWaveWidthMax": "x_max",
+            "mmWaveDepthMin": "y_min", "mmWaveDepthMax": "y_max",
+            "mmWaveHeightMin": "z_min", "mmWaveHeightMax": "z_max"
+        }
+        for mqtt_key, zone_key in field_map.items():
+            if mqtt_key in config_payload:
+                current_zone[zone_key] = safe_int(config_payload[mqtt_key])
+                needs_emit = True
+
+        if needs_emit:
+            device_list[fname]['zone_config'] = current_zone
+            zone_snapshot = dict(current_zone)
+
+    if needs_emit and zone_snapshot:
+        emit_to_topic_subscribers(
+            'zone_config',
+            {'topic': device_topic, 'payload': zone_snapshot},
+            device_topic
+        )
 
 
 # --- MQTT CLIENT SETUP ---
@@ -589,6 +631,12 @@ def handle_command(cmd_action):
         emit('command_error', {'error': 'MQTT broker is not connected'})
         return
 
+    try:
+        cmd_int = int(cmd_action)
+    except (ValueError, TypeError):
+        emit('command_error', {'error': f'Invalid command: {cmd_action}'})
+        return
+
     action_map = {
         0: "reset_mmwave_module",
         1: "set_interference",
@@ -597,7 +645,7 @@ def handle_command(cmd_action):
         4: "reset_detection_area",
         5: "clear_stay_areas"
     }
-    cmd_string = action_map.get(int(cmd_action))
+    cmd_string = action_map.get(cmd_int)
     if cmd_string:
         mqtt_client.publish(
             f"{topic}/set",

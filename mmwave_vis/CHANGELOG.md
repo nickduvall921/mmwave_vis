@@ -1,5 +1,20 @@
 # Changelog
 
+
+## [2.2.0] - 2025-02-18
+
+### Fixed
+- **Crash when `mmwave_detection_areas` is null ([#issue](https://github.com/nickduvall921/mmwave_vis/issues/15)):** Some switches report `mmwave_detection_areas: null` in their Z2M payload. The backend tried to call `.get("area1")` on `None`, crashing the entire message handler on every incoming message and preventing devices from appearing in the list.
+- **Resilient message processing:** The monolithic MQTT message handler has been split into isolated stages (device discovery, target tracking, zone reports, config updates). A failure in one stage no longer kills processing for the others — previously a single crash would abort the entire handler, flooding logs and stalling the UI.
+- **Defensive data access throughout backend:** `num_targets` and `num_zones` now use `safe_int()` with sanity bounds instead of raw payload values passed to `range()`. Target IDs, command actions, and device list lookups all guard against unexpected types. Stale device references after lock release are handled safely.
+- **Frontend null guards:** `parseZ2MArea` now rejects non-object values. All three zone area handlers (`mmwave_detection_areas`, `mmwave_interference_areas`, `mmwave_stay_areas`) validate the payload is a dict before iterating, preventing crashes when Z2M sends `null` or unexpected types.
+
+### Added
+- **Target Reporting banner:** A compact info banner appears above the radar chart when a device has Target Info Reporting disabled, explaining why no position data is visible. Includes a one-click "Enable now" link that sends the setting to the switch and dismisses itself.
+
+### Changed
+- Bumped version to 2.2.0.
+
 ## [2.1.0] - 2025-02-17
 
 ### Fixed

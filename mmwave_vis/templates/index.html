@@ -51,6 +51,19 @@
         #connectionBanner.warning { background: #ff9800; }
         #connectionBanner.ok { background: #4caf50; }
 
+        /* Target reporting info banner */
+        #targetReportBanner {
+            display: none;
+            background: rgba(255, 152, 0, 0.9);
+            color: white;
+            text-align: center;
+            padding: 6px 12px;
+            font-size: 0.85em;
+            border-radius: 4px;
+            margin: 0 10px;
+        }
+        #targetReportBanner a { color: white; text-decoration: underline; cursor: pointer; }
+
         /* Toast notifications for command feedback */
         #toastContainer {
             position: fixed;
@@ -223,6 +236,8 @@
         <div class="main-content">
             <div id="nonMmwaveWarning">⚠ Standard Switch Detected<br><span style="font-size: 0.8em; font-weight: normal;">This device does not have mmWave hardware.</span></div>
             
+            <div id="targetReportBanner">📡 Target Reporting is disabled — radar will not show tracked positions. <a onclick="document.getElementById('mmWaveTargetInfoReport').value='Enable'; document.getElementById('mmWaveTargetInfoReport').dispatchEvent(new Event('change')); this.parentElement.style.display='none';">Enable now</a></div>
+
             <details open id="chartContainer">
                 <summary>Live Radar Map</summary>
                 <div class="config-content">
@@ -490,6 +505,7 @@
         const mqttStatusDot = document.getElementById('mqttStatusDot');
         const mqttStatusLabel = document.getElementById('mqttStatusLabel');
         const toastContainer = document.getElementById('toastContainer');
+        const targetReportBanner = document.getElementById('targetReportBanner');
 
         // Visualizer Scale Inputs
         const vizXMin = document.getElementById('vizXMin');
@@ -1220,12 +1236,13 @@
                 Plotly.update('chart', {x: [[]], y: [[]], text: [[]]}, {shapes: getChartShapes(), annotations: []});
             } catch(e) {}
             dataTableBody.innerHTML = '<tr><td colspan="5" class="no-data">No targets detected</td></tr>';
-            nonMmwaveWarning.style.display = 'none'; 
+            nonMmwaveWarning.style.display = 'none';
+            targetReportBanner.style.display = 'none';
         });
 
         // Helper: Convert Z2M area object to internal format
         function parseZ2MArea(area) {
-            if (!area) return null;
+            if (!area || typeof area !== 'object') return null;
             
             let x0, x1, y0, y1, z0, z1;
             
@@ -1265,21 +1282,24 @@
             }
 
             if ("mmwave_detection_areas" in config) {
-                const areas = config.mmwave_detection_areas || {}; 
+                const raw = config.mmwave_detection_areas;
+                const areas = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
                 for (let i=1; i<=4; i++) deviceZones.mmwave_detection_areas[`area${i}`] = parseZ2MArea(areas[`area${i}`]);
             }
             if ("mmwave_interference_areas" in config) {
-                 const areas = config.mmwave_interference_areas || {}; 
+                const raw = config.mmwave_interference_areas;
+                const areas = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
                 for (let i=1; i<=4; i++) deviceZones.mmwave_interference_areas[`area${i}`] = parseZ2MArea(areas[`area${i}`]);
                 
-                if (lastCommandId === 3 && (!config.mmwave_interference_areas || Object.keys(config.mmwave_interference_areas).length === 0)) {
+                if (lastCommandId === 3 && (!raw || (typeof raw === 'object' && Object.keys(raw).length === 0))) {
                     packetInfo.innerText = "Interference Cleared";
                     setTimeout(() => { if(packetInfo.innerText === "Interference Cleared") packetInfo.innerText = "Monitoring..."; }, 2000);
                     lastCommandId = null;
                 }
             }
             if ("mmwave_stay_areas" in config) {
-                 const areas = config.mmwave_stay_areas || {}; 
+                const raw = config.mmwave_stay_areas;
+                const areas = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
                 for (let i=1; i<=4; i++) deviceZones.mmwave_stay_areas[`area${i}`] = parseZ2MArea(areas[`area${i}`]);
             }
             
@@ -1319,6 +1339,12 @@
                 configSidebar.style.opacity = '1';
                 configSidebar.style.pointerEvents = 'auto';
                 btnForceSync.disabled = false;
+            }
+
+            // Show/hide target reporting banner
+            if ("mmWaveTargetInfoReport" in config) {
+                const enabled = config.mmWaveTargetInfoReport === 'Enable';
+                targetReportBanner.style.display = enabled ? 'none' : 'block';
             }
 
             for (const [key, value] of Object.entries(config)) {
