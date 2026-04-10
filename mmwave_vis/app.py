@@ -401,6 +401,13 @@ class Z2MDriver:
                     except Exception as e:
                         print(f"Z2M: zone report error (cmd={cmd_id}): {e}", flush=True)
 
+            # --- Modern Z2M target payload (already parsed by converters) ---
+            if "mmwave_targets" in payload:
+                try:
+                    self._process_mmwave_targets(payload.get("mmwave_targets"), fname, device_topic)
+                except Exception as e:
+                    print(f"Z2M: mmwave_targets error: {e}", flush=True)
+
             # --- Standard Z2M state update ---
             try:
                 self._process_state_update(payload, fname, device_topic)
@@ -411,7 +418,7 @@ class Z2MDriver:
             print(f"Z2M: unhandled error on {msg.topic}: {e}", flush=True)
             traceback.print_exc()
 
-    def _process_target_data(self, payload, fname, device_topic):
+    def _emit_target_data(self, fname, device_topic, targets, seq=None):
         current_time = time.time()
         with self.device_list_lock:
             last_update = self.device_list.get(fname, {}).get('last_update', 0)
@@ -421,6 +428,17 @@ class Z2MDriver:
             if fname in self.device_list:
                 self.device_list[fname]['last_update'] = current_time
 
+        event_payload = {"targets": targets}
+        if seq is not None:
+            event_payload["seq"] = seq
+
+        emit_to_topic_subscribers(
+            'new_data',
+            {'topic': device_topic, 'payload': event_payload},
+            device_topic
+        )
+
+    def _process_target_data(self, payload, fname, device_topic):
         num_targets = safe_int(payload.get("5"), 0)
         if not (0 <= num_targets <= 10):
             return
@@ -439,11 +457,27 @@ class Z2MDriver:
             })
             offset += 9
 
-        emit_to_topic_subscribers(
-            'new_data',
-            {'topic': device_topic, 'payload': {"seq": payload.get("3"), "targets": targets}},
-            device_topic
-        )
+        self._emit_target_data(fname, device_topic, targets, seq=payload.get("3"))
+
+    def _process_mmwave_targets(self, mmwave_targets, fname, device_topic):
+        if not isinstance(mmwave_targets, list):
+            return
+
+        targets = []
+        for target in mmwave_targets:
+            if not isinstance(target, dict):
+                continue
+            targets.append({
+                "id":  safe_int(target.get("id"), 0),
+                "x":   safe_int(target.get("x"), 0),
+                "y":   safe_int(target.get("y"), 0),
+                "z":   safe_int(target.get("z"), 0),
+                "dop": safe_int(target.get("dop"), 0),
+            })
+            if len(targets) >= 10:
+                break
+
+        self._emit_target_data(fname, device_topic, targets)
 
     def _process_zone_report(self, payload, cmd_id, fname, device_topic):
         num_zones = safe_int(payload.get("5"), 0)
