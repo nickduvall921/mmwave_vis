@@ -1,6 +1,14 @@
 # Changelog
 
 
+## [3.2.4] - 2026-04-23
+
+### Fixed
+- **Legacy raw-bytes target decoder used wrong 9-byte stride (mirrors upstream Z2M bug fixed in [Koenkk/zigbee-herdsman-converters#11915](https://github.com/Koenkk/zigbee-herdsman-converters/pull/11915), 2026-04-11):** the Inovelli `0xFC32` cluster's `reportTargetInfo` records are 10 bytes each (`x, y, z, dop, id` as little-endian int16), not 9 bytes with a uint8 id. Z2M had the same bug until herdsman PR #11915 corrected the stride and stopped clamping the ID to 0–255. Updated `_process_target_data` to match: stride 10, `id` parsed as int16LE. This path is dormant on Z2M ≥ 2.9 (3.2.2 already gates it off whenever parsed `mmwave_targets` is present), but pre-2.9 Z2M users who relied on the raw fallback now get correct coordinates for every target instead of garbage on target #2+.
+
+### Changed
+- Bumped version to 3.2.4.
+
 ## [3.2.3] - 2026-04-23
 
 ### Fixed
