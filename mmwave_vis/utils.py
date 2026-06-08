@@ -116,3 +116,16 @@ def parse_signed_16(payload, idx):
         return int.from_bytes([low, high], byteorder='little', signed=True)
     except (ValueError, TypeError, OverflowError):
         return 0
+
+
+def parse_signed_8(payload, idx):
+    """Parse a signed 8-bit integer from a ZCL byte payload dict.
+
+    The payload uses string keys ("0", "1", ...) where each value is a byte (0-255).
+    The single byte at idx is interpreted as a signed 8-bit integer.
+    """
+    try:
+        byte = int(payload.get(str(idx)) or 0)
+        return int.from_bytes([byte & 0xFF], byteorder='little', signed=True)
+    except (ValueError, TypeError, OverflowError):
+        return 0
