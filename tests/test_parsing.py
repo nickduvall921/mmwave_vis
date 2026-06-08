@@ -11,7 +11,7 @@ Range: -32768 to 32767.  Used for X/Y/Z coordinates (in millimetres).
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'mmwave_vis'))
 
-from utils import parse_signed_16
+from utils import parse_signed_16, parse_signed_8
 
 
 def _payload(*bytes_):
@@ -105,3 +105,35 @@ def test_string_bytes_accepted():
     p = {"0": "0xF4", "1": "0x01"}  # "0xF4" → 244 (0xF4) → 500
     # int("0xF4") raises ValueError, so parse_signed_16 should return 0
     assert parse_signed_16(p, 0) == 0
+
+
+# --- parse_signed_8: the mmWave target `id` field (1 byte, signed) ---
+#
+# Per Inovelli's corrected FC32 docs (and herdsman-converters PR #12284), each
+# reportTargetInfo record is 9 bytes: x/y/z/dop as int16 + id as a signed int8.
+
+def test_s8_zero():
+    assert parse_signed_8(_payload(0x00), 0) == 0
+
+def test_s8_one():
+    assert parse_signed_8(_payload(0x01), 0) == 1
+
+def test_s8_max_positive():
+    # 127 = 0x7F is the largest positive signed int8
+    assert parse_signed_8(_payload(0x7F), 0) == 127
+
+def test_s8_negative_one():
+    # 0xFF = -1 in two's complement
+    assert parse_signed_8(_payload(0xFF), 0) == -1
+
+def test_s8_min_negative():
+    # 0x80 = -128, the most negative signed int8
+    assert parse_signed_8(_payload(0x80), 0) == -128
+
+def test_s8_reads_from_correct_offset():
+    # id sits at offset+8 of a 9-byte record starting at offset 6 → key "14"
+    p = _payload(*([0] * 14), 0x80)
+    assert parse_signed_8(p, 14) == -128
+
+def test_s8_missing_key_returns_zero():
+    assert parse_signed_8({}, 0) == 0
