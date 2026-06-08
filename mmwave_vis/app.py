@@ -141,7 +141,7 @@ session_topics_lock = threading.Lock()
 # ---------------------------------------------------------------------------
 from utils import (
     VALID_PARAMETERS, VALID_ZONE_KEYS, ZONE_COORD_RANGE,
-    validate_parameter, safe_int, parse_signed_16,
+    validate_parameter, safe_int, parse_signed_16, parse_signed_8,
 )
 
 
@@ -491,30 +491,31 @@ class Z2MDriver:
 
     def _process_target_data(self, payload, fname, device_topic):
         # Legacy raw-bytes path for pre-2.9 Z2M (no top-level mmwave_targets).
-        # Each target is a 10-byte record matching the upstream Inovelli FC32
-        # cluster reportTargetInfo command — five little-endian int16s in order
-        # x, y, z, dop, id. Z2M itself was using a 9-byte stride with a uint8 id
-        # until herdsman-converters PR #11915 (merged 2026-04-11), which caused
-        # any target after the first to be reported with garbage coordinates.
-        # Mirror the upstream fix here so users on older Z2M (pre-PR #11915 or
-        # pre-2.9 entirely) get correct coords for multi-target frames.
+        # Each target is a 9-byte record matching the upstream Inovelli FC32
+        # cluster reportTargetInfo command — x, y, z, dop as little-endian int16
+        # followed by id as a signed int8. Inovelli's mmWave docs briefly listed
+        # id as int16 (10-byte stride), which herdsman-converters PR #11915
+        # (merged 2026-04-11) implemented and we mirrored in v3.2.4. Inovelli
+        # later corrected the docs — id is int8 — and PR #12284 (merged
+        # 2026-05-23) reverted Z2M back to the 9-byte stride. Mirror that
+        # correction here so the raw fallback matches real device traffic.
         num_targets = safe_int(payload.get("5"), 0)
         if not (0 <= num_targets <= 10):
             return
 
         targets = []
         offset  = 6
-        stride  = 10
+        stride  = 9
         for _ in range(num_targets):
-            # Need 10 bytes (offset .. offset+9)
-            if str(offset + 9) not in payload:
+            # Need 9 bytes (offset .. offset+8)
+            if str(offset + 8) not in payload:
                 break
             targets.append({
                 "x":   parse_signed_16(payload, offset),
                 "y":   parse_signed_16(payload, offset + 2),
                 "z":   parse_signed_16(payload, offset + 4),
                 "dop": parse_signed_16(payload, offset + 6),
-                "id":  parse_signed_16(payload, offset + 8),
+                "id":  parse_signed_8(payload, offset + 8),
             })
             offset += stride
 
