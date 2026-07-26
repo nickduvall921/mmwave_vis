@@ -271,3 +271,107 @@ class TestCheckQuirkOkEdgeCases:
         # One below and one above CLUSTER_MMWAVE — neither should match
         assert quirk_ok(_dev(endpoints=[_ep(CLUSTER_MMWAVE - 1)])) is False
         assert quirk_ok(_dev(endpoints=[_ep(CLUSTER_MMWAVE + 1)])) is False
+
+
+# ===========================================================================
+# _check_quirk_ok — entity-registry marker detection (issue #46 hardening)
+# ===========================================================================
+
+def _entity(entity_id="light.some_light", unique_id="uid-1", original_name="Some light"):
+    """Helper: build a minimal HA entity-registry entry."""
+    return {
+        "entity_id":     entity_id,
+        "unique_id":     unique_id,
+        "original_name": original_name,
+    }
+
+# The entry the Visualizer quirk produces on a real system
+_MARKER_ENTITY = _entity(
+    entity_id="switch.carpetstairs_mmwave_inovelli_switch_mmwave_target_info_report",
+    unique_id="0c:2a:6f:ff:fe:aa:39:2b-1-mmwave_target_info_report",
+    original_name="mmWave target info report",
+)
+
+
+class TestCheckQuirkOkEntityMarker:
+    """
+    When entity-registry entries are available, the presence of the
+    Visualizer-only 'mmWave target info report' entity is decisive — in
+    both directions.
+    """
+
+    def test_marker_present_wins_over_everything(self):
+        # Even with quirk_applied=False and no cluster data, the marker
+        # entity proves the Visualizer quirk created entities.
+        dev = _dev(quirk_applied=False)
+        assert quirk_ok(dev, [_MARKER_ENTITY]) is True
+
+    def test_marker_absent_overrides_cluster_and_flag(self):
+        # Issue #46 scenario: 0xFC32 is in the raw device signature and
+        # quirk_applied is True (official quirk), but the Visualizer quirk
+        # never loaded — must report False, not a false all-clear.
+        dev = _dev(quirk_applied=True, endpoints=[_ep(0, 3, CLUSTER_MMWAVE)])
+        other_entities = [
+            _entity("light.master_bathroom_lights", "uid-light", "Light"),
+            _entity("select.master_bathroom_lights_mmwave_sensitivity",
+                    "uid-sens", "mmWave sensitivity"),
+        ]
+        assert quirk_ok(dev, other_entities) is False
+
+    def test_marker_matched_by_unique_id_after_rename(self):
+        # User renamed the entity_id and the display name — unique_id
+        # still identifies it.
+        renamed = _entity(
+            entity_id="switch.stairs_radar_feed",
+            unique_id="0c:2a:6f:ff:fe:aa:39:2b-1-mmwave_target_info_report",
+            original_name=None,
+        )
+        assert quirk_ok(_dev(), [renamed]) is True
+
+    def test_marker_matched_by_entity_id_suffix(self):
+        entry = _entity(
+            entity_id="switch.foo_mmwave_target_info_report",
+            unique_id="",
+            original_name="",
+        )
+        assert quirk_ok(_dev(), [entry]) is True
+
+    def test_marker_matched_by_original_name(self):
+        # original_name survives entity_id renames; spaces map to underscores
+        entry = _entity(
+            entity_id="switch.renamed_by_user",
+            unique_id="",
+            original_name="mmWave target info report",
+        )
+        assert quirk_ok(_dev(), [entry]) is True
+
+    def test_none_fields_handled(self):
+        entry = {"entity_id": None, "unique_id": None, "original_name": None}
+        dev = _dev(quirk_applied=True, endpoints=[_ep(CLUSTER_MMWAVE)])
+        # Non-empty entity list without the marker → False despite fallbacks
+        assert quirk_ok(dev, [entry]) is False
+
+    def test_non_dict_entries_skipped(self):
+        assert quirk_ok(_dev(), [None, "garbage", _MARKER_ENTITY]) is True
+
+
+class TestCheckQuirkOkEntityFallback:
+    """
+    No registry data (None or empty list) must fall back to the legacy
+    cluster/quirk_applied heuristic — never a hard False from missing data.
+    """
+
+    def test_entities_none_falls_back_to_cluster(self):
+        dev = _dev(quirk_applied=False, endpoints=[_ep(CLUSTER_MMWAVE)])
+        assert quirk_ok(dev, None) is True
+
+    def test_entities_none_falls_back_to_quirk_applied(self):
+        assert quirk_ok(_dev(quirk_applied=True), None) is True
+
+    def test_entities_empty_list_falls_back(self):
+        # Empty list means "no data for this device", not "marker absent"
+        dev = _dev(quirk_applied=True)
+        assert quirk_ok(dev, []) is True
+
+    def test_entities_none_and_nothing_else_is_false(self):
+        assert quirk_ok(_dev(quirk_applied=False), None) is False

@@ -548,6 +548,21 @@ class ZHAClient:
                     registry[conn_id.lower()] = entry
         return registry
 
+    def _fetch_entity_registry(self, ws) -> dict:
+        """
+        Return ha_device_id → [entity registry entries] from the HA entity
+        registry. Used by _check_quirk_ok to detect whether the Visualizer
+        quirk (as opposed to the official Inovelli quirk, or no quirk at
+        all) is active for a device.
+        """
+        entries   = self._ws_fetch(ws, "config/entity_registry/list")
+        by_device = {}
+        for entry in entries:
+            device_id = entry.get("device_id")
+            if device_id:
+                by_device.setdefault(device_id, []).append(entry)
+        return by_device
+
     def _discover_devices(self, ws):
         """
         Build the device list by combining the ZHA device list, HA device
@@ -563,6 +578,7 @@ class ZHAClient:
         """
         area_map     = self._fetch_area_map(ws)
         dev_registry = self._fetch_device_registry(ws)
+        ent_registry = self._fetch_entity_registry(ws)
         zha_devices  = self._ws_fetch(ws, "zha/devices")
 
         found = []
@@ -589,10 +605,32 @@ class ZHAClient:
             else:
                 friendly_name = base_name
 
-            quirk_ok = self._check_quirk_ok(dev)
+            entities = ent_registry.get(ha_device_id) if ha_device_id else None
+            quirk_ok = self._check_quirk_ok(dev, entities)
             if not quirk_ok:
-                print(f"ZHA: WARNING — custom mmWave quirk not detected on {ieee}. "
-                      "Target reporting and zone commands will not work.", flush=True)
+                if self._legacy_quirk_ok(dev):
+                    # Some quirk is applied / 0xFC32 is in the signature, but
+                    # the Visualizer-only entity is missing — almost always the
+                    # official Inovelli quirk still loading instead of ours.
+                    print(f"ZHA: WARNING — {ieee} has a quirk applied, but it is "
+                          "not the Visualizer quirk (the 'mmWave target info "
+                          "report' switch entity is missing). The official "
+                          "Inovelli quirk is likely still active. Copy this "
+                          "repo's quirk files over the official ones in the "
+                          "directory your configuration.yaml custom_quirks_path "
+                          "points to, restart HA, then Reconfigure the device. "
+                          "See ZHADOC.md.", flush=True)
+                else:
+                    print(f"ZHA: WARNING — no custom mmWave quirk detected on {ieee}. "
+                          "Target reporting and zone commands will not work. "
+                          "Check custom_quirks_path in configuration.yaml and "
+                          "see ZHADOC.md.", flush=True)
+
+            if ieee in self.device_list:
+                # Already discovered on a previous connect — refresh the quirk
+                # status so the frontend banner heals after the user fixes the
+                # quirk and HA restarts (which also reconnects this socket).
+                self.device_list[ieee]["quirk_ok"] = quirk_ok
 
             if ieee not in self.device_list:
                 print(f"ZHA: discovered {friendly_name} ({ieee})", flush=True)
@@ -803,18 +841,70 @@ class ZHAClient:
             else:
                 self.socketio.emit("device_config", payload)
 
-    @staticmethod
-    def _check_quirk_ok(dev: dict) -> bool:
+    # Entity created only by the Visualizer quirk's 0xFC32 declarations.
+    # Neither the official Inovelli quirk nor a quirk-less device has it,
+    # so its presence in the entity registry is the one signal that
+    # distinguishes "the Visualizer quirk is active" from "some quirk is
+    # applied" or "0xFC32 merely exists in the device signature".
+    _VISUALIZER_MARKER = "mmwave_target_info_report"
+
+    @classmethod
+    def _check_quirk_ok(cls, dev: dict, entities: list | None = None) -> bool:
         """
-        Return True if the custom Inovelli mmWave ZHA quirk appears to be
-        installed for this device.
+        Return True if the *Visualizer* mmWave ZHA quirk appears to be
+        active for this device.
 
         Detection strategy (strongest signal first):
-          1. Cluster 0xFC32 (CLUSTER_MMWAVE) is present in any endpoint's
-             input/in/cluster_ids list — the quirk adds this custom cluster.
-          2. Fall back to the generic quirk_applied flag from the ZHA device
-             registry — True means *some* quirk is applied, which is still a
-             reasonable signal when endpoint data is absent or differently keyed.
+          1. Entity-registry check: the Visualizer quirk declares a
+             "mmWave target info report" switch that the official Inovelli
+             quirk does not. When registry entries for the device are
+             available, require that marker entity. This catches the
+             issue #46 failure mode: 0xFC32 sits in the device's raw
+             signature (so cluster checks pass) and quirk_applied is True
+             for *any* quirk — while the Visualizer quirk never loaded.
+          2. Fallback when no registry data is available (older HA, fetch
+             failure): the pre-3.2.5 heuristic in _legacy_quirk_ok.
+        """
+        marker = cls._has_visualizer_entity(entities)
+        if marker is not None:
+            return marker
+        return cls._legacy_quirk_ok(dev)
+
+    @classmethod
+    def _has_visualizer_entity(cls, entities: list | None) -> bool | None:
+        """
+        Look for the Visualizer-only marker entity among a device's entity
+        registry entries. Returns True/False when entries are available,
+        or None when there is nothing to inspect (registry fetch failed or
+        the device has no registered entities) so the caller can fall back
+        to weaker heuristics instead of raising a false warning.
+
+        Matches on unique_id, entity_id, and original_name — the unique_id
+        ("<ieee>-1-mmwave_target_info_report") and original_name ("mmWave
+        target info report") survive a user renaming the entity in HA.
+        """
+        if not entities:
+            return None
+        for entry in entities:
+            if not isinstance(entry, dict):
+                continue
+            haystacks = (
+                entry.get("unique_id") or "",
+                entry.get("entity_id") or "",
+                (entry.get("original_name") or "").replace(" ", "_"),
+            )
+            if any(cls._VISUALIZER_MARKER in h.lower() for h in haystacks):
+                return True
+        return False
+
+    @staticmethod
+    def _legacy_quirk_ok(dev: dict) -> bool:
+        """
+        Pre-3.2.5 heuristic, kept as a fallback when entity-registry data
+        is unavailable. Weak on purpose: 0xFC32 appears in the device's
+        raw signature even with no quirk installed, and quirk_applied is
+        True for *any* quirk (including the official one) — so this can
+        only confirm the mmWave cluster exists, not which quirk is active.
         """
         for ep in (dev.get("endpoints") or []):
             for key in ("input_cluster_ids", "in_cluster_ids", "cluster_ids"):
