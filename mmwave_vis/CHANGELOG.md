@@ -1,6 +1,15 @@
 # Changelog
 
 
+## [3.2.5] - 2026-07-26
+
+### Fixed
+- **Issue #46 — ZHA quirk detection gave a false all-clear:** `_check_quirk_ok` treated "cluster 0xFC32 present" as proof the Visualizer quirk was installed, but 0xFC32 is in the VZM32-SN's raw signature even with **no** quirk loaded, and `quirk_applied` is true for *any* quirk (including the official Inovelli one). Users whose Visualizer quirk never loaded — the exact failure in #46, where every mmWave entity sat `unavailable`/`restored: true` — still saw `quirk_ok: true` while the addon waited forever for FC32 data. Detection now checks the HA entity registry for the **"mmWave target info report"** switch, which only the Visualizer quirk creates (matched via `unique_id`/`entity_id`/`original_name`, so renames don't defeat it). When registry data is unavailable the old heuristic still applies as a fallback. The warning log now also distinguishes "official quirk still active" from "no quirk loaded at all", with pointers to the fix, and `quirk_ok` is refreshed for already-known devices on reconnect so the banner heals after the user corrects their install.
+- **ZHADOC.md quirk install directions could strand the quirk in an unloaded directory:** the guide said to copy the files into `config/zha_custom_quirks/`, but the official Inovelli article it lists as a prerequisite installs to `config/zhacustomquirks/` (no underscores) and points `custom_quirks_path` there — following both verbatim leaves the Visualizer files in a directory ZHA never reads (or the official quirk still active), which presents exactly like #46. The guide now says to overwrite the official files in whatever directory `custom_quirks_path` points to, warns about the naming mismatch, adds a `__pycache__` cleanup step, fixes the repo file paths (`zha_quark/`, not `mmwave_vis/zha_quirk/`), and documents how to verify the right quirk is active via the "mmWave target info report" entity.
+
+### Changed
+- Bumped version to 3.2.5.
+
 ## [3.2.4] - 2026-04-23
 
 ### Fixed
