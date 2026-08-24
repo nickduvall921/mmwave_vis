@@ -27,13 +27,45 @@ https://help.inovelli.com/en/articles/13019007-blue-series-mmwave-presence-dimme
 This repo includes two files that replace the official quirk:
 
 ```
-mmwave_vis/zha_quirk/__init__.py
-mmwave_vis/zha_quirk/VZM32SN.py
+zha_quark/__init__.py
+zha_quark/VZM32SN.py
 ```
 
-Copy these into your `config/zha_custom_quirks/inovelli/` directory, then restart Home Assistant.
+Copy them into the **same `inovelli/` directory the official quirk files are in** — that is, inside whatever directory your `configuration.yaml` `custom_quirks_path` points to — **overwriting** the official `__init__.py` and `VZM32SN.py`.
 
-Important: You will need to "Reconfigure" in ZHA after the new Quirk is installed.
+> **Heads-up on directory names:** Inovelli's install guide names the folder `/config/zhacustomquirks/`, while older versions of this guide said `/config/zha_custom_quirks/`. The folder name itself doesn't matter — what matters is that the files sit inside the one directory `custom_quirks_path` points to. Do **not** create a second quirks directory: files outside `custom_quirks_path` are silently ignored, and leaving the official files in the active directory keeps the official quirk running. Both mistakes look like "quirk installed but no mmWave data" (see Troubleshooting).
+
+If you followed Inovelli's guide, the layout is:
+
+```
+/config/
+├── configuration.yaml          ← contains custom_quirks_path (below)
+└── zhacustomquirks/
+    └── inovelli/
+        ├── __init__.py         ← replaced with this repo's copy
+        └── VZM32SN.py          ← replaced with this repo's copy
+```
+
+If you haven't already, tell ZHA where to find custom quirks by adding the following to your `configuration.yaml` (the path must match where you actually put the files):
+
+```yaml
+zha:
+  custom_quirks_path: /config/zhacustomquirks/
+```
+
+Then:
+
+1. Delete the `__pycache__` folder inside `inovelli/` if one exists — stale compiled copies of the official quirk can otherwise keep loading.
+2. Restart Home Assistant.
+3. **Reconfigure** the device in ZHA (device page → ⋮ menu → *Reconfigure*) so the 0xFC32 binding is created. Without this step the switch has nowhere to send mmWave reports.
+
+#### Verify the quirk is active
+
+After the restart, the VZM32-SN device page in HA should show a new **"mmWave target info report"** switch entity. That entity is created only by this repo's quirk, so it's the definitive check:
+
+- **Entity missing, and the other mmWave entities are unavailable** (showing `restored: true` in Developer Tools → States) → no quirk loaded at all this boot. Check that `custom_quirks_path` points at the right directory and look for import errors in the HA log.
+- **Entity missing, but mmWave entities work** → the *official* quirk is still active. Make sure you overwrote the files in the directory `custom_quirks_path` actually points to.
+- **Entity present** → the Visualizer quirk is loaded. If the visualizer still shows no data, Reconfigure the device (step 3 above).
 
 ### 2. Configure the Addon
 
@@ -96,6 +128,20 @@ Device names come from your HA device registry. To rename a device, go to **Sett
 
 - Confirm your VZM32-SN is paired and showing as available in ZHA
 - Check the addon log for `ZHA: discovered ...` messages — if none appear, the addon may not be reaching HA
+- If the log repeats `connection lost (sent 1009 (message too big) frame exceeds limit of 1048576 bytes)`, update the addon to 3.2.6 or later. Older versions capped WebSocket messages at 1 MiB, and the device-discovery responses from HA can exceed that on installs with many devices — the connection died before any switch could be found.
+
+### "not the Visualizer quirk" / "no custom mmWave quirk detected" warning in the log
+
+The addon checks for the **"mmWave target info report"** switch entity, which only this repo's quirk creates.
+
+- `... has a quirk applied, but it is not the Visualizer quirk` — the official Inovelli quirk (or another quirk) is loading instead of this repo's files. Overwrite the official `__init__.py` and `VZM32SN.py` in the directory your `custom_quirks_path` points to, delete `__pycache__`, restart HA.
+- `no custom mmWave quirk detected` — no quirk loaded at all. Verify `custom_quirks_path` in `configuration.yaml` matches where the files are, and check the HA log for quirk import errors.
+
+After fixing, restart HA and **Reconfigure** the device in ZHA (see *Verify the quirk is active* above).
+
+### Entities unavailable and no mmWave data after switching quirks
+
+If every mmWave entity shows `unavailable` with `restored: true` (Developer Tools → States), ZHA created no mmWave entities on the last boot — the quirk did not load. This is an installation issue, not a device problem: see the directory-name heads-up in *Install the Custom Quirk*.
 
 ### "No token found" warning in the log
 
