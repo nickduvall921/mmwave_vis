@@ -473,7 +473,16 @@ class ZHAClient:
                 "and the addon has been fully restarted, or set ha_token in Configuration."
             )
 
-        with ws_connect(url, additional_headers={"Authorization": f"Bearer {self.ha_token}"}) as ws:
+        # max_size=None lifts the websockets default 1 MiB cap on incoming
+        # messages. The discovery fetches (config/device_registry/list,
+        # zha/devices) exceed 1 MiB on large installs, which closed the
+        # socket with code 1009 before discovery could finish (issue #53).
+        # The peer is the trusted local Supervisor proxy, so no cap is needed.
+        with ws_connect(
+            url,
+            additional_headers={"Authorization": f"Bearer {self.ha_token}"},
+            max_size=None,
+        ) as ws:
             with self._ws_lock:
                 self._ws = ws
 

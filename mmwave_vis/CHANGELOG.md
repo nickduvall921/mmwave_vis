@@ -1,6 +1,14 @@
 # Changelog
 
 
+## [3.2.6] - 2026-08-24
+
+### Fixed
+- **Issue #53 — ZHA: no switches found, log loops `connection lost (sent 1009 (message too big) frame exceeds limit of 1048576 bytes)`:** the `websockets` client caps incoming messages at 1 MiB by default. Right after authenticating, the addon fetches full registry dumps for device discovery (`config/device_registry/list`, `zha/devices` — the latter carries per-device cluster signatures plus neighbor/route tables), and on installs with enough devices/entities a response exceeds the cap, so the client closed the socket with code 1009 before discovery completed — then hit the same wall on every reconnect. Reproduced on a real ~30-addon install and verified fixed there. The connection now passes `max_size=None` (the peer is HA Core via the trusted local Supervisor proxy, so an incoming-size cap buys nothing), and a regression test pins the setting.
+
+### Changed
+- Bumped version to 3.2.6.
+
 ## [3.2.5] - 2026-07-26
 
 ### Fixed

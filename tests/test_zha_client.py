@@ -10,6 +10,9 @@ Covered here:
 """
 
 import sys, os, types
+from unittest.mock import MagicMock
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'mmwave_vis'))
 
@@ -375,3 +378,39 @@ class TestCheckQuirkOkEntityFallback:
 
     def test_entities_none_and_nothing_else_is_false(self):
         assert quirk_ok(_dev(quirk_applied=False), None) is False
+
+
+# ===========================================================================
+# _connect_and_listen — WebSocket message size cap (issue #53)
+# ===========================================================================
+
+class _FakeConnectCalled(Exception):
+    """Raised by the fake ws_connect so _connect_and_listen exits immediately."""
+
+
+class TestConnectMaxSize:
+    """
+    Issue #53: websockets caps incoming messages at 1 MiB by default
+    (max_size=1048576). The discovery fetches (config/device_registry/list,
+    zha/devices) exceed that on large installs, so the library closed the
+    socket with code 1009 ("message too big") before any device could be
+    discovered. _connect_and_listen must disable the cap with max_size=None.
+    """
+
+    def test_ws_connect_called_with_max_size_none(self, monkeypatch):
+        import zha_client as zc
+
+        captured = {}
+
+        def fake_connect(url, **kwargs):
+            captured.update(kwargs)
+            raise _FakeConnectCalled()
+
+        monkeypatch.setattr(zc, "ws_connect", fake_connect)
+
+        client = ZHAClient("http://supervisor", "token", MagicMock())
+        with pytest.raises(_FakeConnectCalled):
+            client._connect_and_listen()
+
+        assert "max_size" in captured
+        assert captured["max_size"] is None

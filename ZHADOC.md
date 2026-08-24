@@ -128,6 +128,7 @@ Device names come from your HA device registry. To rename a device, go to **Sett
 
 - Confirm your VZM32-SN is paired and showing as available in ZHA
 - Check the addon log for `ZHA: discovered ...` messages — if none appear, the addon may not be reaching HA
+- If the log repeats `connection lost (sent 1009 (message too big) frame exceeds limit of 1048576 bytes)`, update the addon to 3.2.6 or later. Older versions capped WebSocket messages at 1 MiB, and the device-discovery responses from HA can exceed that on installs with many devices — the connection died before any switch could be found.
 
 ### "not the Visualizer quirk" / "no custom mmWave quirk detected" warning in the log
 
