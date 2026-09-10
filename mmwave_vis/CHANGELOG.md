@@ -10,9 +10,14 @@
 - **ZHA quirk: a malformed button event took down the frame handler.** `BUTTONS[...]` / `PRESS_TYPES[...]` raised `KeyError` out of `handle_cluster_request` for any unrecognised button or press type; unknown values are now logged and ignored.
 - **ZHA quirk: `bind()` dropped `**kwargs`,** narrowing the base-class signature that zigpy supports.
 
+### Added
+- **Issue #7 — optional "Lock square aspect ratio" toggle (Radar Map Size, off by default):** the radar map otherwise stretches to fill the window and distorts the represented space. When enabled, the y-axis is constrained to the x-axis (`scaleanchor`/`scaleratio`) so the map keeps a true 1:1 cm-per-pixel aspect (letterboxing instead of stretching). Off by default to preserve the existing fill-the-window behaviour; the setting persists in `localStorage`.
+- **Issue #41 — "Auto-correct stay-area inversion bug" toggle (Zone Editor, off by default):** the VZM32-SN firmware mirrors the width (X) axis of stay zones on apply, so a normally-entered zone otherwise needs applying twice. When enabled, the toggle pre-inverts stay-zone width (negate + swap, preserving min < max) so a single apply lands correctly. Detection/interference zones are unaffected. Off by default so the app never silently alters entered coordinates; the setting persists in `localStorage`.
+
 ### Changed
 - `zha_quark/quark-ref.txt`: section 11.10 described a `handle_message()` raw-byte override that the quirk no longer has; it now documents the actual decode path. Section 3.2 documents `target_index` and the per-target event fan-out, and the parameter tables carry the corrected ranges.
 - Removed the unused `_parse_area_report_raw()` helper left behind by that earlier raw decoder.
+- **Issue #46 — ZHA 0xFC32 binding diagnosability:** the quirk now logs the ZDP bind result and the post-bind `query_areas` send at INFO (was DEBUG) so users can confirm in the HA log whether the bind fired and its ZDO status without enabling debug logging. The addon's "binding may be missing" warning now spells out the full fix sequence (reload quirk + restart, Reconfigure, enable the target-info switch), and `ZHADOC.md` gains a dedicated "No mmWave data / binding missing" troubleshooting section plus a note about stale entities left behind when migrating from the official Inovelli quirk.
 
 ## [3.2.6] - 2026-08-24
 

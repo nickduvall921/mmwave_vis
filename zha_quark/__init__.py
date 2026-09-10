@@ -1610,7 +1610,11 @@ class InovelliVZM32SNMMWaveCluster(CustomCluster):
         2. endpoint.command("mmWaveControl", {controlID: query_areas (2)})
         """
         result = await super().bind(**kwargs)
-        _LOGGER.debug("%s: ZDP bind result: %s", self.name, result)
+        # Logged at INFO (not DEBUG) so users can confirm in the HA log whether
+        # the 0xFC32 bind actually fired during reconfigure — the binding is a
+        # prerequisite for any mmWave report, and a missing one is the most
+        # common cause of "no data received".
+        _LOGGER.info("%s: ZDP bind to 0xFC32 result: %s", self.name, result)
 
         # result is a list/tuple where [0] is the ZDO Status.
         # If the bind failed, skip sending query_areas — without a binding
@@ -1641,7 +1645,11 @@ class InovelliVZM32SNMMWaveCluster(CustomCluster):
                 manufacturer=0x122F,  # Inovelli manufacturer code
                 disable_default_response=True,
             )
-            _LOGGER.debug("%s: Sent query_areas after bind", self.name)
+            _LOGGER.info(
+                "%s: bound to 0xFC32 and sent query_areas; enable the "
+                "'mmWave target info report' switch to receive live target data",
+                self.name,
+            )
         except Exception as ex:  # noqa: BLE001
             _LOGGER.warning(
                 "%s: Failed to send query_areas after bind: %s", self.name, ex

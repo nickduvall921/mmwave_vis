@@ -143,6 +143,37 @@ After fixing, restart HA and **Reconfigure** the device in ZHA (see *Verify the 
 
 If every mmWave entity shows `unavailable` with `restored: true` (Developer Tools → States), ZHA created no mmWave entities on the last boot — the quirk did not load. This is an installation issue, not a device problem: see the directory-name heads-up in *Install the Custom Quirk*.
 
+### No mmWave data / "Cluster 0xFC32 binding may be missing" warning
+
+This is the most common ZHA issue. The device only sends mmWave reports
+(presence, zones, live targets) after the coordinator is **bound** to its
+`0xFC32` cluster, and live target data additionally requires the target-info
+report attribute to be enabled. Work through these in order:
+
+1. **Make sure the custom quirk is actually loaded.** After copying the quirk
+   files, fully restart Home Assistant. On the device page in ZHA, the cluster
+   list should show `InovelliVZM32SNMMWaveCluster (0xFC32)`. If it doesn't, the
+   quirk path or file location is wrong.
+2. **Reconfigure the device.** Open the device in ZHA → ⋮ menu → **Reconfigure**.
+   The quirk establishes the `0xFC32` bind during this step. Check the HA log
+   (`Settings → System → Logs`) for a line like
+   `InovelliVZM32SNMMWaveCluster: ZDP bind to 0xFC32 result: ...`. A status of
+   `SUCCESS` means the bind was created; any other status means it failed and
+   reports will not work until a successful reconfigure or re-pair.
+3. **Enable live target reports.** Turn on the
+   **mmWave target info report** switch entity for the device. Presence and zone
+   reports work from the bind alone, but per-target X/Y/Z positions (the radar
+   dots) only stream when this switch is on.
+4. **Still nothing?** Try removing and re-pairing the device so the bind is
+   created fresh at interview time.
+
+> **Switched from the official Inovelli quirk?** Some entities are named
+> differently in this quirk (for example, sensitivity is a *number* here, not a
+> *select*). Entities created by the old quirk will be left behind as
+> `restored: true` / `unavailable` because nothing backs them anymore. Delete
+> those stale entities (or re-pair the device) — they are leftovers, not the
+> live entities this quirk creates.
+
 ### "No token found" warning in the log
 
 The addon cannot authenticate to Home Assistant. Try a full stop and start of the addon (not just a restart).
@@ -163,4 +194,9 @@ Click the **Sync** button. This triggers a fresh read of all settings from the d
 
 ### Stay zone coordinates invert after being set
 
-This is a known firmware bug on the VZM32-SN. Re-applying the zone will invert the coordinates back to the correct values.
+This is a known firmware bug on the VZM32-SN — the switch mirrors the width (X)
+axis of stay zones when they are applied, so re-applying the zone inverts the
+coordinates back to the correct values. To avoid the double-apply, enable the
+**Auto-correct stay-area inversion bug** toggle in the Zone Editor (off by
+default): it pre-inverts the width so a single apply lands correctly. If a
+future firmware/Z2M update fixes the bug at the source, leave the toggle off.
