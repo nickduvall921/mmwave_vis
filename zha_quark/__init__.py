@@ -149,12 +149,12 @@ class InovelliCluster(CustomCluster):
         )
         power_type = ZCLAttributeDef(
             id=0x0015,
-            type=t.uint8_t,
+            type=t.Bool,
             is_manufacturer_specific=True,
         )
         internal_temp_monitor = ZCLAttributeDef(
             id=0x0020,
-            type=t.uint8_t,
+            type=t.int8s,
             is_manufacturer_specific=True,
         )
         overheated = ZCLAttributeDef(
@@ -247,8 +247,16 @@ class InovelliCluster(CustomCluster):
             args,
         )
         if hdr.command_id == self.ServerCommandDefs.button_event.id:
-            button = BUTTONS[args.button_pressed]
-            press_type = PRESS_TYPES[args.press_type]
+            button = BUTTONS.get(args.button_pressed)
+            press_type = PRESS_TYPES.get(args.press_type)
+            if button is None or press_type is None:
+                _LOGGER.warning(
+                    "%s: ignoring button event with unknown button %s / press type %s",
+                    self.name,
+                    args.button_pressed,
+                    args.press_type,
+                )
+                return
             action = f"{button}_{press_type}"
             event_args = {
                 BUTTON: button,
@@ -320,7 +328,7 @@ class InovelliVZM30SNCluster(InovelliCluster):
         )
         periodic_power_and_energy_reports = ZCLAttributeDef(
             id=0x0013,
-            type=t.uint8_t,
+            type=t.uint16_t,
             is_manufacturer_specific=True,
         )
         active_energy_reports = ZCLAttributeDef(
@@ -650,7 +658,7 @@ class InovelliVZM31SNCluster(InovelliCluster):
         )
         periodic_power_and_energy_reports = ZCLAttributeDef(
             id=0x0013,
-            type=t.uint8_t,
+            type=t.uint16_t,
             is_manufacturer_specific=True,
         )
         active_energy_reports = ZCLAttributeDef(
@@ -990,7 +998,7 @@ class InovelliVZM32SNCluster(InovelliCluster):
         )
         periodic_power_and_energy_reports = ZCLAttributeDef(
             id=0x0013,
-            type=t.uint8_t,
+            type=t.uint16_t,
             is_manufacturer_specific=True,
         )
         active_energy_reports = ZCLAttributeDef(
@@ -1413,15 +1421,22 @@ class InovelliVZM32SNMMWaveCluster(CustomCluster):
             },
             is_manufacturer_specific=True,
         )
+        # The sensor tracks up to four targets and repeats the
+        # (x, y, z, dop, id) block once per target, so the payload length
+        # varies.  The first target is declared here to keep the command
+        # readable; any remaining targets stay in `extra_targets` and are
+        # decoded by `_parse_target_info`.  Everything after `target_num` is
+        # optional so a frame reporting zero targets still deserializes.
         report_target_info = ZCLCommandDef(
             id=0x01,
             schema={
                 "target_num": t.uint8_t,
-                "x": t.int16s,
-                "y": t.int16s,
-                "z": t.int16s,
-                "dop": t.int16s,
-                "id": t.uint8_t,
+                "x?": t.int16s,
+                "y?": t.int16s,
+                "z?": t.int16s,
+                "dop?": t.int16s,
+                "id?": t.uint8_t,
+                "extra_targets?": t.Bytes,
             },
             is_manufacturer_specific=True,
         )
@@ -1501,25 +1516,54 @@ class InovelliVZM32SNMMWaveCluster(CustomCluster):
             },
         }
 
-    @staticmethod
-    def _parse_area_report_raw(data: bytes) -> dict:
-        """Parse a 49-byte area report (count + 4 areas x 6 int16s) into a dict."""
-        count = data[0]
-        areas = {}
-        for i in range(4):
-            offset = 1 + i * 12
-            x_min, x_max, y_min, y_max, z_min, z_max = struct.unpack_from(
-                "<hhhhhh", data, offset
+    # Bytes occupied by one target in a report_target_info frame: x, y, z and
+    # dop (int16 each) plus a one byte id.  Confirmed against live VZM32-SN
+    # firmware 0x01030102 and against zigbee-herdsman-converters, which
+    # decodes the same frame with a hardcoded stride of 9.  A two byte id has
+    # been described for other revisions, so that stride is accepted too when
+    # the payload length can only be explained that way.
+    TARGET_STRIDE = 9
+    TARGET_STRIDE_WIDE = 10
+
+    @classmethod
+    def _parse_target_info(cls, args) -> list[dict]:
+        """Decode every target carried by a report_target_info frame."""
+        if None in (args.x, args.y, args.z, args.dop, args.id):
+            # Frame carried no target data, or was truncated mid-target.
+            return []
+
+        # Rebuild the payload that followed `target_num`: zigpy consumed
+        # exactly these nine bytes, so this round-trips the original frame.
+        body = struct.pack("<hhhhB", args.x, args.y, args.z, args.dop, args.id)
+        if args.extra_targets:
+            body += bytes(args.extra_targets)
+
+        target_num = int(args.target_num)
+        if target_num > 0 and len(body) == cls.TARGET_STRIDE_WIDE * target_num:
+            stride, id_format = cls.TARGET_STRIDE_WIDE, "H"
+        else:
+            stride, id_format = cls.TARGET_STRIDE, "B"
+
+        # Trust whichever is smaller, the advertised count or what actually
+        # arrived, so a short frame yields the targets it does carry instead
+        # of raising.
+        count = min(target_num, len(body) // stride)
+        if count < target_num:
+            _LOGGER.debug(
+                "Target info frame advertised %s target(s) but carried %s bytes; "
+                "decoding %s",
+                target_num,
+                len(body),
+                count,
             )
-            areas[f"area{i + 1}"] = {
-                "width_min": x_min,
-                "width_max": x_max,
-                "depth_min": y_min,
-                "depth_max": y_max,
-                "height_min": z_min,
-                "height_max": z_max,
-            }
-        return {"count": count, **areas}
+
+        targets = []
+        for index in range(count):
+            x, y, z, dop, target_id = struct.unpack_from(
+                f"<hhhh{id_format}", body, index * stride
+            )
+            targets.append({"x": x, "y": y, "z": z, "dop": dop, "id": target_id})
+        return targets
 
     def handle_cluster_request(
         self,
@@ -1540,15 +1584,15 @@ class InovelliVZM32SNMMWaveCluster(CustomCluster):
             }
             self.listener_event(ZHA_SEND_EVENT, "mmwave_anyone_in_area", event_args)
         elif hdr.command_id == 0x01:  # report_target_info
-            event_args = {
-                "target_num": args.target_num,
-                "x": args.x,
-                "y": args.y,
-                "z": args.z,
-                "dop": args.dop,
-                "id": args.id,
-            }
-            self.listener_event(ZHA_SEND_EVENT, "mmwave_target_info", event_args)
+            # One event per tracked target, so a room with several people
+            # reports all of them instead of just the first in the frame.
+            for index, target in enumerate(self._parse_target_info(args)):
+                event_args = {
+                    "target_num": args.target_num,
+                    "target_index": index,
+                    **target,
+                }
+                self.listener_event(ZHA_SEND_EVENT, "mmwave_target_info", event_args)
         elif hdr.command_id in (0x02, 0x03, 0x04):  # area reports
             event_name = {
                 0x02: "mmwave_report_interference_area",
@@ -1558,14 +1602,14 @@ class InovelliVZM32SNMMWaveCluster(CustomCluster):
             event_args = self._parse_area_report(args)
             self.listener_event(ZHA_SEND_EVENT, event_name, event_args)
 
-    async def bind(self):
+    async def bind(self, **kwargs):
         """Bind cluster to coordinator then send query_areas to trigger reporting.
 
         Mirrors the Z2M configure sequence:
         1. reporting.bind(endpoint, coordinator, [INOVELLI_MMWAVE_CLUSTER_NAME])
         2. endpoint.command("mmWaveControl", {controlID: query_areas (2)})
         """
-        result = await super().bind()
+        result = await super().bind(**kwargs)
         _LOGGER.debug("%s: ZDP bind result: %s", self.name, result)
 
         # result is a list/tuple where [0] is the ZDO Status.
