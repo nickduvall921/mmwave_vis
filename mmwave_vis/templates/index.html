@@ -431,6 +431,15 @@
                     <button id="btnStartEdit" class="cmd-btn btn-full" onclick="startZoneEdit()" style="margin-top:5px; background: #00bcd4; color: #1a1a1a;">Draw / Edit Selected Zone</button>
                     <button class="cmd-btn btn-full btn-danger" onclick="deleteZone()" style="margin-top:5px;">Delete Selected Zone</button>
 
+                    <!-- #41: stay-area width-inversion firmware bug workaround -->
+                    <div class="input-row" style="margin-top: 10px; align-items: flex-start;">
+                        <input type="checkbox" id="toggleStayInvert" style="margin-top: 3px;">
+                        <label for="toggleStayInvert" style="font-size: 0.8em; color: #ccc; cursor: pointer;">Auto-correct stay-area inversion bug</label>
+                    </div>
+                    <div style="font-size: 0.7em; color: #666; margin-top: 2px;">
+                        The switch firmware mirrors stay-zone width (X), so a normal zone needs applying twice. When on, the width is pre-inverted so one apply lands correctly. Turn off if a future firmware/Z2M update fixes the bug.
+                    </div>
+
                     <!-- ZHA: after saving a zone, force sync is needed to confirm -->
                     <div class="zha-only" style="font-size: 0.75em; color: #666; margin-top: 8px;">
                         After applying changes, use Force Sync to confirm the zone was saved to the device.
@@ -528,6 +537,14 @@
                     <div style="display:flex; gap: 5px; margin-top: 5px;">
                         <button class="cmd-btn" style="flex:1;" onclick="autoScaleRadar()">Auto-Scale</button>
                         <button class="cmd-btn btn-danger" style="flex:1;" onclick="resetRadarScale()">Reset Scale</button>
+                    </div>
+                    <!-- #7: optional 1:1 aspect lock so the radar map stays square on resize -->
+                    <div class="input-row" style="margin-top: 8px;">
+                        <label for="toggleAspectLock">Lock square aspect ratio:</label>
+                        <input type="checkbox" id="toggleAspectLock">
+                    </div>
+                    <div style="font-size: 0.7em; color: #666; margin-top: 2px;">
+                        Keeps the map a true square (equal cm per pixel on both axes) instead of stretching to fill the window.
                     </div>
                 </div>
             </details>
@@ -831,6 +848,8 @@
         let showGrid = true, showLabels = true, showZValues = false;
         let showDetection1 = true, showDetection2 = true, showDetection3 = true, showDetection4 = true;
         let chartXMin = -600, chartXMax = 600, chartYMin = -100, chartYMax = 650;
+        let stayInvertEnabled = false;  // #41: pre-invert stay-area width to counter firmware mirror bug (opt-in)
+        let lockAspectRatio = false;   // #7: opt-in 1:1 aspect lock for the radar map
 
         try {
             if (localStorage.getItem('vizShowInterference') !== null) showInterference = localStorage.getItem('vizShowInterference') === 'true';
@@ -843,6 +862,8 @@
             if (localStorage.getItem('vizShowDetection2') !== null) showDetection2 = localStorage.getItem('vizShowDetection2') === 'true';
             if (localStorage.getItem('vizShowDetection3') !== null) showDetection3 = localStorage.getItem('vizShowDetection3') === 'true';
             if (localStorage.getItem('vizShowDetection4') !== null) showDetection4 = localStorage.getItem('vizShowDetection4') === 'true';
+            if (localStorage.getItem('stayInvertEnabled') !== null)   stayInvertEnabled = localStorage.getItem('stayInvertEnabled') === 'true';
+            if (localStorage.getItem('lockAspectRatio') !== null)     lockAspectRatio   = localStorage.getItem('lockAspectRatio') === 'true';
             let stored;
             stored = parseInt(localStorage.getItem('vizXMin')); if (!isNaN(stored)) chartXMin = stored;
             stored = parseInt(localStorage.getItem('vizXMax')); if (!isNaN(stored)) chartXMax = stored;
@@ -860,6 +881,8 @@
         const vizToggleDetection2   = document.getElementById('vizToggleDetection2');
         const vizToggleDetection3   = document.getElementById('vizToggleDetection3');
         const vizToggleDetection4   = document.getElementById('vizToggleDetection4');
+        const toggleStayInvert      = document.getElementById('toggleStayInvert');
+        const toggleAspectLock      = document.getElementById('toggleAspectLock');
 
         vizXMin.value = chartXMin; vizXMax.value = chartXMax;
         vizYMin.value = chartYMin; vizYMax.value = chartYMax;
@@ -875,6 +898,26 @@
             if (vizToggleDetection2)   vizToggleDetection2.checked   = showDetection2;
             if (vizToggleDetection3)   vizToggleDetection3.checked   = showDetection3;
             if (vizToggleDetection4)   vizToggleDetection4.checked   = showDetection4;
+            if (toggleStayInvert)      toggleStayInvert.checked      = stayInvertEnabled;
+            if (toggleAspectLock)      toggleAspectLock.checked      = lockAspectRatio;
+
+            // #7: apply or clear the 1:1 aspect constraint based on the toggle.
+            // Keeping it on the shared layout object means every react/relayout
+            // below honours it.
+            if (lockAspectRatio) {
+                layout.yaxis.scaleanchor = 'x';
+                layout.yaxis.scaleratio  = 1;
+                // constrain:'domain' letterboxes within the container (keeps the
+                // configured cm ranges and adds neutral margins) instead of the
+                // default 'range' behaviour that expands the visible area.
+                layout.yaxis.constrain = 'domain';
+                layout.xaxis.constrain = 'domain';
+            } else {
+                delete layout.yaxis.scaleanchor;
+                delete layout.yaxis.scaleratio;
+                delete layout.yaxis.constrain;
+                delete layout.xaxis.constrain;
+            }
 
             const chartDiv = document.getElementById('chart');
             if (chartDiv && chartDiv.data) {
@@ -944,6 +987,25 @@
         if (vizToggleDetection2)   vizToggleDetection2.addEventListener('change',   (e) => { showDetection2   = e.target.checked; localStorage.setItem('vizShowDetection2',   showDetection2);   applyVizSettings(); });
         if (vizToggleDetection3)   vizToggleDetection3.addEventListener('change',   (e) => { showDetection3   = e.target.checked; localStorage.setItem('vizShowDetection3',   showDetection3);   applyVizSettings(); });
         if (vizToggleDetection4)   vizToggleDetection4.addEventListener('change',   (e) => { showDetection4   = e.target.checked; localStorage.setItem('vizShowDetection4',   showDetection4);   applyVizSettings(); });
+        if (toggleStayInvert)      toggleStayInvert.addEventListener('change',      (e) => { stayInvertEnabled = e.target.checked; localStorage.setItem('stayInvertEnabled', stayInvertEnabled); });
+        if (toggleAspectLock)      toggleAspectLock.addEventListener('change',      (e) => {
+            lockAspectRatio = e.target.checked;
+            localStorage.setItem('lockAspectRatio', lockAspectRatio);
+            // Explicit relayout with `false` reliably clears the constraint when turned off.
+            try {
+                Plotly.relayout('chart', {
+                    // Re-assert configured ranges so 'domain' letterboxes from the
+                    // intended view (and toggling off restores it cleanly).
+                    'xaxis.range': [chartXMin, chartXMax],
+                    'yaxis.range': [chartYMin, chartYMax],
+                    'yaxis.scaleanchor': lockAspectRatio ? 'x' : false,
+                    'yaxis.scaleratio': 1,
+                    'yaxis.constrain': lockAspectRatio ? 'domain' : 'range',
+                    'xaxis.constrain': lockAspectRatio ? 'domain' : 'range'
+                });
+            } catch(err) {}
+            applyVizSettings();
+        });
 
         // ---------------------------------------------------------------------------
         // FOV / Radar geometry
@@ -1655,8 +1717,19 @@
             const x_vals = [parseInt(draftZoneConfig.x_min), parseInt(draftZoneConfig.x_max)].sort((a,b)=>a-b);
             const y_vals = [parseInt(draftZoneConfig.y_min), parseInt(draftZoneConfig.y_max)].sort((a,b)=>a-b);
             const z_vals = [parseInt(draftZoneConfig.z_min), parseInt(draftZoneConfig.z_max)].sort((a,b)=>a-b);
+
+            // #41: the VZM32-SN firmware mirrors the WIDTH (X) axis on stay areas,
+            // so a normally-entered zone lands inverted and only corrects on a second
+            // apply. When the workaround is on, pre-invert X (negate + swap to keep
+            // min < max) so a single apply stores the intended values. Detection and
+            // interference areas are unaffected.
+            let width_min = x_vals[0], width_max = x_vals[1];
+            if (stayInvertEnabled && category === 'mmwave_stay_areas') {
+                width_min = -x_vals[1];
+                width_max = -x_vals[0];
+            }
             areaPayload[area] = {
-                width_min: x_vals[0], width_max: x_vals[1],
+                width_min: width_min, width_max: width_max,
                 depth_min: y_vals[0], depth_max: y_vals[1],
                 height_min: z_vals[0], height_max: z_vals[1]
             };

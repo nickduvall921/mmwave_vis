@@ -395,7 +395,10 @@ class ZHAClient:
         print(
             f"ZHA: WARNING — no data received from {ieee} after "
             f"{self.BINDING_TIMEOUT_S:.0f}s. Cluster 0xFC32 binding may be "
-            f"missing. Reconfigure the device in ZHA to re-establish it.",
+            f"missing. Fix: (1) reload the custom quirk and restart HA, "
+            f"(2) Reconfigure the device in ZHA to establish the bind, and "
+            f"(3) turn on the 'mmWave target info report' switch entity to "
+            f"enable live target reports.",
             flush=True,
         )
         self.socketio.emit("zha_binding_warning", {"ieee": ieee, "show": True})
