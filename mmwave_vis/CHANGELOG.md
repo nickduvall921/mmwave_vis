@@ -1,6 +1,19 @@
 # Changelog
 
 
+## [Unreleased]
+
+### Fixed
+- **ZHA quirk: only the first mmWave target in a frame was reported.** `report_target_info` (cluster 0xFC32, command 0x01) declares a fixed single-target schema, but the sensor repeats the `(x, y, z, dop, id)` block once per tracked target — up to four. Zigpy parsed target 1, logged the rest as leftover bytes at debug level, and the quirk emitted a single `mmwave_target_info` event, so a room with several people only ever produced one plotted target. The command schema is now `target_num` plus a trailing byte string, and `_parse_target_info()` re-splits the payload and fires one event per target (each carrying the existing `x/y/z/dop/id/target_num` keys plus a new `target_index`). Verified against a frame captured from live VZM32-SN firmware `0x01030102` (`1d 2f 12 38 01 | 01 b5 00 9e 00 08 00 c8 00 01` — a 9-byte per-target stride with a one-byte id), and cross-checked against zigbee-herdsman-converters, whose `report_target_info` converter decodes the same frame shape with `stride = 9` and `count = min(targetNum, floor(len/stride))`; a 3000-frame randomized differential test against a port of that converter finds no disagreements. The vendor cluster document's claim that `id` is `int16` does not match this firmware, so the wider stride is accepted only when the payload length can be explained no other way.
+- **ZHA quirk: five config entities could not reach valid values.** `dimming_speed_up_local` capped at 126 (the device ships at 127, so the live value sat outside its own slider); `default_level_local` was 1-254 and `double_tap_up_level` / `double_tap_down_level` capped at 254, hiding the documented 255 sentinels (return-to-previous-level, send-ON, send-OFF); `mmwave_room_size_preset` allowed 0-5 when only 0-3 (Custom/Small/Medium/Large) exist. Ranges now match the Zigbee2MQTT converter, confirmed against a live Z2M VZM32-SN.
+- **ZHA quirk: three attribute types disagreed with both upstream zha-quirks and Zigbee2MQTT.** `periodic_power_and_energy_reports` (0x0013) was declared `uint8_t` against an actual range of 0-32767, so writing any value above 255 raised `ValueError` before reaching the device (a live Z2M switch has it set to 3600); it is now `uint16_t`. `power_type` (0x0015) is back to `Bool` and `internal_temp_monitor` (0x0020) back to `int8s`.
+- **ZHA quirk: a malformed button event took down the frame handler.** `BUTTONS[...]` / `PRESS_TYPES[...]` raised `KeyError` out of `handle_cluster_request` for any unrecognised button or press type; unknown values are now logged and ignored.
+- **ZHA quirk: `bind()` dropped `**kwargs`,** narrowing the base-class signature that zigpy supports.
+
+### Changed
+- `zha_quark/quark-ref.txt`: section 11.10 described a `handle_message()` raw-byte override that the quirk no longer has; it now documents the actual decode path. Section 3.2 documents `target_index` and the per-target event fan-out, and the parameter tables carry the corrected ranges.
+- Removed the unused `_parse_area_report_raw()` helper left behind by that earlier raw decoder.
+
 ## [3.2.6] - 2026-08-24
 
 ### Fixed

@@ -24,7 +24,7 @@ VZM32SN = (
         "dimming_speed_up_local",
         VZM32SN_CLUSTER_ID,
         min_value=0,
-        max_value=126,
+        max_value=127,
         step=1,
         entity_type=EntityType.CONFIG,
         translation_key="dimming_speed_up_local",
@@ -63,8 +63,8 @@ VZM32SN = (
     .number(
         "default_level_local",
         VZM32SN_CLUSTER_ID,
-        min_value=1,
-        max_value=254,
+        min_value=0,
+        max_value=255,  # 255 = return to the level used before turning off
         step=1,
         entity_type=EntityType.CONFIG,
         translation_key="default_level_local",
@@ -94,7 +94,7 @@ VZM32SN = (
         "double_tap_up_level",
         VZM32SN_CLUSTER_ID,
         min_value=2,
-        max_value=254,
+        max_value=255,  # 255 = send an ON command instead of a level
         step=1,
         entity_type=EntityType.CONFIG,
         translation_key="double_tap_up_level",
@@ -104,7 +104,7 @@ VZM32SN = (
         "double_tap_down_level",
         VZM32SN_CLUSTER_ID,
         min_value=0,
-        max_value=254,
+        max_value=255,  # 255 = send an OFF command instead of a level
         step=1,
         entity_type=EntityType.CONFIG,
         translation_key="double_tap_down_level",
@@ -188,7 +188,7 @@ VZM32SN = (
         "mmwave_room_size_preset",
         VZM32SN_CLUSTER_ID,
         min_value=0,
-        max_value=5,
+        max_value=3,  # 0=Custom, 1=Small, 2=Medium, 3=Large
         step=1,
         entity_type=EntityType.CONFIG,
         translation_key="mmwave_room_size_preset",
@@ -411,7 +411,7 @@ VZM32SN = (
         translation_key="mmwave_detect_sensitivity",
         fallback_name="mmWave detect sensitivity",
     )
-  .number(
+    .number(
         "mmwave_stay_life",
         MMWAVE_CLUSTER_ID,
         min_value=0,

@@ -122,17 +122,25 @@ PREREQUISITES:
            "y":          342,  // Y coordinate of target in cm (depth, near/far)
            "z":          -62,  // Z coordinate of target in cm (height, floor/ceiling)
            "dop":        200,  // Doppler velocity indicator
-           "id":         1     // Target tracking ID assigned by sensor (uint8, 0–255)
+           "id":         1,    // Target tracking ID assigned by sensor
+           "target_index": 0   // 0-based position of this target within the frame
          },
          "params": {}
        }
      }
 
      Notes:
-     - If multiple targets exist, a separate event fires for each target.
+     - One frame carries every currently tracked target (up to 4).  The quirk
+       decodes them all and fires a separate zha_event per target, so a frame
+       with target_num = 3 produces three events with target_index 0, 1 and 2.
+     - target_num is the total number of targets in the frame and is repeated
+       in every event generated from that frame.
      - x, y, z are signed 16-bit integers in centimeters.
      - dop is a signed 16-bit Doppler value indicating target movement.
-     - id is a uint8 per-session target tracking identifier (0–255).
+     - id is a per-session target tracking identifier.  Firmware revisions
+       differ on whether it is sent as one byte or two, so the quirk derives
+       the per-target stride from the payload length and reports whichever
+       width the device actually used.
 
 --------------------------------------------------------------------------------
 3.3  EVENT: mmwave_report_interference_area
@@ -393,7 +401,7 @@ KEY ATTRIBUTE: 0x006B (mmwave_target_info_report)
 Attr ID | HA Entity Name                        | Type    | Range       | Description
 --------|---------------------------------------|---------|-------------|-------------------------
 0x0001  | dimming_speed_up_remote               | uint8   | 0–126       | Remote dim-up speed
-0x0002  | dimming_speed_up_local                | uint8   | 0–126       | Local dim-up speed
+0x0002  | dimming_speed_up_local                | uint8   | 0–127       | Local dim-up speed
 0x0003  | ramp_rate_off_to_on_remote            | uint8   | 0–127       | Remote ramp off→on
 0x0004  | ramp_rate_off_to_on_local             | uint8   | 0–127       | Local ramp off→on
 0x0005  | dimming_speed_down_remote             | uint8   | 0–127       | Remote dim-down speed
@@ -404,7 +412,7 @@ Attr ID | HA Entity Name                        | Type    | Range       | Descri
 0x000A  | maximum_level                         | uint8   | 2–255       | Maximum dim level
 0x000B  | invert_switch                         | bool    | 0/1         | Invert up/down paddle
 0x000C  | auto_off_timer                        | uint16  | 0–32767     | Auto-off timer (seconds)
-0x000D  | default_level_local                   | uint8   | 1–254       | Default local dim level
+0x000D  | default_level_local                   | uint8   | 0–255       | Default local dim level (255 = previous level)
 0x000E  | default_level_remote                  | uint8   | 0–254       | Default remote dim level
 0x000F  | state_after_power_restored            | uint8   | 0–254       | State after power loss
 0x0011  | load_level_indicator_timeout          | uint8   | 0–11        | Load indicator timeout
@@ -422,15 +430,15 @@ Attr ID | HA Entity Name                        | Type    | Range       | Descri
 0x0034  | smart_bulb_mode                       | bool    | 0/1         | Smart bulb / always-on relay
 0x0035  | double_tap_up_enabled                 | bool    | 0/1         | Enable double-tap up action
 0x0036  | double_tap_down_enabled               | bool    | 0/1         | Enable double-tap down action
-0x0037  | double_tap_up_level                   | uint8   | 2–254       | Level for double-tap up
-0x0038  | double_tap_down_level                 | uint8   | 0–254       | Level for double-tap down
+0x0037  | double_tap_up_level                   | uint8   | 2–255       | Level for double-tap up (255 = send ON)
+0x0038  | double_tap_down_level                 | uint8   | 0–255       | Level for double-tap down (255 = send OFF)
 0x005F  | led_color_when_on                     | uint8   | 0–255       | All-LED hue when on
 0x0060  | led_color_when_off                    | uint8   | 0–255       | All-LED hue when off
 0x0061  | led_intensity_when_on                 | uint8   | 0–100       | All-LED brightness when on
 0x0062  | led_intensity_when_off                | uint8   | 0–100       | All-LED brightness when off
 0x0064  | led_scaling_mode                      | bool    | 0/1         | LED scale (VZM31SN=0, LZW31SN=1)
 0x006E  | light_on_presence_behavior            | uint8   | 0–6         | Auto light on mmWave behavior
-0x0075  | mmwave_room_size_preset               | uint8   | 0–5         | Quick-configure room size
+0x0075  | mmwave_room_size_preset               | uint8   | 0–3         | Quick-configure room size
 0x007B  | aux_switch_scenes                     | bool    | 0/1         | Aux paddle sends scene commands
 0x007D  | binding_off_to_on_sync_level          | bool    | 0/1         | Sync level when turning on via bind
 0x0082  | fan_module_binding_control            | uint8   | 0–3         | Fan module binding
@@ -744,15 +752,15 @@ SWITCH ENTITIES (toggle, Cluster 0xFC32):
   mmwave_target_info_report            — Enable live mmWave target reports
 
 NUMBER ENTITIES (slider, Cluster 0xFC31):
-  dimming_speed_up_local               (0–126)
+  dimming_speed_up_local               (0–127)
   ramp_rate_off_to_on_local            (0–127)
   dimming_speed_down_local             (0–127)
   ramp_rate_on_to_off_local            (0–127)
-  default_level_local                  (1–254)
+  default_level_local                  (0–255)
   load_level_indicator_timeout         (0–11)
   button_delay                         (0–9)
-  double_tap_up_level                  (2–254)
-  double_tap_down_level                (0–254)
+  double_tap_up_level                  (2–255)
+  double_tap_down_level                (0–255)
   led_color_when_on                    (0–255)
   led_color_when_off                   (0–255)
   led_intensity_when_on                (0–100)
@@ -760,7 +768,7 @@ NUMBER ENTITIES (slider, Cluster 0xFC31):
   auto_off_timer                       (0–32767 seconds)
   minimum_level                        (1–254)
   maximum_level                        (2–255)
-  mmwave_room_size_preset              (0–5)  — Quick room size config
+  mmwave_room_size_preset              (0–3)  — 0=Custom 1=Small 2=Medium 3=Large
   light_on_presence_behavior           (0–6)  — Auto-light on presence mode
 
 NUMBER ENTITIES (slider, Cluster 0xFC32):
@@ -831,13 +839,19 @@ SECTION 11 — IMPORTANT NOTES AND LIMITATIONS
    Target info events fire at most once per second per detected target.
    For high-performance visualization, expect ~1Hz updates per target.
 
-10. INTERNAL: RAW BYTE PARSING
-   The quirk overrides handle_message() on InovelliVZM32SNMMWaveCluster to
-   intercept incoming S→C frames and parse them from raw bytes. This is
-   required because Zigpy's standard ClientCommandDefs lookup does not resolve
-   manufacturer-specific cluster commands on custom clusters. The override
-   parses the ZCL payload directly using struct.unpack and emits the
-   corresponding ZHA events before falling through to the base handler.
+10. INTERNAL: TARGET INFO FRAME DECODING
+   S→C frames are declared in InovelliVZM32SNMMWaveCluster.ClientCommandDefs
+   and deserialized by Zigpy as normal; handle_cluster_request() then turns
+   them into the zha_events listed in section 3.
+
+   report_target_info (0x01) is the one variable-length frame: the sensor
+   repeats the (x, y, z, dop, id) block once per tracked target, and the id
+   field is one byte on some firmware revisions and two on others.  Its
+   command schema therefore declares the first target plus a trailing
+   `extra_targets` byte string, and _parse_target_info() re-splits the
+   payload with struct.unpack_from, choosing the 9- or 10-byte stride that
+   divides evenly into target_num.  If neither stride fits, the frame is
+   treated as a single target and a debug message is logged.
 
 ================================================================================
 END OF REFERENCE
