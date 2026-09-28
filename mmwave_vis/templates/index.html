@@ -1482,11 +1482,10 @@
             const zones = msg.payload;
             for (let i = 0; i < 4; i++) {
                 if (zones[i]) {
-                    const existing = deviceZones.mmwave_interference_areas[`area${i+1}`];
-                    const newArea  = parseZ2MArea(zones[i]);
+                    const newArea = parseZ2MArea(zones[i]);
                     if (newArea) {
-                        newArea.z_min = existing?.z_min ?? 0;
-                        newArea.z_max = existing?.z_max ?? 300;
+                        if (zones[i].z_min !== undefined) newArea.z_min = zones[i].z_min;
+                        if (zones[i].z_max !== undefined) newArea.z_max = zones[i].z_max;
                         deviceZones.mmwave_interference_areas[`area${i+1}`] = newArea;
                     }
                 } else {
