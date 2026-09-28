@@ -23,7 +23,7 @@ import os
 import traceback
 import time
 import threading
-from flask import Flask, render_template, request
+from flask import Flask, Response, render_template, request
 from flask_socketio import SocketIO, emit
 import paho.mqtt.client as mqtt
 import logging
@@ -725,6 +725,26 @@ driver.start()
 
 
 # ===========================================================================
+# Z-Wave JS packet capture (diagnostic, independent of zigbee_stack)
+# ===========================================================================
+
+def _read_addon_version():
+    # config.yaml is copied into the image alongside app.py
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.yaml'),
+                  encoding='utf-8') as f:
+            for line in f:
+                if line.startswith('version:'):
+                    return line.split(':', 1)[1].strip().strip('"\'')
+    except OSError:
+        pass
+    return 'unknown'
+
+from zwave_capture import ZWaveCapture
+zwave_capture = ZWaveCapture(HA_URL, HA_TOKEN, socketio, addon_version=_read_addon_version())
+
+
+# ===========================================================================
 # Flask-SocketIO handlers — stack-agnostic
 # ===========================================================================
 
@@ -772,6 +792,21 @@ def handle_force_sync():
     driver.force_sync(request.sid)
 
 
+@socketio.on('zwave_capture_start')
+def handle_zwave_capture_start():
+    zwave_capture.start()
+
+
+@socketio.on('zwave_capture_stop')
+def handle_zwave_capture_stop():
+    zwave_capture.stop()
+
+
+@socketio.on('zwave_capture_status')
+def handle_zwave_capture_status():
+    emit('zwave_capture_status', zwave_capture.status())
+
+
 # ===========================================================================
 # Flask route
 # ===========================================================================
@@ -782,6 +817,18 @@ def index():
         'index.html',
         ingress_path=request.headers.get('X-Ingress-Path', ''),
         zigbee_stack=ZIGBEE_STACK,
+    )
+
+
+@app.route('/zwave_capture.log')
+def zwave_capture_download():
+    text = zwave_capture.export_text()
+    if text is None:
+        return Response("No finished Z-Wave capture to download.", status=404, mimetype='text/plain')
+    return Response(
+        text,
+        mimetype='text/plain',
+        headers={'Content-Disposition': f'attachment; filename="{zwave_capture.export_filename()}"'},
     )
 
 

@@ -244,6 +244,26 @@
         body.stack-zha .z2m-only { display: none !important; }
         body.stack-z2m .zha-only  { display: none !important; }
 
+        /* Z-Wave packet capture: deliberately faint button in the header's top-right corner */
+        .hidden-tool-btn { background: none; border: none; color: #888; opacity: 0.25; font-size: 16px; line-height: 1; padding: 4px 6px; cursor: pointer; flex-shrink: 0; border-radius: 4px; }
+        .hidden-tool-btn:hover, .hidden-tool-btn:focus-visible { opacity: 1; color: #00bcd4; }
+        .hidden-tool-btn.recording { opacity: 1; color: #ff5252; }
+        #zwCapturePanel { display: none; position: fixed; top: 52px; right: 12px; width: min(400px, calc(100vw - 32px)); box-sizing: border-box; max-height: calc(100vh - 70px); overflow-y: auto; background: #2b2b2b; border: 1px solid #00bcd4; border-radius: 6px; padding: 14px; z-index: 1100; box-shadow: 0 6px 20px rgba(0,0,0,0.5); font-size: 0.85em; color: #ccc; }
+        #zwCapturePanel p, #zwCapturePanel ol { margin: 0 0 8px; line-height: 1.45; }
+        #zwCapturePanel ol { padding-left: 18px; }
+        #zwCapturePanel a:not(.cmd-btn) { color: #00bcd4; }
+        .zwc-head { display: flex; justify-content: space-between; align-items: center; font-weight: bold; color: #00bcd4; font-size: 1.1em; margin-bottom: 8px; }
+        .zwc-close { background: none; border: none; color: #888; font-size: 1.3em; line-height: 1; cursor: pointer; padding: 0 4px; }
+        .zwc-close:hover { color: #fff; }
+        .zwc-status { background: #1f1f1f; border: 1px solid #444; border-radius: 4px; padding: 6px 8px; font-family: monospace; margin-bottom: 6px; color: #eee; overflow-wrap: anywhere; }
+        .zwc-status.zwc-live { border-color: #ff5252; }
+        .zwc-status.zwc-error { border-color: #ff5252; color: #ff8a80; }
+        .zwc-devices { color: #888; margin-bottom: 8px; }
+        .zwc-actions { display: flex; gap: 8px; margin-bottom: 8px; }
+        a.cmd-btn { text-decoration: none; display: inline-block; }
+        a.cmd-btn.zwc-disabled { opacity: 0.4; pointer-events: none; }
+        .zwc-warn { color: #888; font-size: 0.92em; }
+
         @media (max-width: 900px) {
             .app-container { display: block; overflow-y: auto; -webkit-overflow-scrolling: touch; }
             .main-content { overflow: visible; height: auto; flex: none; padding-bottom: 20px; }
@@ -291,6 +311,7 @@
             <!-- Stack badge — updated by stack_info socket event -->
             <span class="stack-badge unknown" id="stackBadge" title="Zigbee stack">···</span>
         </div>
+        <button class="hidden-tool-btn" id="zwCaptureBtn" title="Z-Wave packet capture" aria-label="Z-Wave packet capture" aria-controls="zwCapturePanel">⋮</button>
     </div>
 
     <div class="status-bar">
@@ -312,6 +333,25 @@
 
     <div id="zoneStatus"></div>
     <div id="toastContainer"></div>
+
+    <!-- Z-Wave packet capture (diagnostic), opened from the faint ⋮ button in the header -->
+    <div id="zwCapturePanel" role="dialog" aria-labelledby="zwcTitle">
+        <div class="zwc-head"><span id="zwcTitle">Z-Wave packet capture</span><button class="zwc-close" id="zwcClose" aria-label="Close">×</button></div>
+        <p>For Red Series <strong>VZW32-SN</strong> testers. Records the Z-Wave JS driver log through Home Assistant, so the switch's target-tracking frames (which Z-Wave JS doesn't pass on to Home Assistant yet) can be decoded.</p>
+        <ol>
+            <li>On firmware 2.04 or later, set parameter 107 to 1 so the switch reports target positions.</li>
+            <li>Press Start, then walk around in front of the switch for about 30 seconds.</li>
+            <li>Press Stop, download the file and attach it to <a href="https://github.com/nickduvall921/mmwave_vis/issues/42" target="_blank" rel="noopener">issue #42</a>.</li>
+        </ol>
+        <div class="zwc-status" id="zwcStatus">Idle.</div>
+        <div class="zwc-devices" id="zwcDevices"></div>
+        <div class="zwc-actions">
+            <button class="cmd-btn" id="zwcStart">Start</button>
+            <button class="cmd-btn btn-danger" id="zwcStop" disabled>Stop</button>
+            <a class="cmd-btn zwc-disabled" id="zwcDownload" download>Download</a>
+        </div>
+        <p class="zwc-warn">Z-Wave JS logging is raised to debug while capturing and put back afterwards. A capture stops on its own after 15 minutes. The file contains your Z-Wave network traffic, so look it over before sharing.</p>
+    </div>
 
     <div class="app-container">
         <div class="main-content">
@@ -1812,6 +1852,61 @@
             endZoneEdit();
             socket.emit('force_sync');
         }
+
+        // --- Z-Wave packet capture (diagnostic) ---
+        const zwcPanel    = document.getElementById('zwCapturePanel');
+        const zwcButton   = document.getElementById('zwCaptureBtn');
+        const zwcStatus   = document.getElementById('zwcStatus');
+        const zwcDevices  = document.getElementById('zwcDevices');
+        const zwcStart    = document.getElementById('zwcStart');
+        const zwcStop     = document.getElementById('zwcStop');
+        const zwcDownload = document.getElementById('zwcDownload');
+        zwcDownload.href  = INGRESS_PATH + '/zwave_capture.log';
+
+        function toggleZwCapture(open) {
+            const show = open ?? zwcPanel.style.display !== 'block';
+            // Banners above the header shift it down; open just below the button
+            if (show) zwcPanel.style.top = (zwcButton.getBoundingClientRect().bottom + 6) + 'px';
+            zwcPanel.style.display = show ? 'block' : 'none';
+            if (show) socket.emit('zwave_capture_status');
+        }
+        zwcButton.addEventListener('click', () => toggleZwCapture());
+        document.getElementById('zwcClose').addEventListener('click', () => toggleZwCapture(false));
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && zwcPanel.style.display === 'block') toggleZwCapture(false); });
+        zwcStart.addEventListener('click', () => socket.emit('zwave_capture_start'));
+        zwcStop.addEventListener('click', () => socket.emit('zwave_capture_stop'));
+
+        function fmtDuration(s) { return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+
+        socket.on('zwave_capture_status', function(st) {
+            const running = ['starting', 'capturing', 'stopping'].includes(st.state);
+            zwcStart.disabled    = running;
+            zwcStart.textContent = st.has_data ? 'Start new capture' : 'Start';
+            zwcStop.disabled     = !['starting', 'capturing'].includes(st.state);
+            zwcDownload.classList.toggle('zwc-disabled', !st.has_data);
+            zwcButton.classList.toggle('recording', running);
+
+            const counts = `${st.lines.toLocaleString()} lines, ${st.proprietary} Manufacturer Proprietary`;
+            let text;
+            switch (st.state) {
+                case 'starting':  text = 'Connecting to Z-Wave JS...'; break;
+                case 'capturing': text = `● Capturing ${fmtDuration(st.elapsed)} / ${fmtDuration(st.max_duration)} (${counts})`; break;
+                case 'stopping':  text = 'Stopping...'; break;
+                case 'stopped':   text = `Finished after ${fmtDuration(st.elapsed)} (${counts})`; break;
+                case 'error':     text = `Error: ${st.error}` + (st.lines ? ` (${counts})` : ''); break;
+                default:          text = 'Idle.';
+            }
+            if (st.note) text += ' ' + st.note;
+            zwcStatus.textContent = text;
+            zwcStatus.className = 'zwc-status' + (st.state === 'error' ? ' zwc-error' : st.state === 'capturing' ? ' zwc-live' : '');
+
+            if (st.devices && st.devices.length) {
+                zwcDevices.textContent = 'Inovelli nodes: ' + st.devices.map(d =>
+                    `node ${d.node_id ?? '?'} ${d.model}${d.firmware ? ' fw ' + d.firmware : ''}`).join(', ');
+            } else {
+                zwcDevices.textContent = st.entry_title ? 'No Inovelli devices found on this Z-Wave network.' : '';
+            }
+        });
 
         function endZoneEdit() {
             isEditingZone  = false;

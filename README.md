@@ -194,6 +194,10 @@ Before starting the add-on, go to the **Configuration** tab and connect it to yo
 
 Please open an issue on GitHub if you encounter any bugs.
 
+## Red Series (Z-Wave) Testers
+
+Z-Wave switches aren't supported yet. The VZW32-SN reports target positions on firmware 2.04 and later, but Z-Wave JS doesn't pass those frames on to Home Assistant and their format isn't published. If you own a VZW32-SN, the faint **⋮** button in the top-right corner of the addon opens a packet capture that records the Z-Wave JS driver log (it works whichever Zigbee stack the addon is set to). Attach the downloaded file to [#42](https://github.com/nickduvall921/mmwave_vis/issues/42) to help get support added.
+
 ## Requirements
 
 - Home Assistant OS or Supervised
