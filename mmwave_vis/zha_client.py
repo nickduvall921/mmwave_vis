@@ -771,16 +771,18 @@ class ZHAClient:
                          height_min, height_max },
               "area2": { ... }, ... }
 
-        Some firmware reports count=4 even for empty zone sets, using
-        x=0, y=0, z=±600 as sentinel values for unused slots. We filter
-        those out by requiring non-zero x or y coordinates.
+        All four slots are read by position, the same as Z2M's report_areas
+        converter: `count` is not a reliable slot count, and dropping an
+        empty slot would shift every later zone into the wrong area number.
+        Empty slots (firmware uses x=0, y=0, z=±600 as a sentinel) are sent
+        as None, so the payload is always [area1, area2, area3, area4].
         """
-        count = int(args.get("count", 0))
         zones = []
 
-        for i in range(1, count + 1):
+        for i in range(1, 5):
             area = args.get(f"area{i}")
             if not isinstance(area, dict):
+                zones.append(None)
                 continue
 
             x_min = area.get("width_min",  0)
@@ -790,8 +792,9 @@ class ZHAClient:
             z_min = area.get("height_min", 0)
             z_max = area.get("height_max", 0)
 
-            # Skip empty sentinel slots (all x and y coordinates are zero)
+            # Empty sentinel slot (all x and y coordinates are zero)
             if x_min == 0 and x_max == 0 and y_min == 0 and y_max == 0:
+                zones.append(None)
                 continue
 
             zones.append({
@@ -804,7 +807,8 @@ class ZHAClient:
             self.device_list[self._ieee][zone_key] = zones
 
         if self.debug:
-            print(f"[DEBUG] emit {zone_key}: {len(zones)} active zones → {zones}", flush=True)
+            active = sum(1 for z in zones if z)
+            print(f"[DEBUG] emit {zone_key}: {active} active zones → {zones}", flush=True)
 
         self.socketio.emit(zone_key, {"topic": self._topic, "payload": zones})
 

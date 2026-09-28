@@ -1,6 +1,19 @@
 # Changelog
 
 
+## [3.2.8] - 2026-09-27
+
+### Added
+- **Issue #52 — zone backup and restore:** a new **Zone Backup** block under Maintenance saves the selected switch's detection, interference and stay zones (all 12 slots, including which are empty) to a JSON file, and puts them back after a reset or re-pair. Export first asks the switch to report its zones and waits until all three zone types have come back, so a half-loaded page can never produce a backup that would clear zones on restore. Import validates the file, asks for confirmation, writes each slot one at a time (600 ms apart so a slow Zigbee network keeps up), then keeps reading the zones back from the switch until every slot has held the same value on two reads in a row, and compares each with the backup; it only reports success when they match, and names any slot that doesn't. (Firmware 1.02 takes about 6 s to apply a zone write and briefly reports a stay zone as written before reporting it mirrored, so a single read can be misleading.) Stay zones that the firmware stored mirrored (the #41 width bug, confirmed on fw 1.02 and 1.03) are re-sent flipped once and re-checked, so they land correctly whether or not the stay-area auto-correct toggle is on. Detection area 1 (the room limits) is never cleared, a zone type missing from the file is left as it is, and the restore stops if the connection drops, the backend rejects a write, or a different switch is selected. Tested end to end on live VZM32-SN switches on ZHA (fw 1.03) and Zigbee2MQTT (fw 1.02), both of which mirror stay zones.
+
+### Fixed
+- **Zones could show up in the wrong slot on ZHA (and on the raw Z2M fallback):** zone reports were read only up to the report's `count`, and empty slots were dropped instead of kept in place. With area 2 empty and area 3 set, the page showed area 3's zone as area 2, and editing it wrote to the wrong slot. Both paths now read all four slots by position, like Zigbee2MQTT's own converter, and send empty slots as `null`. A live VZM32-SN always reports `count` 4, even when every slot is empty, so `count` is now only a sanity check (raw frames with a count above 4 are dropped). The raw Z2M decode moved to `utils.decode_raw_zones`, with tests for both paths.
+- **The stay-area auto-correct and square-aspect toggles showed "Error: Unknown parameter: None":** the generic sidebar handler sent every sidebar input to the switch as a parameter, including these page-only toggles. It now skips inputs that don't map to a device parameter.
+- **Older Z2M firmware reporting detection area 1 as flat attributes:** the page ignored `mmWaveHeightMin` / `mmWaveHeightMax`, so area 1 showed a default height (and a backup would have saved it).
+
+### Changed
+- Bumped version to 3.2.8.
+
 ## [3.2.7] - 2026-09-27
 
 ### Fixed

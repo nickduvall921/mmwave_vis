@@ -161,3 +161,38 @@ def decode_raw_targets(payload):
         })
         offset += RAW_TARGET_STRIDE
     return targets
+
+
+RAW_AREA_STRIDE = 12
+
+
+def decode_raw_zones(payload):
+    """Decode a raw FC32 area report (interference / detection / stay).
+
+    Byte 5 is the report's count; four 12-byte areas follow (x, y, z min/max
+    as little-endian int16). Like Z2M's own converter, all four slots are
+    read by position, so an empty slot (all x and y zero) comes back as None
+    instead of shifting later areas down a slot. The count itself is only a
+    sanity check: live VZM32-SN reports always send 4, even when every slot
+    is empty. Returns None for a frame whose count is out of range.
+    """
+    if not (0 <= safe_int(payload.get("5"), -1) <= 4):
+        return None
+
+    zones  = []
+    offset = 6
+    for _ in range(4):
+        if str(offset + RAW_AREA_STRIDE - 1) not in payload:
+            break
+        zone = {
+            "x_min": parse_signed_16(payload, offset),
+            "x_max": parse_signed_16(payload, offset + 2),
+            "y_min": parse_signed_16(payload, offset + 4),
+            "y_max": parse_signed_16(payload, offset + 6),
+            "z_min": parse_signed_16(payload, offset + 8),
+            "z_max": parse_signed_16(payload, offset + 10),
+        }
+        empty = not (zone["x_min"] or zone["x_max"] or zone["y_min"] or zone["y_max"])
+        zones.append(None if empty else zone)
+        offset += RAW_AREA_STRIDE
+    return zones

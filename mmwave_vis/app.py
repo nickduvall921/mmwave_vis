@@ -141,7 +141,7 @@ session_topics_lock = threading.Lock()
 # ---------------------------------------------------------------------------
 from utils import (
     VALID_PARAMETERS, VALID_ZONE_KEYS, ZONE_COORD_RANGE,
-    validate_parameter, safe_int, parse_signed_16, decode_raw_targets,
+    validate_parameter, safe_int, decode_raw_targets, decode_raw_zones,
 )
 
 
@@ -506,28 +506,9 @@ class Z2MDriver:
         self._emit_targets(targets, fname, device_topic, seq=payload.get("3"))
 
     def _process_zone_report(self, payload, cmd_id, fname, device_topic):
-        num_zones = safe_int(payload.get("5"), 0)
-        if not (0 <= num_zones <= 10):
+        zones = decode_raw_zones(payload)
+        if zones is None:
             return
-
-        zones  = []
-        offset = 6
-        for _ in range(num_zones):
-            if str(offset + 11) not in payload:
-                break
-            x_min = parse_signed_16(payload, offset)
-            x_max = parse_signed_16(payload, offset + 2)
-            y_min = parse_signed_16(payload, offset + 4)
-            y_max = parse_signed_16(payload, offset + 6)
-            z_min = parse_signed_16(payload, offset + 8)
-            z_max = parse_signed_16(payload, offset + 10)
-            if x_max != 0 or x_min != 0 or y_max != 0 or y_min != 0:
-                zones.append({
-                    "x_min": x_min, "x_max": x_max,
-                    "y_min": y_min, "y_max": y_max,
-                    "z_min": z_min, "z_max": z_max,
-                })
-            offset += 12
 
         event_map = {
             2: ('interference_zones', 'Interference'),
@@ -541,7 +522,7 @@ class Z2MDriver:
                 self.device_list[fname][event_name] = zones
 
         emit_to_topic_subscribers(event_name, {'topic': device_topic, 'payload': zones}, device_topic)
-        print(f"Z2M: {zone_label} zones updated ({len(zones)} active).", flush=True)
+        print(f"Z2M: {zone_label} zones updated ({sum(1 for z in zones if z)} active).", flush=True)
 
     def _process_state_update(self, payload, fname, device_topic):
         config_payload = {k: v for k, v in payload.items() if not k.isdigit()}
