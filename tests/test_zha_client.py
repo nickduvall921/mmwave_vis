@@ -414,3 +414,55 @@ class TestConnectMaxSize:
 
         assert "max_size" in captured
         assert captured["max_size"] is None
+
+
+# ---------------------------------------------------------------------------
+# _on_zone_report — zones keep their slot position
+# ---------------------------------------------------------------------------
+
+def _zone_client():
+    client = ZHAClient("http://supervisor", "token", MagicMock())
+    client._ieee  = "0c:2a:6f:ff:fe:aa:39:2b"
+    client._topic = "zha/0c:2a:6f:ff:fe:aa:39:2b"
+    client.device_list = {client._ieee: {"interference_zones": [], "detection_zones": [], "stay_zones": []}}
+    return client
+
+def _area(x0, x1, y0, y1, z0, z1):
+    return {"width_min": x0, "width_max": x1, "depth_min": y0, "depth_max": y1,
+            "height_min": z0, "height_max": z1}
+
+EMPTY = _area(0, 0, 0, 0, -600, 600)
+
+def test_zone_report_keeps_empty_slots_in_place():
+    client = _zone_client()
+    client._on_zone_report("stay_zones", {
+        "count": 2,
+        "area1": _area(-100, 100, 0, 300, -300, 300),
+        "area2": EMPTY,
+        "area3": _area(50, 150, 200, 400, 0, 250),
+        "area4": EMPTY,
+    })
+    expected = [
+        {"x_min": -100, "x_max": 100, "y_min": 0, "y_max": 300, "z_min": -300, "z_max": 300},
+        None,
+        {"x_min": 50, "x_max": 150, "y_min": 200, "y_max": 400, "z_min": 0, "z_max": 250},
+        None,
+    ]
+    client.socketio.emit.assert_called_once_with(
+        "stay_zones", {"topic": client._topic, "payload": expected})
+    assert client.device_list[client._ieee]["stay_zones"] == expected
+
+def test_zone_report_reads_past_count():
+    # count=1 with the populated zone in slot 2 must not drop it
+    client = _zone_client()
+    client._on_zone_report("detection_zones", {
+        "count": 1, "area1": EMPTY, "area2": _area(10, 20, 30, 40, 50, 60),
+        "area3": EMPTY, "area4": EMPTY,
+    })
+    payload = client.socketio.emit.call_args[0][1]["payload"]
+    assert payload[0] is None and payload[1]["x_min"] == 10 and len(payload) == 4
+
+def test_zone_report_missing_areas_are_empty():
+    client = _zone_client()
+    client._on_zone_report("interference_zones", {"count": 0})
+    assert client.socketio.emit.call_args[0][1]["payload"] == [None, None, None, None]

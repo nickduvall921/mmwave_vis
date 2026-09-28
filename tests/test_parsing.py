@@ -11,7 +11,7 @@ Range: -32768 to 32767.  Used for X/Y/Z coordinates (in millimetres).
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'mmwave_vis'))
 
-from utils import parse_signed_16, parse_signed_8, decode_raw_targets
+from utils import parse_signed_16, parse_signed_8, decode_raw_targets, decode_raw_zones
 
 
 def _payload(*bytes_):
@@ -177,3 +177,42 @@ def test_raw_targets_zero_targets():
 
 def test_raw_targets_out_of_range_count_rejected():
     assert decode_raw_targets(_payload(0x1D, 0x2F, 0x12, 0x38, 0x01, 0xFF)) is None
+
+
+# --- decode_raw_zones: legacy Z2M raw area reports (cmd 2/3/4) ---
+#
+# Four 12-byte areas follow the count byte; each is x/y/z min/max as int16.
+
+def _area_bytes(x0, x1, y0, y1, z0, z1):
+    out = []
+    for v in (x0, x1, y0, y1, z0, z1):
+        out += list((v & 0xFFFF).to_bytes(2, "little"))
+    return out
+
+def _area_report(count, *areas):
+    return _payload(0x1D, 0x2F, 0x12, 0x39, 0x02, count, *[b for a in areas for b in _area_bytes(*a)])
+
+EMPTY_AREA = (0, 0, 0, 0, -600, 600)   # firmware's unused-slot sentinel
+
+def test_raw_zones_keep_slot_positions():
+    # Area 2 is empty: area 3 must stay in slot 3, not move up to slot 2.
+    p = _area_report(2, (-100, 100, 0, 300, -300, 300), EMPTY_AREA,
+                        (50, 150, 200, 400, 0, 250), EMPTY_AREA)
+    assert decode_raw_zones(p) == [
+        {"x_min": -100, "x_max": 100, "y_min": 0, "y_max": 300, "z_min": -300, "z_max": 300},
+        None,
+        {"x_min": 50, "x_max": 150, "y_min": 200, "y_max": 400, "z_min": 0, "z_max": 250},
+        None,
+    ]
+
+def test_raw_zones_ignore_count():
+    # A count of 1 still reads all four slots, like Z2M's converter.
+    p = _area_report(1, EMPTY_AREA, (10, 20, 30, 40, 50, 60), EMPTY_AREA, EMPTY_AREA)
+    assert decode_raw_zones(p)[1] == {"x_min": 10, "x_max": 20, "y_min": 30, "y_max": 40, "z_min": 50, "z_max": 60}
+
+def test_raw_zones_all_empty():
+    assert decode_raw_zones(_area_report(4, EMPTY_AREA, EMPTY_AREA, EMPTY_AREA, EMPTY_AREA)) == [None] * 4
+
+def test_raw_zones_truncated_payload():
+    p = _area_report(4, (1, 2, 3, 4, 5, 6))
+    assert decode_raw_zones(p) == [{"x_min": 1, "x_max": 2, "y_min": 3, "y_max": 4, "z_min": 5, "z_max": 6}]
