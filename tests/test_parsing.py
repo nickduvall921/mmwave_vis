@@ -11,7 +11,7 @@ Range: -32768 to 32767.  Used for X/Y/Z coordinates (in millimetres).
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'mmwave_vis'))
 
-from utils import parse_signed_16, parse_signed_8
+from utils import parse_signed_16, parse_signed_8, decode_raw_targets
 
 
 def _payload(*bytes_):
@@ -137,3 +137,43 @@ def test_s8_reads_from_correct_offset():
 
 def test_s8_missing_key_returns_zero():
     assert parse_signed_8({}, 0) == 0
+
+
+# --- decode_raw_targets: legacy Z2M raw reportTargetInfo frames ---
+#
+# Frame captured from a live VZM32-SN (fw 0x01030102):
+#   1d 2f 12 38 01 | 01 | b5 00 9e 00 08 00 c8 00 01
+#   ZCL header      | n  | x=181 y=158 z=8 dop=200 id=1   (9-byte record)
+
+LIVE_FRAME = _payload(0x1D, 0x2F, 0x12, 0x38, 0x01,
+                      0x01,
+                      0xB5, 0x00, 0x9E, 0x00, 0x08, 0x00, 0xC8, 0x00, 0x01)
+
+def test_raw_targets_live_frame():
+    assert decode_raw_targets(LIVE_FRAME) == [
+        {"x": 181, "y": 158, "z": 8, "dop": 200, "id": 1},
+    ]
+
+def test_raw_targets_second_target_uses_9_byte_stride():
+    # Two records back to back: the second starts at byte 15, not 16.
+    p = _payload(0x1D, 0x2F, 0x12, 0x38, 0x01,
+                 0x02,
+                 0xB5, 0x00, 0x9E, 0x00, 0x08, 0x00, 0xC8, 0x00, 0x01,
+                 0x38, 0xFF, 0x2C, 0x01, 0xF6, 0xFF, 0x00, 0x00, 0x02)
+    assert decode_raw_targets(p) == [
+        {"x": 181,  "y": 158, "z": 8,   "dop": 200, "id": 1},
+        {"x": -200, "y": 300, "z": -10, "dop": 0,   "id": 2},
+    ]
+
+def test_raw_targets_truncated_frame_keeps_complete_records():
+    # target_num says 2 but only one full record is present.
+    p = dict(LIVE_FRAME)
+    p["5"] = 2
+    p["15"] = 0x38
+    assert len(decode_raw_targets(p)) == 1
+
+def test_raw_targets_zero_targets():
+    assert decode_raw_targets(_payload(0x1D, 0x2F, 0x12, 0x38, 0x01, 0x00)) == []
+
+def test_raw_targets_out_of_range_count_rejected():
+    assert decode_raw_targets(_payload(0x1D, 0x2F, 0x12, 0x38, 0x01, 0xFF)) is None

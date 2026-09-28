@@ -129,3 +129,35 @@ def parse_signed_8(payload, idx):
         return int.from_bytes([byte & 0xFF], byteorder='little', signed=True)
     except (ValueError, TypeError, OverflowError):
         return 0
+
+
+RAW_TARGET_STRIDE = 9
+
+
+def decode_raw_targets(payload):
+    """Decode a raw FC32 reportTargetInfo frame from Z2M's numbered byte keys.
+
+    Byte 5 is target_num; each target that follows is a 9-byte record —
+    x, y, z, dop as little-endian int16, then id as a signed int8.
+    Returns None when target_num is out of range, otherwise the targets
+    list (truncated if the payload is shorter than target_num implies).
+    """
+    num_targets = safe_int(payload.get("5"), 0)
+    if not (0 <= num_targets <= 10):
+        return None
+
+    targets = []
+    offset  = 6
+    for _ in range(num_targets):
+        # Need 9 bytes (offset .. offset+8)
+        if str(offset + RAW_TARGET_STRIDE - 1) not in payload:
+            break
+        targets.append({
+            "x":   parse_signed_16(payload, offset),
+            "y":   parse_signed_16(payload, offset + 2),
+            "z":   parse_signed_16(payload, offset + 4),
+            "dop": parse_signed_16(payload, offset + 6),
+            "id":  parse_signed_8(payload, offset + 8),
+        })
+        offset += RAW_TARGET_STRIDE
+    return targets
