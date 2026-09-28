@@ -1998,24 +1998,44 @@
                 return errors.length ? `the switch rejected a write (${errors[0]})` : null;
             };
             const slotName = w => `${ZONE_GROUP_NAMES[w.category]} area ${w.area.slice(4)}`;
+            const current = w => deviceZones[w.category][w.area];
+            const isStayMirror = w => w.category === 'mmwave_stay_areas' && !!w.zone && isMirroredX(current(w), w.zone);
+            const started = Date.now();
+
+            // Re-read the switch until every slot in `list` has held the same value on two reads in a row
+            // and `accept` is happy with it, or time runs out. Returns the zone types that never reported.
+            // Firmware 1.02 takes ~6 s to apply a zone write, and after a stay write it briefly reports
+            // the raw value before the mirrored one, so a single read can be misleading.
+            const settle = async (list, accept, timeoutMs = 45000) => {
+                const deadline = Date.now() + timeoutMs;
+                let prev = null;
+                await sleep(3000);
+                while (true) {
+                    zoneBackupStatus.textContent = `Checking the switch... (${Math.round((Date.now() - started) / 1000)}s)`;
+                    const missing = await readZonesFromSwitch();
+                    if (deviceSelect.value !== topic) return [];
+                    const snap = list.map(w => JSON.stringify(current(w)));
+                    const steady = prev !== null && snap.every((v, i) => v === prev[i]);
+                    if (!missing.length && steady && list.every(accept)) return [];
+                    if (Date.now() > deadline) return missing;
+                    prev = snap;
+                }
+            };
 
             try {
                 const sent = writes.map(w => ({ ...w, payload: w.zone ? zoneToDevicePayload(w.category, w.zone) : EMPTY_AREA }));
                 let stopped = await send(sent, 'Restoring zones...');
                 if (stopped) return finish(`Restore stopped because ${stopped}. Some zones may not have been written.`, false);
 
-                zoneBackupStatus.textContent = 'Checking the switch...';
-                let missing = await readZonesFromSwitch();
+                let missing = await settle(sent, w => sameZone(current(w), w.zone) || isStayMirror(w));
 
                 // Firmware with the stay-area bug stores the width axis mirrored; send those once more, flipped
-                const flipped = missing.length ? [] : sent.filter(w =>
-                    w.category === 'mmwave_stay_areas' && w.zone && isMirroredX(deviceZones[w.category][w.area], w.zone));
-                if (flipped.length) {
+                const flipped = missing.length ? [] : sent.filter(isStayMirror);
+                if (flipped.length && deviceSelect.value === topic) {
                     const again = flipped.map(w => ({ ...w, payload: { ...w.payload, width_min: -w.payload.width_max, width_max: -w.payload.width_min } }));
                     stopped = await send(again, 'Fixing mirrored stay zones...');
                     if (stopped) return finish(`Restore stopped because ${stopped}. Some zones may not have been written.`, false);
-                    zoneBackupStatus.textContent = 'Checking the switch...';
-                    missing = await readZonesFromSwitch();
+                    missing = await settle(again, w => sameZone(current(w), w.zone));
                 }
 
                 if (deviceSelect.value !== topic) return finish('Restore stopped because a different switch was selected.', false);
@@ -2023,7 +2043,7 @@
                     const names = missing.map(c => ZONE_GROUP_NAMES[c]).join(', ');
                     return finish(`Zones were sent, but the switch didn't report its ${names} zones back, so the restore couldn't be checked. Use Force Sync to look.`, false);
                 }
-                const wrong = writes.filter(w => !sameZone(deviceZones[w.category][w.area], w.zone));
+                const wrong = writes.filter(w => !sameZone(current(w), w.zone));
                 if (wrong.length) return finish(`Restore finished, but ${wrong.length} slot${wrong.length === 1 ? '' : 's'} don't match the backup: ${wrong.map(slotName).join(', ')}.`, false);
 
                 let text = `Restored and checked ${writes.length} zone slots on ${name}.`;
