@@ -11,7 +11,7 @@ Range: -32768 to 32767.  Used for X/Y/Z coordinates (in millimetres).
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'mmwave_vis'))
 
-from utils import parse_signed_16
+from utils import parse_signed_16, parse_signed_8, decode_raw_targets
 
 
 def _payload(*bytes_):
@@ -105,3 +105,75 @@ def test_string_bytes_accepted():
     p = {"0": "0xF4", "1": "0x01"}  # "0xF4" → 244 (0xF4) → 500
     # int("0xF4") raises ValueError, so parse_signed_16 should return 0
     assert parse_signed_16(p, 0) == 0
+
+
+# --- parse_signed_8: the mmWave target `id` field (1 byte, signed) ---
+#
+# Per Inovelli's corrected FC32 docs (and herdsman-converters PR #12284), each
+# reportTargetInfo record is 9 bytes: x/y/z/dop as int16 + id as a signed int8.
+
+def test_s8_zero():
+    assert parse_signed_8(_payload(0x00), 0) == 0
+
+def test_s8_one():
+    assert parse_signed_8(_payload(0x01), 0) == 1
+
+def test_s8_max_positive():
+    # 127 = 0x7F is the largest positive signed int8
+    assert parse_signed_8(_payload(0x7F), 0) == 127
+
+def test_s8_negative_one():
+    # 0xFF = -1 in two's complement
+    assert parse_signed_8(_payload(0xFF), 0) == -1
+
+def test_s8_min_negative():
+    # 0x80 = -128, the most negative signed int8
+    assert parse_signed_8(_payload(0x80), 0) == -128
+
+def test_s8_reads_from_correct_offset():
+    # id sits at offset+8 of a 9-byte record starting at offset 6 → key "14"
+    p = _payload(*([0] * 14), 0x80)
+    assert parse_signed_8(p, 14) == -128
+
+def test_s8_missing_key_returns_zero():
+    assert parse_signed_8({}, 0) == 0
+
+
+# --- decode_raw_targets: legacy Z2M raw reportTargetInfo frames ---
+#
+# Frame captured from a live VZM32-SN (fw 0x01030102):
+#   1d 2f 12 38 01 | 01 | b5 00 9e 00 08 00 c8 00 01
+#   ZCL header      | n  | x=181 y=158 z=8 dop=200 id=1   (9-byte record)
+
+LIVE_FRAME = _payload(0x1D, 0x2F, 0x12, 0x38, 0x01,
+                      0x01,
+                      0xB5, 0x00, 0x9E, 0x00, 0x08, 0x00, 0xC8, 0x00, 0x01)
+
+def test_raw_targets_live_frame():
+    assert decode_raw_targets(LIVE_FRAME) == [
+        {"x": 181, "y": 158, "z": 8, "dop": 200, "id": 1},
+    ]
+
+def test_raw_targets_second_target_uses_9_byte_stride():
+    # Two records back to back: the second starts at byte 15, not 16.
+    p = _payload(0x1D, 0x2F, 0x12, 0x38, 0x01,
+                 0x02,
+                 0xB5, 0x00, 0x9E, 0x00, 0x08, 0x00, 0xC8, 0x00, 0x01,
+                 0x38, 0xFF, 0x2C, 0x01, 0xF6, 0xFF, 0x00, 0x00, 0x02)
+    assert decode_raw_targets(p) == [
+        {"x": 181,  "y": 158, "z": 8,   "dop": 200, "id": 1},
+        {"x": -200, "y": 300, "z": -10, "dop": 0,   "id": 2},
+    ]
+
+def test_raw_targets_truncated_frame_keeps_complete_records():
+    # target_num says 2 but only one full record is present.
+    p = dict(LIVE_FRAME)
+    p["5"] = 2
+    p["15"] = 0x38
+    assert len(decode_raw_targets(p)) == 1
+
+def test_raw_targets_zero_targets():
+    assert decode_raw_targets(_payload(0x1D, 0x2F, 0x12, 0x38, 0x01, 0x00)) == []
+
+def test_raw_targets_out_of_range_count_rejected():
+    assert decode_raw_targets(_payload(0x1D, 0x2F, 0x12, 0x38, 0x01, 0xFF)) is None

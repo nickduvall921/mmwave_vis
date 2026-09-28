@@ -23,7 +23,7 @@ import os
 import traceback
 import time
 import threading
-from flask import Flask, render_template, request
+from flask import Flask, Response, render_template, request
 from flask_socketio import SocketIO, emit
 import paho.mqtt.client as mqtt
 import logging
@@ -141,7 +141,7 @@ session_topics_lock = threading.Lock()
 # ---------------------------------------------------------------------------
 from utils import (
     VALID_PARAMETERS, VALID_ZONE_KEYS, ZONE_COORD_RANGE,
-    validate_parameter, safe_int, parse_signed_16,
+    validate_parameter, safe_int, parse_signed_16, decode_raw_targets,
 )
 
 
@@ -491,32 +491,17 @@ class Z2MDriver:
 
     def _process_target_data(self, payload, fname, device_topic):
         # Legacy raw-bytes path for pre-2.9 Z2M (no top-level mmwave_targets).
-        # Each target is a 10-byte record matching the upstream Inovelli FC32
-        # cluster reportTargetInfo command — five little-endian int16s in order
-        # x, y, z, dop, id. Z2M itself was using a 9-byte stride with a uint8 id
-        # until herdsman-converters PR #11915 (merged 2026-04-11), which caused
-        # any target after the first to be reported with garbage coordinates.
-        # Mirror the upstream fix here so users on older Z2M (pre-PR #11915 or
-        # pre-2.9 entirely) get correct coords for multi-target frames.
-        num_targets = safe_int(payload.get("5"), 0)
-        if not (0 <= num_targets <= 10):
+        # Each target is a 9-byte record matching the upstream Inovelli FC32
+        # cluster reportTargetInfo command — x, y, z, dop as little-endian int16
+        # followed by id as a signed int8. Inovelli's mmWave docs briefly listed
+        # id as int16 (10-byte stride), which herdsman-converters PR #11915
+        # (merged 2026-04-11) implemented and we mirrored in v3.2.4. Inovelli
+        # later corrected the docs — id is int8 — and PR #12284 (merged
+        # 2026-05-23) reverted Z2M back to the 9-byte stride. Mirror that
+        # correction here so the raw fallback matches real device traffic.
+        targets = decode_raw_targets(payload)
+        if targets is None:
             return
-
-        targets = []
-        offset  = 6
-        stride  = 10
-        for _ in range(num_targets):
-            # Need 10 bytes (offset .. offset+9)
-            if str(offset + 9) not in payload:
-                break
-            targets.append({
-                "x":   parse_signed_16(payload, offset),
-                "y":   parse_signed_16(payload, offset + 2),
-                "z":   parse_signed_16(payload, offset + 4),
-                "dop": parse_signed_16(payload, offset + 6),
-                "id":  parse_signed_16(payload, offset + 8),
-            })
-            offset += stride
 
         self._emit_targets(targets, fname, device_topic, seq=payload.get("3"))
 
@@ -740,6 +725,26 @@ driver.start()
 
 
 # ===========================================================================
+# Z-Wave JS packet capture (diagnostic, independent of zigbee_stack)
+# ===========================================================================
+
+def _read_addon_version():
+    # config.yaml is copied into the image alongside app.py
+    try:
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.yaml'),
+                  encoding='utf-8') as f:
+            for line in f:
+                if line.startswith('version:'):
+                    return line.split(':', 1)[1].strip().strip('"\'')
+    except OSError:
+        pass
+    return 'unknown'
+
+from zwave_capture import ZWaveCapture
+zwave_capture = ZWaveCapture(HA_URL, HA_TOKEN, socketio, addon_version=_read_addon_version())
+
+
+# ===========================================================================
 # Flask-SocketIO handlers — stack-agnostic
 # ===========================================================================
 
@@ -787,6 +792,21 @@ def handle_force_sync():
     driver.force_sync(request.sid)
 
 
+@socketio.on('zwave_capture_start')
+def handle_zwave_capture_start():
+    zwave_capture.start()
+
+
+@socketio.on('zwave_capture_stop')
+def handle_zwave_capture_stop():
+    zwave_capture.stop()
+
+
+@socketio.on('zwave_capture_status')
+def handle_zwave_capture_status():
+    emit('zwave_capture_status', zwave_capture.status())
+
+
 # ===========================================================================
 # Flask route
 # ===========================================================================
@@ -797,6 +817,18 @@ def index():
         'index.html',
         ingress_path=request.headers.get('X-Ingress-Path', ''),
         zigbee_stack=ZIGBEE_STACK,
+    )
+
+
+@app.route('/zwave_capture.log')
+def zwave_capture_download():
+    text = zwave_capture.export_text()
+    if text is None:
+        return Response("No finished Z-Wave capture to download.", status=404, mimetype='text/plain')
+    return Response(
+        text,
+        mimetype='text/plain',
+        headers={'Content-Disposition': f'attachment; filename="{zwave_capture.export_filename()}"'},
     )
 
 

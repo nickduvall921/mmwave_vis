@@ -21,8 +21,11 @@ This guide covers how to set up the mmWave Visualizer addon when you are using *
 
 > **Note:** This quirk is experimental and may have bugs. If you find one, please open an issue on GitHub with the `ZHA` label.
 
-Before proceeding, make sure you have already installed and tested the official Inovelli Quirk:
+> **Home Assistant 2026.8 and later:** ZHA now supports the VZM32-SN natively, and the advice is to remove Inovelli's custom quirk. **The Visualizer still needs this repo's quirk.** The native quirk doesn't pass the switch's live target, area-occupancy or zone reports on to Home Assistant, so without this quirk the Visualizer gets no data. A quirk in `custom_quirks_path` still takes priority over the built-in one. Details in [#54](https://github.com/nickduvall921/mmwave_vis/issues/54).
+
+On Home Assistant 2026.7 or earlier, first install and test the official Inovelli quirk:
 https://help.inovelli.com/en/articles/13019007-blue-series-mmwave-presence-dimmer-switch-zha-custom-quirk-install
+On 2026.8 or later you can skip that and create the `inovelli/` folder and `custom_quirks_path` setting shown below yourself.
 
 This repo includes two files that replace the official quirk:
 
