@@ -171,9 +171,14 @@ def decode_raw_zones(payload):
 
     Byte 5 is the report's count; four 12-byte areas follow (x, y, z min/max
     as little-endian int16). Like Z2M's own converter, all four slots are
-    read by position and count is ignored, so an empty slot (all x and y
-    zero) comes back as None instead of shifting later areas down a slot.
+    read by position, so an empty slot (all x and y zero) comes back as None
+    instead of shifting later areas down a slot. The count itself is only a
+    sanity check: live VZM32-SN reports always send 4, even when every slot
+    is empty. Returns None for a frame whose count is out of range.
     """
+    if not (0 <= safe_int(payload.get("5"), -1) <= 4):
+        return None
+
     zones  = []
     offset = 6
     for _ in range(4):

@@ -216,3 +216,8 @@ def test_raw_zones_all_empty():
 def test_raw_zones_truncated_payload():
     p = _area_report(4, (1, 2, 3, 4, 5, 6))
     assert decode_raw_zones(p) == [{"x_min": 1, "x_max": 2, "y_min": 3, "y_max": 4, "z_min": 5, "z_max": 6}]
+
+
+def test_raw_zones_reject_out_of_range_count():
+    # Live switches always send count 4; anything past 4 is not an area report
+    assert decode_raw_zones(_area_report(0xFF, (1, 2, 3, 4, 5, 6))) is None

@@ -507,6 +507,8 @@ class Z2MDriver:
 
     def _process_zone_report(self, payload, cmd_id, fname, device_topic):
         zones = decode_raw_zones(payload)
+        if zones is None:
+            return
 
         event_map = {
             2: ('interference_zones', 'Interference'),
