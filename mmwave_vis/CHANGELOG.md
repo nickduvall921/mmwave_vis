@@ -1,6 +1,16 @@
 # Changelog
 
 
+## [Unreleased]
+
+### Added
+- **Issue #52 — zone backup and restore:** a new **Zone Backup** block under Maintenance exports the selected switch's detection, interference and stay zones (all 12 slots, including which are empty) to a JSON file, and imports one back onto the selected switch after a reset or re-pair. Import validates the file, asks for confirmation, then writes each slot one at a time (spaced 600 ms apart so a slow Zigbee network keeps up), clears slots that are empty in the backup, and force-syncs at the end. Detection area 1 (the room limits) is never cleared. Stay zones go through the same write path as the Zone Editor, so they follow the stay-area auto-correct toggle (#41).
+
+### Fixed
+- **Zones could show up in the wrong slot on ZHA (and on the raw Z2M fallback):** zone reports were read only up to the report's `count`, and empty slots were dropped instead of kept in place. With area 2 empty and area 3 set, the page showed area 3's zone as area 2, and editing it wrote to the wrong slot. Both paths now read all four slots by position, like Zigbee2MQTT's own converter, and send empty slots as `null`. The raw Z2M decode moved to `utils.decode_raw_zones`, with tests for both paths.
+- **The stay-area auto-correct and square-aspect toggles showed "Error: Unknown parameter: None":** the generic sidebar handler sent every sidebar input to the switch as a parameter, including these page-only toggles. It now skips inputs that don't map to a device parameter.
+- **Older Z2M firmware reporting detection area 1 as flat attributes:** the page ignored `mmWaveHeightMin` / `mmWaveHeightMax`, so area 1 showed a default height (and a backup would have saved it).
+
 ## [3.2.7] - 2026-09-27
 
 ### Fixed

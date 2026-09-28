@@ -23,6 +23,7 @@ ZHA support has just been added experimentally. Requires a custom Quark that I h
 - **Dynamic Zone Configuration** — Visually draw and edit detection room limits (Width, Depth, and Height) directly on the radar map.
 - **Interference Management** — View, Auto-Config, and Clear interference zones to filter out fans, vents, and curtains.
 - **Multi-Zone Support** — Configure up to 4 areas per zone type (Detection, Interference, Stay).
+- **Zone Backup** — Export a switch's zones to a file and import them back after a reset or re-pair (Maintenance → Zone Backup).
 - **Live Sensor Data** — Streams Occupancy and Illuminance states in real-time via MQTT.
 - **Connection Status** — Live indicators for WebSocket and MQTT broker connectivity with automatic reconnection.
 

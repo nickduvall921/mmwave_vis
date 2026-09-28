@@ -666,6 +666,18 @@
                     <button class="cmd-btn btn-full" onclick="sendCommand(4)">Reset Detection Zones</button>
                     <button class="cmd-btn btn-full" onclick="sendCommand(5)">Clear Stay Zones</button>
 
+                    <!-- #52: save / restore this switch's zones -->
+                    <div class="config-title" style="margin-top: 15px; border-top: 1px solid #444; padding-top: 8px;">Zone Backup</div>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="cmd-btn" style="flex:1;" id="btnExportZones" onclick="exportZones()">Export Zones</button>
+                        <button class="cmd-btn" style="flex:1;" id="btnImportZones" onclick="importZonesFile.click()">Import Zones</button>
+                    </div>
+                    <input type="file" id="importZonesFile" accept=".json,application/json" style="display: none;">
+                    <div id="zoneBackupStatus" style="font-size: 0.8em; color: #888; margin-top: 6px;"></div>
+                    <div style="font-size: 0.7em; color: #666; margin-top: 4px;">
+                        Saves the selected switch's detection, interference and stay zones to a file so you can put them back after a reset or re-pair. Importing writes every zone slot on the selected switch, clearing any that are empty in the backup. Stay zones follow the stay-area auto-correct setting in the Zone Editor.
+                    </div>
+
                     <!-- ZHA: note that commands trigger ZHA events, feedback arrives via force sync -->
                     <div class="zha-only" style="font-size: 0.75em; color: #666; margin-top: 8px;">
                         Commands are sent via ZHA cluster. Use Force Sync to refresh zone state after running maintenance actions.
@@ -1260,6 +1272,7 @@
 
         document.querySelectorAll('.sidebar input, .sidebar select').forEach(input => {
             if (input.id.startsWith('viz') || input.id.startsWith('zoneEditor') || input.id.startsWith('edit') || input.id.startsWith('recording')) return;
+            if (!input.hasAttribute('data-param')) return;  // page-only controls (toggles, file picker)
             input.addEventListener('change', function() {
                 socket.emit('update_parameter', { param: this.getAttribute('data-param'), value: this.value });
             });
@@ -1417,6 +1430,8 @@
                 if ("mmWaveWidthMax"  in config) deviceZones.mmwave_detection_areas.area1.x_max = parseInt(config.mmWaveWidthMax);
                 if ("mmWaveDepthMin"  in config) deviceZones.mmwave_detection_areas.area1.y_min = parseInt(config.mmWaveDepthMin);
                 if ("mmWaveDepthMax"  in config) deviceZones.mmwave_detection_areas.area1.y_max = parseInt(config.mmWaveDepthMax);
+                if ("mmWaveHeightMin" in config) deviceZones.mmwave_detection_areas.area1.z_min = parseInt(config.mmWaveHeightMin);
+                if ("mmWaveHeightMax" in config) deviceZones.mmwave_detection_areas.area1.z_max = parseInt(config.mmWaveHeightMax);
             }
 
             if ("mmwave_detection_areas" in config) {
@@ -1537,11 +1552,12 @@
             }
             const statusBox = document.getElementById('zoneStatus');
             if (lastCommandId !== null) {
+                const active = zones.filter(Boolean).length;   // empty slots arrive as null
                 statusBox.style.display = 'block';
-                statusBox.style.background = zones.length === 0 ? 'rgba(76, 175, 80, 0.9)' : 'rgba(255, 82, 82, 0.9)';
-                statusBox.innerText = zones.length === 0
+                statusBox.style.background = active === 0 ? 'rgba(76, 175, 80, 0.9)' : 'rgba(255, 82, 82, 0.9)';
+                statusBox.innerText = active === 0
                     ? (lastCommandId === 1 ? "✓ Scan Complete: No active interference found." : "✓ Interference Cleared: Zones reset to zero.")
-                    : `⚠ Auto-Config Complete: Found ${zones.length} zone(s).`;
+                    : `⚠ Auto-Config Complete: Found ${active} zone(s).`;
                 setTimeout(() => { statusBox.style.display = 'none'; }, 5000);
                 lastCommandId = null;
             }
@@ -1749,13 +1765,11 @@
             }
         }
 
-        function applyZoneEdit() {
-            if (!draftZoneConfig) return;
-            const [category, area] = editingTarget.split(':');
-            const areaPayload = {};
-            const x_vals = [parseInt(draftZoneConfig.x_min), parseInt(draftZoneConfig.x_max)].sort((a,b)=>a-b);
-            const y_vals = [parseInt(draftZoneConfig.y_min), parseInt(draftZoneConfig.y_max)].sort((a,b)=>a-b);
-            const z_vals = [parseInt(draftZoneConfig.z_min), parseInt(draftZoneConfig.z_max)].sort((a,b)=>a-b);
+        // Device write format for one area. Shared by the zone editor and backup restore.
+        function zoneToDevicePayload(category, zone) {
+            const x_vals = [parseInt(zone.x_min), parseInt(zone.x_max)].sort((a,b)=>a-b);
+            const y_vals = [parseInt(zone.y_min), parseInt(zone.y_max)].sort((a,b)=>a-b);
+            const z_vals = [parseInt(zone.z_min), parseInt(zone.z_max)].sort((a,b)=>a-b);
 
             // #41: the VZM32-SN firmware mirrors the WIDTH (X) axis on stay areas,
             // so a normally-entered zone lands inverted and only corrects on a second
@@ -1767,11 +1781,18 @@
                 width_min = -x_vals[1];
                 width_max = -x_vals[0];
             }
-            areaPayload[area] = {
+            return {
                 width_min: width_min, width_max: width_max,
                 depth_min: y_vals[0], depth_max: y_vals[1],
                 height_min: z_vals[0], height_max: z_vals[1]
             };
+        }
+
+        function applyZoneEdit() {
+            if (!draftZoneConfig) return;
+            const [category, area] = editingTarget.split(':');
+            const areaPayload = {};
+            areaPayload[area] = zoneToDevicePayload(category, draftZoneConfig);
             socket.emit('update_parameter', { param: category, value: areaPayload });
             endZoneEdit();
             packetInfo.innerText = "Zone Saved!";
@@ -1785,6 +1806,131 @@
             socket.emit('update_parameter', { param: category, value: areaPayload });
             packetInfo.innerText = "Zone Deleted.";
             endZoneEdit();
+        }
+
+        // --- Zone backup / restore (#52) ---
+        const ZONE_BACKUP_TYPE = 'mmwave_vis_zone_backup';
+        const ZONE_BACKUP_GROUPS = {
+            detection:    'mmwave_detection_areas',
+            interference: 'mmwave_interference_areas',
+            stay:         'mmwave_stay_areas',
+        };
+        const ZONE_KEYS = ['x_min', 'x_max', 'y_min', 'y_max', 'z_min', 'z_max'];
+        const ZONE_RESTORE_GAP_MS = 600;   // space out writes so a slow Zigbee network keeps up
+        const btnExportZones   = document.getElementById('btnExportZones');
+        const btnImportZones   = document.getElementById('btnImportZones');
+        const importZonesFile  = document.getElementById('importZonesFile');
+        const zoneBackupStatus = document.getElementById('zoneBackupStatus');
+
+        function selectedDeviceName() {
+            const opt = deviceSelect.options[deviceSelect.selectedIndex];
+            return deviceSelect.value && opt ? opt.text : '';
+        }
+
+        function exportZones() {
+            if (!deviceSelect.value) { showToast('Select a switch first.', 'error'); return; }
+            const zones = {};
+            let count = 0;
+            for (const [group, category] of Object.entries(ZONE_BACKUP_GROUPS)) {
+                zones[group] = {};
+                for (let i = 1; i <= 4; i++) {
+                    const a = deviceZones[category][`area${i}`];
+                    zones[group][`area${i}`] = a ? Object.fromEntries(ZONE_KEYS.map(k => [k, Math.round(Number(a[k]) || 0)])) : null;
+                    if (a) count++;
+                }
+            }
+            if (count === 0) { showToast('No zones loaded for this switch yet. Try Force Sync first.', 'error', 5000); return; }
+
+            const name = selectedDeviceName();
+            const backup = { type: ZONE_BACKUP_TYPE, version: 1, exported: new Date().toISOString(), device: name, stack: activeStack, zones };
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }));
+            const safeName = name.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'switch';
+            link.download = `mmwave-zones-${safeName}-${backup.exported.slice(0, 10)}.json`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+            zoneBackupStatus.textContent = `Exported ${count} zone${count === 1 ? '' : 's'} from ${name}.`;
+        }
+
+        // Validate a backup file and turn it into an ordered list of area writes.
+        function parseZoneBackup(text) {
+            let data;
+            try { data = JSON.parse(text); } catch (e) { throw new Error('That file isn\'t valid JSON.'); }
+            if (!data || data.type !== ZONE_BACKUP_TYPE || typeof data.zones !== 'object' || !data.zones) {
+                throw new Error('That file isn\'t a zone backup from this addon.');
+            }
+            if (data.version !== 1) throw new Error(`Unsupported zone backup version: ${data.version}`);
+
+            const writes = [];
+            for (const [group, category] of Object.entries(ZONE_BACKUP_GROUPS)) {
+                const areas = data.zones[group] || {};
+                for (let i = 1; i <= 4; i++) {
+                    const area = areas[`area${i}`];
+                    if (area == null) {
+                        // Detection area 1 holds the room limits; never wipe it
+                        if (group === 'detection' && i === 1) continue;
+                        writes.push({ category, area: `area${i}`, zone: null });
+                        continue;
+                    }
+                    const zone = {};
+                    for (const k of ZONE_KEYS) {
+                        const v = Number(area[k]);
+                        if (!Number.isInteger(v) || Math.abs(v) > 10000) throw new Error(`Bad ${k} in ${group} area ${i}.`);
+                        zone[k] = v;
+                    }
+                    writes.push({ category, area: `area${i}`, zone });
+                }
+            }
+            return { data, writes };
+        }
+
+        importZonesFile.addEventListener('change', async function() {
+            const file = this.files[0];
+            this.value = '';   // so picking the same file again still fires
+            if (!file) return;
+            if (!deviceSelect.value) { showToast('Select a switch first.', 'error'); return; }
+
+            let parsed;
+            try { parsed = parseZoneBackup(await file.text()); }
+            catch (e) { showToast(e.message, 'error', 6000); return; }
+
+            const { data, writes } = parsed;
+            const source = data.device ? `"${data.device}"` : 'this backup';
+            const saved  = data.exported ? ` (saved ${new Date(data.exported).toLocaleString()})` : '';
+            const zoneCount = writes.filter(w => w.zone).length;
+            const clearCount = writes.length - zoneCount;
+            let msg = `Restore zones from ${source}${saved} onto "${selectedDeviceName()}"?\n\n` +
+                      `${zoneCount} zone${zoneCount === 1 ? '' : 's'} will be written`;
+            if (clearCount) msg += ` and ${clearCount} empty slot${clearCount === 1 ? '' : 's'} cleared`;
+            if (!confirm(msg + '.')) return;
+            restoreZones(writes);
+        });
+
+        function restoreZones(writes) {
+            if (isEditingZone) endZoneEdit();
+            btnExportZones.disabled = btnImportZones.disabled = true;
+            const topic = deviceSelect.value;
+            const empty = { width_min: 0, width_max: 0, depth_min: 0, depth_max: 0, height_min: 0, height_max: 0 };
+            let done = 0;
+
+            const finish = (text, ok) => {
+                btnExportZones.disabled = btnImportZones.disabled = false;
+                zoneBackupStatus.textContent = text;
+                showToast(text, ok ? 'success' : 'error', 5000);
+                if (ok) setTimeout(() => { if (deviceSelect.value === topic) socket.emit('force_sync'); }, 1500);
+            };
+            const step = () => {
+                if (deviceSelect.value !== topic) { finish('Restore stopped because a different switch was selected.', false); return; }
+                if (done >= writes.length) { finish(`Restored zones to ${selectedDeviceName()}. Syncing...`, true); return; }
+                const w = writes[done++];
+                const payload = w.zone ? zoneToDevicePayload(w.category, w.zone) : empty;
+                socket.emit('update_parameter', { param: w.category, value: { [w.area]: payload } });
+                zoneBackupStatus.textContent = `Restoring zones... ${done}/${writes.length}`;
+                setTimeout(step, ZONE_RESTORE_GAP_MS);
+            };
+            step();
         }
 
         function toggleRecording() {
