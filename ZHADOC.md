@@ -199,7 +199,7 @@ Click the **Sync** button. This triggers a fresh read of all settings from the d
 
 This is a known firmware bug on the VZM32-SN — the switch mirrors the width (X)
 axis of stay zones when they are applied, so re-applying the zone inverts the
-coordinates back to the correct values. To avoid the double-apply, enable the
-**Auto-correct stay-area inversion bug** toggle in the Zone Editor (off by
+coordinates back to the correct values. To avoid the double-apply, turn on
+**Correct mirrored stay zones** under Zone tools in the Zones tab (off by
 default): it pre-inverts the width so a single apply lands correctly. If a
 future firmware/Z2M update fixes the bug at the source, leave the toggle off.

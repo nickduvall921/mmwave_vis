@@ -6,9 +6,11 @@
 
 ## Screenshots
 
-| Live Radar Tracking | Zone Editor |
+| Live tracking | Editing a zone |
 |---|---|
-| ![Radar View](screenshots/radar-view.png) | ![Zone Editor](screenshots/zone-editor.png) |
+| ![Radar view](screenshots/radar-view.png) | ![Zone editor](screenshots/zone-editor.png) |
+| **Room layout** | **On a phone** |
+| ![Room layout](screenshots/room-layout.png) | <img src="screenshots/mobile.png" alt="Phone layout" width="300"> |
 
 ## Overview
 
@@ -19,13 +21,14 @@ ZHA support has just been added experimentally. Requires a custom Quark that I h
 
 ## Features
 
-- **Live 2D Radar Tracking** — See up to 3 simultaneous targets moving in real-time with historical comet tails and an accurate FOV overlay.
-- **Dynamic Zone Configuration** — Visually draw and edit detection room limits (Width, Depth, and Height) directly on the radar map.
-- **Interference Management** — View, Auto-Config, and Clear interference zones to filter out fans, vents, and curtains.
-- **Multi-Zone Support** — Configure up to 4 areas per zone type (Detection, Interference, Stay).
-- **Zone Backup** — Export a switch's zones to a file and import them back after a reset or re-pair (Maintenance → Zone Backup).
-- **Live Sensor Data** — Streams Occupancy and Illuminance states in real-time via MQTT.
-- **Connection Status** — Live indicators for WebSocket and MQTT broker connectivity with automatic reconnection.
+- Live map of everyone the switch is tracking, with short trails and the sensor's field of view.
+- Draw and resize detection, interference and stay zones on the map, or type exact width, depth and height values. Up to four of each.
+- Room layout: place the switch on the right wall, turn it the way it faces and draw your walls, so the map looks like your room. It's saved in the addon, so every phone and computer sees the same layout.
+- Movement recorder: walk an area, then fit a zone around where you walked.
+- Auto-detect and clear interference zones (fans, vents, curtains).
+- Back up a switch's zones to a file and restore them after a reset or re-pair (Zone tools, then Backup).
+- Occupancy, per-area occupancy and light level as they change.
+- Works on phones, follows your light or dark system theme, and saves the map as an image from the ⋮ menu.
 
 ## Installation
 
@@ -71,7 +74,7 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - ./mmwave_data:/data
+      - ./mmwave_data:/data         # Keeps room layouts across updates
     environment:
       - ZIGBEE_STACK=z2m
       - MQTT_BROKER=192.168.1.XX    # Change to your broker IP
@@ -157,47 +160,46 @@ Before starting the add-on, go to the **Configuration** tab and connect it to yo
 3. Click **Bind**. You should see a green "Bind Success" message.
 4. Go to the **Exposes** tab and enable **MmWaveTargetInfoReport**.
 
-> **Note:** Disable Target Info Reporting when not actively using the visualizer, as it generates significant Zigbee network traffic when targets are detected. The visualizer will show a banner reminder if reporting is disabled.
+> **Note:** Disable Target Info Reporting when not actively using the visualizer, as it generates significant Zigbee network traffic when targets are detected. The visualizer shows a reminder above the map, with a button to turn it back on, if reporting is off.
 
 ## Usage
 
-1. **Select a Switch** — Use the dropdown at the top to select your device. It may take a moment to populate as it waits for an MQTT message.
+1. Pick your switch from the list at the top. The list can take a moment to fill while the addon waits for the switch to report in. The addon remembers the switch you used last.
 
-2. **View Live Tracking** — The radar map shows real-time target positions within the sensor's field of view. The solid cone represents the rated 120° FOV, and the dashed cone shows the extended ~150° range observed in practice.
+2. The map shows people as the switch tracks them. The solid cone is the rated 120° field of view and the dashed lines show the wider ~150° the sensor manages in practice. Scroll (or pinch) to zoom, drag to move around, and use Fit zones or Full range to reset the view.
 
-3. **Edit Zones:**
-   - Open the **Zone Editor** in the sidebar.
-   - Select a Target Zone (e.g., "Detection Area 1").
-   - Click **Draw / Edit**.
-   - Drag the zone on the map or type exact coordinates (including Height/Z-axis) in the sidebar.
-   - Click **Apply Changes** to save to the switch.
-   - Click **Force Sync** to reload the state from the switch and verify.
+3. To change a zone, click it on the map or press Edit next to it in the Zones tab. Drag the zone or its handles, or type exact values, then press Save. Add area creates a new one and lets you pick which slot it goes in. Press Sync to read the zones back from the switch.
 
-4. **Auto-Config Interference:** Clear the room, turn on the moving object (fan, vent, etc.), and click **Auto-Config Interference**. A red exclusion zone should appear.
+4. To set up the room layout, open the Display tab and press Arrange on map. Drag the switch to where it is, turn it with the round handle, and add a room outline to draw your walls. This only changes the picture, never the switch.
+
+5. To auto-detect interference, clear the room, turn on whatever moves (fan, vent and so on) and press Detect automatically under Zone tools. Any interference zones the switch finds show up hatched in red.
+
+Settings that change the switch itself are in the Switch settings tab, and they're sent as soon as you change them.
 
 ## Understanding the Zones
 
-**Detection Area (Blue/Green)** — The active boundary of the sensor. Only motion inside this box is tracked. Anything outside is ignored.
+**Detection areas (teal)** are where the sensor looks. Only motion inside them counts; anything outside is ignored. Each one has its own occupancy sensor (area 1 to 4), and an area lights up on the map while someone is in it.
 
-**Interference Area (Red)** — An exclusion zone. Motion detected inside is discarded. Used to mask constant motion sources like ceiling fans or curtains.
+**Interference areas (red, hatched)** are ignored. Use them to mask things that always move, like ceiling fans or curtains.
 
-**Stay Area (Orange)** — A high-sensitivity zone for stationary presence. Intended for areas where people sit or lie down (sofa, bed, desk) to keep lights on during minimal movement.
+**Stay areas (amber)** are more sensitive to people sitting still, for a sofa, bed or desk, so the lights stay on when you barely move.
 
 ## Known Limitations
 
 1. **Radar persistence:** The switch does not send an "all clear" when there is no motion. The last tracked target stays on the radar indefinitely after it leaves. Refer to the Occupancy status or packet age to determine if the area is clear.
 
-2. **Network glitches:** On slow Zigbee networks, a drawn zone may briefly disappear after saving if the MQTT command fails to reach the switch. Re-apply the zone if this happens.
+2. **Slow saves:** A switch can take up to half a minute to apply a zone, and now and then drops one sent close behind another. The map shows the zone dashed until the switch confirms it, sends it again once if it hasn't shown up after 18 seconds, and tells you if the switch never confirms it.
 
 ## Known Issues
 
-- Stay areas may invert width when applied. Re-apply to fix. This appears to be a Z2M or switch-level issue.
+- Current firmware flips stay areas left to right when saving them. Turn on **Correct mirrored stay zones** under Zone tools and they'll land where you drew them.
+- Current firmware stores some zone edges 1 cm lower than entered (105 cm comes back as 104 cm). It makes no practical difference, and the addon allows for it.
 
 Please open an issue on GitHub if you encounter any bugs.
 
 ## Red Series (Z-Wave) Testers
 
-Z-Wave switches aren't supported yet. The VZW32-SN reports target positions on firmware 2.04 and later, but Z-Wave JS doesn't pass those frames on to Home Assistant and their format isn't published. If you own a VZW32-SN, the faint **⋮** button in the top-right corner of the addon opens a packet capture that records the Z-Wave JS driver log (it works whichever Zigbee stack the addon is set to). Attach the downloaded file to [#42](https://github.com/nickduvall921/mmwave_vis/issues/42) to help get support added.
+Z-Wave switches aren't supported yet. The VZW32-SN reports target positions on firmware 2.04 and later, but Z-Wave JS doesn't pass those frames on to Home Assistant and their format isn't published. If you own a VZW32-SN, **Z-Wave packet capture** in the addon's **⋮** menu (top-right corner) opens a packet capture that records the Z-Wave JS driver log (it works whichever Zigbee stack the addon is set to). Attach the downloaded file to [#42](https://github.com/nickduvall921/mmwave_vis/issues/42) to help get support added.
 
 ## Requirements
 
