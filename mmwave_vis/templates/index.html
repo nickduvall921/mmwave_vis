@@ -1,2198 +1,310 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Inovelli mmWave Live</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="dark light">
+    <title>mmWave Visualizer</title>
+    <link rel="stylesheet" href="{{ ingress_path }}/static/app.css?v={{ version }}">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    <script src="https://cdn.plot.ly/plotly-3.3.1.min.js" charset="utf-8"></script>
-    <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: #eee; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-        
-        /* Header */
-        .header { background: #2b2b2b; padding: 10px 15px; border-bottom: 2px solid #00bcd4; display: flex; justify-content: space-between; align-items: center; z-index: 10; gap: 15px;}
-        .header h2 { color: #00bcd4; margin: 0; white-space: nowrap; }
-        
-        /* Header Controls Group */
-        .header-controls { display: flex; align-items: center; gap: 10px; flex-grow: 1; justify-content: flex-start; }
-        select#deviceSelect { background: #333; color: white; border: 1px solid #00bcd4; padding: 6px 12px; font-size: 14px; border-radius: 4px; cursor: pointer; max-width: 300px; width: 100%; }
-
-        /* Stack Badge */
-        .stack-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            padding: 4px 10px;
-            border-radius: 4px;
-            font-size: 0.78em;
-            font-weight: bold;
-            letter-spacing: 0.04em;
-            white-space: nowrap;
-            border: 1px solid transparent;
-            flex-shrink: 0;
-        }
-        .stack-badge.z2m {
-            background: rgba(0, 188, 212, 0.12);
-            border-color: #00bcd4;
-            color: #00bcd4;
-        }
-        .stack-badge.zha {
-            background: rgba(103, 80, 216, 0.15);
-            border-color: #7c5cbf;
-            color: #b39ddb;
-        }
-        .stack-badge.unknown {
-            background: rgba(136, 136, 136, 0.12);
-            border-color: #666;
-            color: #888;
-        }
-        
-        .status-bar { font-size: 0.9em; color: #888; text-align: center; background: #222; padding: 5px; display: flex; justify-content: center; gap: 10px; align-items: center; flex-wrap: wrap; }
-        #packetInfo { color: #00bcd4; font-weight: bold; }
-        #timestamp { color: #ff9800; font-family: monospace; }
-        #packetAge { color: #666; font-size: 0.85em; font-family: monospace; min-width: 60px; text-align: left; }
-
-        .connection-dot {
-            display: inline-block;
-            width: 8px; height: 8px;
-            border-radius: 50%;
-            margin-right: 4px;
-            vertical-align: middle;
-        }
-        .dot-connected { background: #4caf50; box-shadow: 0 0 4px #4caf50; }
-        .dot-disconnected { background: #ff5252; box-shadow: 0 0 4px #ff5252; }
-        .dot-connecting { background: #ff9800; animation: pulse-dot 1s infinite; }
-
-        @keyframes pulse-dot {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-        @keyframes pulse-record {
-            0%, 100% { box-shadow: 0 0 4px #ff5252; }
-            50% { box-shadow: 0 0 12px #ff5252, 0 0 20px rgba(255, 82, 82, 0.4); }
-        }
-        .recording-active {
-            animation: pulse-record 1s infinite;
-            background: #ff5252 !important;
-            border-color: #ff5252 !important;
-        }
-
-        #connectionBanner {
-            display: none;
-            background: #ff5252;
-            color: white;
-            text-align: center;
-            padding: 8px 15px;
-            font-size: 0.9em;
-            font-weight: bold;
-            z-index: 100;
-        }
-        #connectionBanner.warning { background: #ff9800; }
-        #connectionBanner.ok { background: #4caf50; }
-
-        #targetReportBanner {
-            display: none;
-            background: rgba(255, 152, 0, 0.9);
-            color: white;
-            text-align: center;
-            padding: 6px 12px;
-            font-size: 0.85em;
-            border-radius: 4px;
-            margin: 0 10px;
-        }
-        #targetReportBanner a { color: white; text-decoration: underline; cursor: pointer; }
-
-        /* ZHA setup hint banner — shown when stack=zha and no devices yet */
-        #zhaSetupBanner {
-            display: none;
-            background: rgba(103, 80, 216, 0.18);
-            border: 1px solid #7c5cbf;
-            color: #d1c4e9;
-            text-align: center;
-            padding: 8px 15px;
-            font-size: 0.85em;
-        }
-        #zhaSetupBanner strong { color: #b39ddb; }
-
-        /* ZHA quirk warning — shown when custom ZHA quirk is not detected */
-        #quirkWarningBanner {
-            display: none;
-            background: rgba(255, 82, 82, 0.12);
-            border-bottom: 1px solid #ff5252;
-            color: #ff8a80;
-            text-align: center;
-            padding: 6px 15px;
-            font-size: 0.85em;
-        }
-        #quirkWarningBanner strong { color: #ff5252; }
-
-        #bindingWarningBanner {
-            display: none;
-            background: rgba(255, 152, 0, 0.12);
-            border-bottom: 1px solid #ff9800;
-            color: #ffcc80;
-            text-align: center;
-            padding: 6px 15px;
-            font-size: 0.85em;
-        }
-        #bindingWarningBanner strong { color: #ff9800; }
-
-        #toastContainer {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 1000;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-        .toast {
-            padding: 10px 16px;
-            border-radius: 6px;
-            color: white;
-            font-size: 0.85em;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-            animation: toast-in 0.3s ease-out;
-            max-width: 320px;
-        }
-        .toast-error { background: rgba(255, 82, 82, 0.95); }
-        .toast-success { background: rgba(76, 175, 80, 0.95); }
-        .toast-info { background: rgba(0, 188, 212, 0.95); }
-
-        @keyframes toast-in {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .app-container { display: grid; grid-template-columns: 1fr 350px; flex-grow: 1; overflow: hidden; transition: 0.3s; }
-        .main-content { display: flex; flex-direction: column; padding: 10px; overflow-y: auto; position: relative; gap: 15px; }
-        .sidebar { background: #222; border-left: 1px solid #444; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; transition: opacity 0.3s; }
-
-        #chart { width: 100%; flex-grow: 1; min-height: 400px; }
-        
-        .table-container { background: #2b2b2b; border-radius: 8px; overflow-x: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        table { width: 100%; border-collapse: collapse; text-align: center; min-width: 500px; }
-        th { background: #00bcd4; color: #1a1a1a; padding: 8px; font-weight: bold; }
-        td { padding: 8px; border-bottom: 1px solid #444; }
-        .no-data { padding: 15px; font-style: italic; color: #888; }
-
-        details { background: #2b2b2b; border-radius: 6px; border: 1px solid #333; }
-        details > summary { font-weight: bold; color: #00bcd4; padding: 12px; cursor: pointer; list-style: none; user-select: none; display: flex; justify-content: space-between; align-items: center; }
-        details > summary::-webkit-details-marker { display: none; }
-        details > summary::after { content: '▼'; font-size: 0.8em; color: #666; transition: 0.2s; }
-        details[open] > summary::after { transform: rotate(180deg); color: #00bcd4; }
-        details[open] > summary { border-bottom: 1px solid #444; }
-        .config-content { padding: 12px; }
-
-        #chartContainer[open] .config-content {
-            display: flex;
-            flex-direction: column;
-            height: 55vh;
-            padding: 0;
-            overflow: hidden;
-        }
-
-        .config-group { background: #2b2b2b; padding: 12px; border-radius: 6px; border: 1px solid #333; }
-        .config-title { font-weight: bold; color: #00bcd4; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 5px; font-size: 0.95em; }
-
-        .input-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.9em; }
-        .input-row label { color: #ccc; }
-        input[type="number"] { width: 130px; background: #333; color: white; border: 1px solid #555; border-radius: 3px; padding: 3px 5px; text-align: right; }
-        .control-select { width: 142px; margin-top: 5px; background: #333; border: 1px solid #555; color: white; padding: 3px; }
-        .full-width-select { width: 100%; max-width: 100%; box-sizing: border-box; margin-top: 5px; background: #333; border: 1px solid #555; color: white; padding: 5px; }
-        
-        .input-row input[type="checkbox"] { width: auto; cursor: pointer; }
-
-        .zone-data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
-        .zone-input-group { display: flex; flex-direction: column; gap: 2px; }
-        .zone-input-group label { font-size: 0.75em; color: #888; }
-        .zone-input-group input { width: 100%; box-sizing: border-box; font-family: monospace; color: #00bcd4; font-weight: bold;}
-
-        .sensor-row { display: flex; justify-content: space-between; background: #222; padding: 8px 10px; border-radius: 4px; margin-bottom: 5px; }
-        .sensor-val { font-weight: bold; color: #fff; }
-        .badge-detected { color: #4caf50; font-weight: bold; }
-        .badge-clear { color: #888; font-style: italic; }
-
-        .zone-badge { font-size: 0.85em; padding: 2px 6px; border-radius: 3px; background: #333; color: #888; }
-        .zone-active { background: #2e7d32; color: white; }
-
-        .cmd-btn { background: #444; color: white; border: 1px solid #00bcd4; padding: 6px 10px; border-radius: 4px; cursor: pointer; transition: 0.2s; font-size: 0.85em; white-space: nowrap;}
-        .cmd-btn:hover { background: #00bcd4; color: #1a1a1a; }
-        .cmd-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-        .cmd-btn:disabled:hover { background: #444; color: white; }
-        .btn-danger { border-color: #ff5252; }
-        .btn-danger:hover { background: #ff5252; color: white; }
-        .btn-full { width: 100%; margin-bottom: 5px; }
-
-        #zoneStatus { display: none; position: fixed; top: 20px; right: 20px; background: #333; color: white; padding: 15px 20px; border-radius: 6px; z-index: 1000; }
-
-        #nonMmwaveWarning {
-            display: none;
-            position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(255, 82, 82, 0.9);
-            color: white;
-            padding: 20px 30px;
-            border-radius: 8px;
-            font-size: 1.2em;
-            font-weight: bold;
-            text-align: center;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-            z-index: 20;
-        }
-
-        /* ZHA-only: hide Z2M-irrelevant sidebar hints when in ZHA mode */
-        body.stack-zha .z2m-only { display: none !important; }
-        body.stack-z2m .zha-only  { display: none !important; }
-
-        /* Z-Wave packet capture: deliberately faint button in the header's top-right corner */
-        .hidden-tool-btn { background: none; border: none; color: #888; opacity: 0.25; font-size: 16px; line-height: 1; padding: 4px 6px; cursor: pointer; flex-shrink: 0; border-radius: 4px; }
-        .hidden-tool-btn:hover, .hidden-tool-btn:focus-visible { opacity: 1; color: #00bcd4; }
-        .hidden-tool-btn.recording { opacity: 1; color: #ff5252; }
-        #zwCapturePanel { display: none; position: fixed; top: 52px; right: 12px; width: min(400px, calc(100vw - 32px)); box-sizing: border-box; max-height: calc(100vh - 70px); overflow-y: auto; background: #2b2b2b; border: 1px solid #00bcd4; border-radius: 6px; padding: 14px; z-index: 1100; box-shadow: 0 6px 20px rgba(0,0,0,0.5); font-size: 0.85em; color: #ccc; }
-        #zwCapturePanel p, #zwCapturePanel ol { margin: 0 0 8px; line-height: 1.45; }
-        #zwCapturePanel ol { padding-left: 18px; }
-        #zwCapturePanel a:not(.cmd-btn) { color: #00bcd4; }
-        .zwc-head { display: flex; justify-content: space-between; align-items: center; font-weight: bold; color: #00bcd4; font-size: 1.1em; margin-bottom: 8px; }
-        .zwc-close { background: none; border: none; color: #888; font-size: 1.3em; line-height: 1; cursor: pointer; padding: 0 4px; }
-        .zwc-close:hover { color: #fff; }
-        .zwc-status { background: #1f1f1f; border: 1px solid #444; border-radius: 4px; padding: 6px 8px; font-family: monospace; margin-bottom: 6px; color: #eee; overflow-wrap: anywhere; }
-        .zwc-status.zwc-live { border-color: #ff5252; }
-        .zwc-status.zwc-error { border-color: #ff5252; color: #ff8a80; }
-        .zwc-devices { color: #888; margin-bottom: 8px; }
-        .zwc-actions { display: flex; gap: 8px; margin-bottom: 8px; }
-        a.cmd-btn { text-decoration: none; display: inline-block; }
-        a.cmd-btn.zwc-disabled { opacity: 0.4; pointer-events: none; }
-        .zwc-warn { color: #888; font-size: 0.92em; }
-
-        @media (max-width: 900px) {
-            .app-container { display: block; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-            .main-content { overflow: visible; height: auto; flex: none; padding-bottom: 20px; }
-            .sidebar { border-left: none; border-top: 1px solid #444; height: auto; overflow: visible; flex: none; padding-bottom: 40px; }
-            #chartContainer[open] .config-content { height: 350px; }
-            #chart { min-height: 0; height: 100%; }
-            .table-container { width: 100%; margin-bottom: 15px; }
-            table { min-width: unset; font-size: 0.8rem; }
-            th, td { padding: 6px 3px; }
-            .header { padding: 5px 10px; }
-            .header h2 { display: none; }
-            .header-controls { width: 100%; justify-content: space-between; }
-            select#deviceSelect { flex-grow: 1; max-width: unset; margin-right: 5px; }
-            .stack-badge { display: none; }
-        }
-    </style>
+    <script type="module" src="{{ ingress_path }}/static/js/main.js?v={{ version }}"></script>
+    {#- Fetch the rest of the modules alongside main.js instead of one import level at a time #}
+    <link rel="modulepreload" href="{{ ingress_path }}/static/js/state.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/static/js/prefs.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/static/js/ui.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/static/js/radar.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/static/js/zones.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/static/js/recorder.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/static/js/backup.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/static/js/display.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/static/js/zwave.js">
 </head>
-<body>
-    <div id="connectionBanner"></div>
+<body class="stack-{{ zigbee_stack }}" data-ingress="{{ ingress_path }}">
 
-    <!-- ZHA setup hint: visible only when stack=zha and device list is empty -->
-    <div id="zhaSetupBanner">
-        <strong>ZHA Mode</strong> — No devices found yet.
-        Ensure the VZM32-SN is paired in ZHA and has been <strong>Reconfigured</strong>
-        (ZHA → Device → Reconfigure Device) to establish the mmWave binding.
+<header class="topbar">
+    <h1 class="brand">mmWave Visualizer</h1>
+    <label class="sr-only" for="deviceSelect">Switch</label>
+    <select id="deviceSelect"><option value="" disabled selected>Loading switches…</option></select>
+    <span class="spacer"></span>
+    <button class="status" id="statusBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="statusPop">
+        <span class="dot pending" id="statusDot"></span><span id="statusText">Connecting…</span>
+    </button>
+    <button class="btn" id="btnSync" type="button" title="Ask the switch for its current settings and zones">Sync</button>
+    <button class="btn icon" id="menuBtn" type="button" aria-label="More" aria-haspopup="menu" aria-expanded="false" aria-controls="moreMenu">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="8" cy="3" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="8" cy="13" r="1.5"/></svg>
+    </button>
+
+    <div class="popover status-pop" id="statusPop" hidden>
+        <dl>
+            <dt>Addon</dt><dd><span class="dot" id="popServerDot"></span><span id="popServer">Connecting</span></dd>
+            <dt id="popBackendLabel">MQTT broker</dt><dd><span class="dot" id="popBackendDot"></span><span id="popBackend">Unknown</span></dd>
+            <dt>Zigbee</dt><dd id="popStack">Unknown</dd>
+            <dt>Last update</dt><dd class="num" id="popPacket">None yet</dd>
+            <dt>Version</dt><dd>{{ version }}</dd>
+        </dl>
     </div>
 
-    <!-- ZHA quirk warning: visible only when stack=zha and custom quirk is not detected -->
-    <div id="quirkWarningBanner">
-        ⚠ <strong>Custom ZHA quirk not detected</strong> — Target reporting and zone commands require the Inovelli VZM32-SN custom ZHA quirk.
-        Reconfigure the device in ZHA after installing the quirk, then force-sync.
+    <div class="popover menu" id="moreMenu" role="menu" hidden>
+        <button type="button" role="menuitem" id="menuSaveImage">Save map image</button>
+        <button type="button" role="menuitem" id="menuZwave">Z-Wave packet capture</button>
+        <div class="meta">mmWave Visualizer {{ version }}</div>
     </div>
 
-    <!-- ZHA binding warning: visible when no data received after selecting a device -->
-    <div id="bindingWarningBanner">
-        ⚠ <strong>No data received from device</strong> — The mmWave cluster (0xFC32) binding may be missing.
-        Go to ZHA → Device → <strong>Reconfigure Device</strong> to re-establish the binding, then force-sync.
-    </div>
-
-    <div class="header">
-        <h2>mmWave Live</h2>
-        <div class="header-controls">
-            <select id="deviceSelect"><option value="" disabled selected>Loading devices...</option></select>
-            <button class="cmd-btn" id="btnForceSync" onclick="if(isEditingZone) cancelZoneEdit(); else { socket.emit('request_devices'); socket.emit('force_sync'); } packetInfo.innerText = 'Syncing...';">🔄 Force Sync</button>
-            <!-- Stack badge — updated by stack_info socket event -->
-            <span class="stack-badge unknown" id="stackBadge" title="Zigbee stack">···</span>
+    <div class="popover zwave" id="zwavePanel" role="dialog" aria-labelledby="zwaveTitle" hidden>
+        <div class="zwave-head">
+            <h2 id="zwaveTitle">Z-Wave packet capture</h2>
+            <button class="btn icon" id="zwaveClose" type="button" aria-label="Close">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+            </button>
         </div>
-        <button class="hidden-tool-btn" id="zwCaptureBtn" title="Z-Wave packet capture" aria-label="Z-Wave packet capture" aria-controls="zwCapturePanel">⋮</button>
-    </div>
-
-    <div class="status-bar">
-        <span>
-            <span class="connection-dot dot-connecting" id="wsStatusDot"></span>
-            <span id="wsStatusLabel">Server</span>
-        </span>
-        <span>
-            <span class="connection-dot dot-disconnected" id="mqttStatusDot"></span>
-            <!-- Label changes based on stack: "MQTT" for Z2M, "HA" for ZHA -->
-            <span id="mqttStatusLabel">MQTT</span>
-        </span>
-        |
-        <span id="statusDiv">Waiting for connection...</span> | 
-        <span id="packetInfo">Awaiting data...</span> |
-        <span>Last Packet: <span id="timestamp">--:--:--</span></span>
-        <span id="packetAge"></span>
-    </div>
-
-    <div id="zoneStatus"></div>
-    <div id="toastContainer"></div>
-
-    <!-- Z-Wave packet capture (diagnostic), opened from the faint ⋮ button in the header -->
-    <div id="zwCapturePanel" role="dialog" aria-labelledby="zwcTitle">
-        <div class="zwc-head"><span id="zwcTitle">Z-Wave packet capture</span><button class="zwc-close" id="zwcClose" aria-label="Close">×</button></div>
-        <p>For Red Series <strong>VZW32-SN</strong> testers. Records the Z-Wave JS driver log through Home Assistant, so the switch's target-tracking frames (which Z-Wave JS doesn't pass on to Home Assistant yet) can be decoded.</p>
+        <p>For Red Series VZW32-SN testers. This records the Z-Wave JS driver log through Home Assistant so the switch's target tracking frames, which Z-Wave JS doesn't pass on yet, can be decoded.</p>
         <ol>
             <li>On firmware 2.04 or later, set parameter 107 to 1 so the switch reports target positions.</li>
             <li>Press Start, then walk around in front of the switch for about 30 seconds.</li>
             <li>Press Stop, download the file and attach it to <a href="https://github.com/nickduvall921/mmwave_vis/issues/42" target="_blank" rel="noopener">issue #42</a>.</li>
         </ol>
-        <div class="zwc-status" id="zwcStatus">Idle.</div>
-        <div class="zwc-devices" id="zwcDevices"></div>
-        <div class="zwc-actions">
-            <button class="cmd-btn" id="zwcStart">Start</button>
-            <button class="cmd-btn btn-danger" id="zwcStop" disabled>Stop</button>
-            <a class="cmd-btn zwc-disabled" id="zwcDownload" download>Download</a>
+        <div class="zwave-status" id="zwaveStatus">Idle.</div>
+        <div class="zwave-devices" id="zwaveDevices"></div>
+        <div class="zwave-actions">
+            <button class="btn" id="zwaveStart" type="button">Start</button>
+            <button class="btn" id="zwaveStop" type="button" disabled>Stop</button>
+            <a class="btn off" id="zwaveDownload" download>Download</a>
         </div>
-        <p class="zwc-warn">Z-Wave JS logging is raised to debug while capturing and put back afterwards. A capture stops on its own after 15 minutes. The file contains your Z-Wave network traffic, so look it over before sharing.</p>
+        <p class="hint">Z-Wave JS logging is raised to debug while capturing and put back afterwards. A capture stops on its own after 15 minutes. The file contains your Z-Wave network traffic, so look it over before sharing.</p>
     </div>
+</header>
 
-    <div class="app-container">
-        <div class="main-content">
-            <div id="nonMmwaveWarning">⚠ Standard Switch Detected<br><span style="font-size: 0.8em; font-weight: normal;">This device does not have mmWave hardware.</span></div>
-            
-            <div id="targetReportBanner">
-                📡 Target Reporting is disabled — radar will not show tracked positions.
-                <a onclick="document.getElementById('mmWaveTargetInfoReport').value='Enable'; document.getElementById('mmWaveTargetInfoReport').dispatchEvent(new Event('change')); this.parentElement.style.display='none';">Enable now</a>
+<div class="layout">
+    <main class="stage">
+        <div class="notices" id="notices" aria-live="polite"></div>
+
+        <div class="readout">
+            <span class="occ" id="occupancy" data-state="unknown"><span class="dot"></span><span id="occupancyText">Waiting for data</span></span>
+            <span class="chips" id="areaChips">
+                <span class="chip">Area 1</span><span class="chip">Area 2</span><span class="chip">Area 3</span><span class="chip">Area 4</span>
+            </span>
+            <span class="z2m-only">Light <strong class="num" id="illuminance">–</strong></span>
+            <span>Targets <strong class="num" id="targetCount">0</strong></span>
+        </div>
+
+        <div class="map" id="map">
+            <svg class="radar" id="radar" role="img" aria-label="Radar map of the selected switch"></svg>
+            <div class="map-overlay coords" id="coords" aria-hidden="true"></div>
+            <div class="map-overlay legend" aria-hidden="true">
+                <span><i class="swatch det"></i>Detection</span>
+                <span><i class="swatch intf"></i>Interference</span>
+                <span><i class="swatch stay"></i>Stay</span>
             </div>
-
-            <details open id="chartContainer">
-                <summary>Live Radar Map</summary>
-                <div class="config-content">
-                    <div id="chart"></div>
-                </div>
-            </details>
-
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Target ID</th>
-                            <th>X (Width)</th>
-                            <th>Y (Depth)</th>
-                            <th>Z (Height)</th>
-                            <th>Action (Doppler)</th>
-                        </tr>
-                    </thead>
-                    <tbody id="dataTableBody">
-                        <tr><td colspan="5" class="no-data">No targets detected</td></tr>
-                    </tbody>
-                </table>
+            <div class="map-overlay map-tools">
+                <span class="zoom-btns">
+                    <button class="btn icon" type="button" id="zoomOut" aria-label="Zoom out"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3.5 8h9"/></svg></button>
+                    <button class="btn icon" type="button" id="zoomIn" aria-label="Zoom in"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3.5 8h9M8 3.5v9"/></svg></button>
+                </span>
+                <button class="btn small" type="button" id="mapFit">Fit zones</button>
+                <button class="btn small" type="button" id="mapFull">Full range</button>
+            </div>
+            <div class="map-bar edit-bar" id="editBar" hidden>
+                <span class="grow">Editing <strong id="editBarName"></strong></span>
+                <button class="btn small ghost" type="button" id="editBarCancel">Cancel</button>
+                <button class="btn small primary" type="button" id="editBarSave">Save</button>
+            </div>
+            <div class="map-bar" id="arrangeBar" hidden>
+                <span class="grow">Drag the switch to where it is in the room and turn it with the round handle. Drag the corners to fit your walls.</span>
+                <button class="btn small primary" type="button" id="arrangeDone">Done</button>
             </div>
         </div>
 
-        <div class="sidebar" id="configSidebar">
-            
-            <div class="config-group" style="background: #1e1e1e; border-color: #00bcd4;">
-                <div class="config-title" style="color: #00bcd4;">Live Sensors</div>
-                <div class="sensor-row">
-                    <span style="color: #ccc;">Global Occupancy:</span>
-                    <span id="occupancyVal" class="sensor-val badge-clear">Waiting...</span>
-                </div>
-                <div class="sensor-row">
-                    <span style="color: #ccc;">Illuminance:</span>
-                    <span id="illuminanceVal" class="sensor-val">-- lx</span>
-                </div>
-                <!-- ZHA note: illuminance comes from a separate cluster, may not update in real-time -->
-                <div class="zha-only" style="font-size: 0.75em; color: #666; margin-top: 4px; padding: 0 2px;">
-                    Illuminance updates via ZHA entity state polling.
+        <div class="targets">
+            <table>
+                <thead><tr><th>Target</th><th>Width</th><th>Depth</th><th>Height</th><th>Movement</th></tr></thead>
+                <tbody id="targetRows"><tr><td colspan="5" class="empty">No targets yet</td></tr></tbody>
+            </table>
+        </div>
+    </main>
+
+    <aside class="panel">
+        <div class="tabs" role="tablist" aria-label="Settings">
+            <button class="tab" type="button" role="tab" id="tab-zones" aria-controls="panel-zones" aria-selected="true">Zones</button>
+            <button class="tab" type="button" role="tab" id="tab-switch" aria-controls="panel-switch" aria-selected="false">Switch settings</button>
+            <button class="tab" type="button" role="tab" id="tab-display" aria-controls="panel-display" aria-selected="false">Display</button>
+        </div>
+
+        <!-- Zones -->
+        <div class="tab-panel" role="tabpanel" id="panel-zones" aria-labelledby="tab-zones">
+            <div id="zoneGroups"></div>
+
+            <div class="editor" id="zoneEditor" hidden>
+                <div class="slot-pick" id="slotPick" hidden><span>Slot</span><span class="seg" id="slotSeg"></span></div>
+                <div class="range-row"><span>Width</span><input type="number" step="1" id="editXMin" aria-label="Width from"><span class="to">to</span><input type="number" step="1" id="editXMax" aria-label="Width to"><span class="unit">cm</span></div>
+                <div class="range-row"><span>Depth</span><input type="number" step="1" id="editYMin" aria-label="Depth from"><span class="to">to</span><input type="number" step="1" id="editYMax" aria-label="Depth to"><span class="unit">cm</span></div>
+                <div class="range-row"><span>Height</span><input type="number" step="1" id="editZMin" aria-label="Height from"><span class="to">to</span><input type="number" step="1" id="editZMax" aria-label="Height to"><span class="unit">cm</span></div>
+                <p class="hint">Drag the zone or its handles on the map, or type exact values.</p>
+                <div class="editor-actions">
+                    <button class="btn small" type="button" id="btnUseRecording">Use recording</button>
+                    <button class="btn small ghost danger-text" type="button" id="btnDeleteZone">Delete</button>
+                    <span class="spacer"></span>
+                    <button class="btn small ghost" type="button" id="btnCancelEdit">Cancel</button>
+                    <button class="btn small primary" type="button" id="btnSaveZone">Save</button>
                 </div>
             </div>
 
-            <details open class="mobile-collapsed" id="zoneStatusSection">
-                <summary>Zone Status</summary>
-                <div class="config-content">
-                    <div class="sensor-row">
-                        <span style="color: #ccc;">Area 1:</span>
-                        <span id="area1Val" class="zone-badge">CLEAR</span>
-                    </div>
-                    <div class="sensor-row">
-                        <span style="color: #ccc;">Area 2:</span>
-                        <span id="area2Val" class="zone-badge">CLEAR</span>
-                    </div>
-                    <div class="sensor-row">
-                        <span style="color: #ccc;">Area 3:</span>
-                        <span id="area3Val" class="zone-badge">CLEAR</span>
-                    </div>
-                    <div class="sensor-row">
-                        <span style="color: #ccc;">Area 4:</span>
-                        <span id="area4Val" class="zone-badge">CLEAR</span>
-                    </div>
+            <details class="section" id="recorderSection">
+                <summary>Movement recorder</summary>
+                <p class="hint" style="margin-top:0">Record while you walk the area you want covered. While editing a zone, press Use recording to fit the zone around it.</p>
+                <div class="tool-row"><span>Slot</span><span class="seg" id="recSlots"></span></div>
+                <div class="tool-row">
+                    <button class="btn small" type="button" id="btnRecord">Record</button>
+                    <span class="num" id="recStatus"></span>
                 </div>
+                <div class="tool-row"><span>Padding</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="recordingPadding" value="20" min="0" max="200" style="width:76px"> cm</span></div>
+                <div class="tool-row"><span id="recSummary">No recordings yet.</span><button class="btn link danger-text" type="button" id="btnClearSlot">Clear slot</button></div>
             </details>
 
-            <details open class="mobile-collapsed">
-                <summary>Zone Editor</summary>
-                <div class="config-content">
-                    <div style="margin-bottom: 10px; font-size: 0.9em; color: #ccc;">Select a zone to view, draw, or edit.</div>
-                    
-                    <div class="input-row">
-                        <label>Target Zone:</label>
-                        <select class="control-select" id="zoneEditorSelect">
-                            <option value="mmwave_detection_areas:area1">Detection Area 1 (Primary - Blue)</option>
-                            <option value="mmwave_detection_areas:area2">Detection Area 2 (Green)</option>
-                            <option value="mmwave_detection_areas:area3">Detection Area 3 (Green)</option>
-                            <option value="mmwave_detection_areas:area4">Detection Area 4 (Green)</option>
-                            <option value="" disabled>--- Interference Areas ---</option>
-                            <option value="mmwave_interference_areas:area1">Interference Area 1 (Red)</option>
-                            <option value="mmwave_interference_areas:area2">Interference Area 2 (Red)</option>
-                            <option value="mmwave_interference_areas:area3">Interference Area 3 (Red)</option>
-                            <option value="mmwave_interference_areas:area4">Interference Area 4 (Red)</option>
-                            <option value="" disabled>--- Stay Areas ---</option>
-                            <option value="mmwave_stay_areas:area1">Stay Area 1 (Orange)</option>
-                            <option value="mmwave_stay_areas:area2">Stay Area 2 (Orange)</option>
-                            <option value="mmwave_stay_areas:area3">Stay Area 3 (Orange)</option>
-                            <option value="mmwave_stay_areas:area4">Stay Area 4 (Orange)</option>
-                        </select>
-                    </div>
-
-                    <div id="zoneEditorRawData" style="display: none; border: 1px solid #444; padding: 10px; border-radius: 4px; background: #222; margin-bottom: 10px;">
-                        <div style="font-size: 0.85em; font-weight: bold; margin-bottom: 5px; color: #00bcd4;">Raw Zone Data (cm)</div>
-                        <div class="zone-data-grid">
-                            <div class="zone-input-group"><label>X Min (Width)</label><input type="number" id="editXMin" onchange="manualZoneUpdate()"></div>
-                            <div class="zone-input-group"><label>X Max (Width)</label><input type="number" id="editXMax" onchange="manualZoneUpdate()"></div>
-                            <div class="zone-input-group"><label>Y Min (Depth)</label><input type="number" id="editYMin" onchange="manualZoneUpdate()"></div>
-                            <div class="zone-input-group"><label>Y Max (Depth)</label><input type="number" id="editYMax" onchange="manualZoneUpdate()"></div>
-                            <div class="zone-input-group"><label>Z Min (Height)</label><input type="number" id="editZMin" onchange="manualZoneUpdate()"></div>
-                            <div class="zone-input-group"><label>Z Max (Height)</label><input type="number" id="editZMax" onchange="manualZoneUpdate()"></div>
-                        </div>
-                        <div style="display:flex; gap: 5px;">
-                            <button class="cmd-btn btn-danger" style="flex:1;" onclick="cancelZoneEdit()">Stop Editing</button>
-                            <button class="cmd-btn" style="background: #00bcd4; color: #1a1a1a; flex:1;" onclick="applyZoneEdit()">Apply Changes</button>
-                        </div>
-                    </div>
-
-                    <button id="btnStartEdit" class="cmd-btn btn-full" onclick="startZoneEdit()" style="margin-top:5px; background: #00bcd4; color: #1a1a1a;">Draw / Edit Selected Zone</button>
-                    <button class="cmd-btn btn-full btn-danger" onclick="deleteZone()" style="margin-top:5px;">Delete Selected Zone</button>
-
-                    <!-- #41: stay-area width-inversion firmware bug workaround -->
-                    <div class="input-row" style="margin-top: 10px; align-items: flex-start;">
-                        <input type="checkbox" id="toggleStayInvert" style="margin-top: 3px;">
-                        <label for="toggleStayInvert" style="font-size: 0.8em; color: #ccc; cursor: pointer;">Auto-correct stay-area inversion bug</label>
-                    </div>
-                    <div style="font-size: 0.7em; color: #666; margin-top: 2px;">
-                        The switch firmware mirrors stay-zone width (X), so a normal zone needs applying twice. When on, the width is pre-inverted so one apply lands correctly. Turn off if a future firmware/Z2M update fixes the bug.
-                    </div>
-
-                    <!-- ZHA: after saving a zone, force sync is needed to confirm -->
-                    <div class="zha-only" style="font-size: 0.75em; color: #666; margin-top: 8px;">
-                        After applying changes, use Force Sync to confirm the zone was saved to the device.
-                    </div>
-                </div>
-            </details>
-
-            <details class="mobile-collapsed">
-                <summary>Movement Recorder</summary>
-                <div class="config-content">
-                    <div style="margin-bottom: 8px; font-size: 0.9em; color: #ccc;">Record sensor data into slots, then apply to any zone.</div>
-                    <div class="input-row">
-                        <label>Slot:</label>
-                        <select class="control-select" id="recordingSlotSelect">
-                            <option value="0">Slot 1</option>
-                            <option value="1">Slot 2</option>
-                            <option value="2">Slot 3</option>
-                        </select>
-                    </div>
-                    <div style="margin: 8px 0; display: flex; gap: 5px; align-items: center;">
-                        <button class="cmd-btn" id="btnRecord" style="flex:1; background: #4caf50; color: white; border-color: #4caf50;" onclick="toggleRecording()">&#9679; Record Movement</button>
-                        <span id="recordingStatus" style="font-size: 0.8em; color: #888; min-width: 80px;"></span>
-                    </div>
-                    <div class="input-row">
-                        <label style="font-size: 0.75em; color: #888;">Padding (cm):</label>
-                        <input type="number" id="recordingPadding" value="20" min="0" max="200" style="width: 60px; font-family: monospace; color: #ff9800; font-weight: bold;">
-                    </div>
-                    <div id="recordingSlotInfo" style="font-size: 0.8em; color: #888; margin: 6px 0;"></div>
-                    <div style="display: flex; gap: 5px;">
-                        <button class="cmd-btn" style="flex:1; background: #ff9800; color: #1a1a1a;" onclick="applySlotToZone()">Apply to Zone</button>
-                        <button class="cmd-btn btn-danger" style="flex:1;" onclick="clearSlot()">Clear Slot</button>
-                    </div>
-                </div>
-            </details>
-
-            <details open class="mobile-collapsed">
-                <summary>Visualizer Settings</summary>
-                <div class="config-content">
-                    
-                    <div style="margin-top:10px; padding-top:5px;">
-                        <div style="font-size:0.9em; font-weight:bold; color:#00bcd4; margin-bottom:5px;">Map Visibility</div>
-                        <div class="input-row">
-                            <label for="vizToggleGrid">Show Radar Grid:</label>
-                            <input type="checkbox" id="vizToggleGrid" checked>
-                        </div>
-                        <div class="input-row">
-                            <label for="vizToggleLabels">Show Labels:</label>
-                            <input type="checkbox" id="vizToggleLabels" checked>
-                        </div>
-                        <div class="input-row">
-                            <label for="vizToggleZValues">Show Zone Heights:</label>
-                            <input type="checkbox" id="vizToggleZValues">
-                        </div>
-                        <div class="input-row">
-                            <label style="color:#00bcd4" for="vizToggleDetection">Show Detection Zones:</label>
-                            <input type="checkbox" id="vizToggleDetection" checked>
-                        </div>
-                        <div id="detectionSubOptions" style="margin-left: 20px; display: block; border-left: 1px solid #444; padding-left: 10px;">
-                            <div class="input-row" style="margin-bottom: 2px;">
-                                <label style="font-size: 0.85em;">Area 1 (Primary)</label>
-                                <input type="checkbox" id="vizToggleDetection1" checked>
-                            </div>
-                            <div class="input-row" style="margin-bottom: 2px;">
-                                <label style="font-size: 0.85em;">Area 2</label>
-                                <input type="checkbox" id="vizToggleDetection2" checked>
-                            </div>
-                            <div class="input-row" style="margin-bottom: 2px;">
-                                <label style="font-size: 0.85em;">Area 3</label>
-                                <input type="checkbox" id="vizToggleDetection3" checked>
-                            </div>
-                            <div class="input-row">
-                                <label style="font-size: 0.85em;">Area 4</label>
-                                <input type="checkbox" id="vizToggleDetection4" checked>
-                            </div>
-                        </div>
-
-                        <div class="input-row" style="margin-top: 5px;">
-                            <label style="color:#ff9800" for="vizToggleStay">Show Stay Zones:</label>
-                            <input type="checkbox" id="vizToggleStay" checked>
-                        </div>
-                        <div class="input-row">
-                            <label style="color:#ff5252" for="vizToggleInterference">Show Interference Zones:</label>
-                            <input type="checkbox" id="vizToggleInterference" checked>
-                        </div>
-                    </div>
-                    
-                    <div class="config-title" style="margin-top: 15px; border-top: 1px solid #444; padding-top: 5px;">Radar Map Size (cm)</div>
-                    <div class="zone-data-grid">
-                        <div class="zone-input-group"><label>X Min</label><input type="number" id="vizXMin" value="-600"></div>
-                        <div class="zone-input-group"><label>X Max</label><input type="number" id="vizXMax" value="600"></div>
-                        <div class="zone-input-group"><label>Y Min</label><input type="number" id="vizYMin" value="-100"></div>
-                        <div class="zone-input-group"><label>Y Max</label><input type="number" id="vizYMax" value="650"></div>
-                    </div>
-                    <button class="cmd-btn btn-full" onclick="updateRadarScale()" style="margin-top:5px; background: #00bcd4; color: #1a1a1a;">Update Scale</button>
-                    <div style="display:flex; gap: 5px; margin-top: 5px;">
-                        <button class="cmd-btn" style="flex:1;" onclick="autoScaleRadar()">Auto-Scale</button>
-                        <button class="cmd-btn btn-danger" style="flex:1;" onclick="resetRadarScale()">Reset Scale</button>
-                    </div>
-                    <!-- #7: optional 1:1 aspect lock so the radar map stays square on resize -->
-                    <div class="input-row" style="margin-top: 8px;">
-                        <label for="toggleAspectLock">Lock square aspect ratio:</label>
-                        <input type="checkbox" id="toggleAspectLock">
-                    </div>
-                    <div style="font-size: 0.7em; color: #666; margin-top: 2px;">
-                        Keeps the map a true square (equal cm per pixel on both axes) instead of stretching to fill the window.
-                    </div>
-                </div>
-            </details>
-            
-            <details open class="mobile-collapsed">
-                <summary>Sensor Behavior</summary>
-                <div class="config-content">
-                    <div class="input-row">
-                        <label>Sensitivity:</label>
-                        <select class="control-select" id="mmWaveDetectSensitivity" data-param="mmWaveDetectSensitivity">
-                            <option value="Low">Low</option>
-                            <option value="Medium">Medium</option>
-                            <option value="High (default)">High</option>
-                        </select>
-                    </div>
-                    <div class="input-row">
-                        <label>Trigger Speed:</label>
-                        <select class="control-select" id="mmWaveDetectTrigger" data-param="mmWaveDetectTrigger">
-                            <option value="Fast (0.2s, default)">Fast (0.2s)</option>
-                            <option value="Medium (1s)">Medium (1s)</option>
-                            <option value="Slow (5s)">Slow (5s)</option>
-                        </select>
-                    </div>
-                    <div class="input-row"><label>Hold Time (s):</label><input type="number" id="mmWaveHoldTime" data-param="mmWaveHoldTime" min="0"></div>
-                    <div class="input-row"><label>Stay Life (internal):</label><input type="number" id="mmWaveStayLife" data-param="mmWaveStayLife" min="0"></div>
-                </div>
-            </details>
-
-            <details open class="mobile-collapsed">
-                <summary>System Settings</summary>
-                <div class="config-content">
-                    <div class="input-row">
-                        <label>Room Preset:</label>
-                        <select class="control-select" id="mmWaveRoomSizePreset" data-param="mmWaveRoomSizePreset">
-                            <option value="Custom">Custom</option>
-                            <option value="Small">Small</option>
-                            <option value="Medium">Medium</option>
-                            <option value="Large">Large</option>
-                        </select>
-                    </div>
-                    <div class="input-row">
-                        <label>Target Reporting:</label>
-                        <select class="control-select" id="mmWaveTargetInfoReport" data-param="mmWaveTargetInfoReport">
-                            <option value="Disable (default)">Disable</option>
-                            <option value="Enable">Enable</option>
-                        </select>
-                    </div>
-
-                    <div style="margin-top: 10px;">
-                        <label style="color: #ccc; font-size: 0.9em;">Wired Device Control:</label>
-                        <select class="full-width-select" id="mmwaveControlWiredDevice" data-param="mmwaveControlWiredDevice">
-                            <option value="Disabled">Disabled</option>
-                            <option value="Occupancy (default)">Occupancy</option>
-                            <option value="Vacancy">Vacancy</option>
-                            <option value="Wasteful Occupancy">Wasteful Occupancy</option>
-                            <option value="Mirrored Occupancy">Mirrored Occupancy</option>
-                            <option value="Mirrored Vacancy">Mirrored Vacancy</option>
-                            <option value="Mirrored Wasteful Occupancy">Mirrored Wasteful Occupancy</option>
-                        </select>
-                    </div>
-
-                    <!-- Z2M only: binding setup reminder -->
-                    <div class="z2m-only" style="font-size: 0.75em; color: #666; margin-top: 10px; border-top: 1px solid #333; padding-top: 8px;">
-                        Ensure <code style="color:#aaa">manuSpecificInovelliMMWave</code> is bound in Z2M and Target Reporting is enabled.
-                    </div>
-                    <!-- ZHA only: reconfigure reminder -->
-                    <div class="zha-only" style="font-size: 0.75em; color: #666; margin-top: 10px; border-top: 1px solid #333; padding-top: 8px;">
-                        If settings appear stale, run <strong style="color:#b39ddb">Reconfigure Device</strong> in ZHA to re-establish the cluster binding.
-                    </div>
-                </div>
-            </details>
-
-            <details open class="mobile-collapsed">
-                <summary>Maintenance</summary>
-                <div class="config-content">
-                    <button class="cmd-btn btn-full" onclick="sendCommand(1)">Auto-Config Interference</button>
-                    <button class="cmd-btn btn-full btn-danger" onclick="sendCommand(3)">Clear Interference</button>
-                    <div style="height: 10px;"></div>
-                    <button class="cmd-btn btn-full" onclick="sendCommand(4)">Reset Detection Zones</button>
-                    <button class="cmd-btn btn-full" onclick="sendCommand(5)">Clear Stay Zones</button>
-
-                    <!-- #52: save / restore this switch's zones -->
-                    <div class="config-title" style="margin-top: 15px; border-top: 1px solid #444; padding-top: 8px;">Zone Backup</div>
-                    <div style="display: flex; gap: 5px;">
-                        <button class="cmd-btn" style="flex:1;" id="btnExportZones" onclick="exportZones()">Export Zones</button>
-                        <button class="cmd-btn" style="flex:1;" id="btnImportZones" onclick="importZonesFile.click()">Import Zones</button>
-                    </div>
-                    <input type="file" id="importZonesFile" accept=".json,application/json" style="display: none;">
-                    <div id="zoneBackupStatus" style="font-size: 0.8em; color: #888; margin-top: 6px;"></div>
-                    <div style="font-size: 0.7em; color: #666; margin-top: 4px;">
-                        Saves the selected switch's detection, interference and stay zones to a file so you can put them back after a reset or re-pair. Importing writes every zone slot on the selected switch, clearing any that are empty in the backup. Stay zones follow the stay-area auto-correct setting in the Zone Editor.
-                    </div>
-
-                    <!-- ZHA: note that commands trigger ZHA events, feedback arrives via force sync -->
-                    <div class="zha-only" style="font-size: 0.75em; color: #666; margin-top: 8px;">
-                        Commands are sent via ZHA cluster. Use Force Sync to refresh zone state after running maintenance actions.
-                    </div>
-                </div>
-            </details>
+            <section class="section">
+                <div class="section-head"><h2>Zone tools</h2></div>
+                <div class="tool-row"><span>Interference</span><span class="actions"><button class="btn link" type="button" data-command="1">Detect automatically</button><button class="btn link" type="button" data-command="3">Clear</button></span></div>
+                <div class="tool-row"><span>Reset</span><span class="actions"><button class="btn link" type="button" data-command="4">Detection areas</button><button class="btn link" type="button" data-command="5">Stay areas</button></span></div>
+                <div class="tool-row"><span>Backup</span><span class="actions"><button class="btn link" type="button" id="btnExportZones">Export</button><button class="btn link" type="button" id="btnImportZones">Import</button></span></div>
+                <input type="file" id="importZonesFile" accept=".json,application/json" hidden>
+                <p class="status-line" id="zoneBackupStatus"></p>
+                <p class="hint">A backup holds this switch's detection, interference and stay zones. Importing writes every slot, clearing any that are empty in the file.</p>
+                <label class="check" style="margin-top:8px"><input type="checkbox" id="toggleStayInvert"><span>Correct mirrored stay zones</span></label>
+                <p class="hint" style="margin-top:0">Current firmware flips stay zones left to right when saving them. With this on, stay zones are flipped before sending so they land where you drew them.</p>
+                <p class="hint zha-only">On ZHA, press Sync after saving or running a tool to see what the switch stored.</p>
+            </section>
         </div>
-    </div>
 
-    <script>
-        const INGRESS_PATH = "{{ ingress_path }}";
-        const socket = io({ path: INGRESS_PATH + '/socket.io' });
+        <!-- Switch settings -->
+        <div class="tab-panel" role="tabpanel" id="panel-switch" aria-labelledby="tab-switch" hidden>
+            <section class="section">
+                <div class="toggle-row">
+                    <label class="toggle-title" for="mmWaveTargetInfoReport">Target reporting</label>
+                    <button class="info-btn" type="button" aria-label="About target reporting" aria-expanded="false" aria-controls="targetReportInfo" data-info="targetReportInfo">
+                        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 7.2v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.85" fill="currentColor"/></svg>
+                    </button>
+                    <span class="grow"></span>
+                    <input type="checkbox" role="switch" class="switch" id="mmWaveTargetInfoReport" data-param="mmWaveTargetInfoReport" data-on="Enable" data-off="Disable (default)">
+                </div>
+                <div class="info-panel" id="targetReportInfo" hidden>
+                    <p>Sends live positions so people show up on the map. Turn it on while you set up zones and off when you're done, since it adds Zigbee traffic.</p>
+                    <p class="z2m-only">If nobody shows up with it on, bind <code>manuSpecificInovelliMMWave</code> on the switch's Bind tab in Zigbee2MQTT.</p>
+                    <p class="zha-only">If nobody shows up with it on, open the switch in ZHA and choose Reconfigure.</p>
+                </div>
+            </section>
+            <section class="section">
+                <div class="section-head"><h2>Detection</h2></div>
+                <label class="field"><span>Sensitivity</span>
+                    <select id="mmWaveDetectSensitivity" data-param="mmWaveDetectSensitivity">
+                        <option value="Low">Low</option>
+                        <option value="Medium">Medium</option>
+                        <option value="High (default)">High</option>
+                    </select>
+                </label>
+                <label class="field"><span>Trigger speed</span>
+                    <select id="mmWaveDetectTrigger" data-param="mmWaveDetectTrigger">
+                        <option value="Fast (0.2s, default)">Fast (0.2 s)</option>
+                        <option value="Medium (1s)">Medium (1 s)</option>
+                        <option value="Slow (5s)">Slow (5 s)</option>
+                    </select>
+                </label>
+                <label class="field"><span>Hold time (s)</span><input type="number" id="mmWaveHoldTime" data-param="mmWaveHoldTime" min="0" max="28800"></label>
+                <label class="field"><span>Stay life (s)</span><input type="number" id="mmWaveStayLife" data-param="mmWaveStayLife" min="0" max="28800"></label>
+            </section>
+            <section class="section">
+                <div class="section-head"><h2>System</h2></div>
+                <label class="field"><span>Room preset</span>
+                    <select id="mmWaveRoomSizePreset" data-param="mmWaveRoomSizePreset">
+                        <option value="Custom">Custom</option>
+                        <option value="Small">Small</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Large">Large</option>
+                    </select>
+                </label>
+                <label class="field wide"><span>Wired device control</span>
+                    <select id="mmwaveControlWiredDevice" data-param="mmwaveControlWiredDevice">
+                        <option value="Disabled">Disabled</option>
+                        <option value="Occupancy (default)">Occupancy</option>
+                        <option value="Vacancy">Vacancy</option>
+                        <option value="Wasteful Occupancy">Wasteful occupancy</option>
+                        <option value="Mirrored Occupancy">Mirrored occupancy</option>
+                        <option value="Mirrored Vacancy">Mirrored vacancy</option>
+                        <option value="Mirrored Wasteful Occupancy">Mirrored wasteful occupancy</option>
+                    </select>
+                </label>
+                <p class="hint zha-only">If settings look out of date, open the device in ZHA and choose Reconfigure to restore the cluster binding.</p>
+                <p class="hint">Changes are sent to the switch as soon as you make them.</p>
+            </section>
+        </div>
+
+        <!-- Display -->
+        <div class="tab-panel" role="tabpanel" id="panel-display" aria-labelledby="tab-display" hidden>
+            <section class="section">
+                <div class="section-head"><h2>Show on the map</h2></div>
+                <label class="check"><input type="checkbox" id="vizToggleGrid"><span>Field of view and range rings</span></label>
+                <label class="check"><input type="checkbox" id="vizToggleLabels"><span>Zone names</span></label>
+                <label class="check"><input type="checkbox" id="vizToggleZValues"><span>Zone heights</span></label>
+                <label class="check"><input type="checkbox" id="vizToggleDetection"><span>Detection areas</span></label>
+                <div class="check-group">
+                    <label class="chip-check"><input type="checkbox" id="vizToggleDetection1"><span>1</span></label>
+                    <label class="chip-check"><input type="checkbox" id="vizToggleDetection2"><span>2</span></label>
+                    <label class="chip-check"><input type="checkbox" id="vizToggleDetection3"><span>3</span></label>
+                    <label class="chip-check"><input type="checkbox" id="vizToggleDetection4"><span>4</span></label>
+                </div>
+                <label class="check"><input type="checkbox" id="vizToggleInterference"><span>Interference areas</span></label>
+                <label class="check"><input type="checkbox" id="vizToggleStay"><span>Stay areas</span></label>
+                <label class="check"><input type="checkbox" id="vizToggleZoom"><span>Zoom buttons</span></label>
+            </section>
+
+            <section class="section">
+                <div class="section-head"><h2>Map range <span class="count">cm</span></h2></div>
+                <div class="grid-2">
+                    <label class="mini">Width from<input type="number" id="vizXMin"></label>
+                    <label class="mini">Width to<input type="number" id="vizXMax"></label>
+                    <label class="mini">Depth from<input type="number" id="vizYMin"></label>
+                    <label class="mini">Depth to<input type="number" id="vizYMax"></label>
+                </div>
+                <div class="button-row">
+                    <button class="btn small" type="button" id="rangeApply">Apply</button>
+                    <button class="btn small ghost" type="button" id="rangeFit">Fit zones</button>
+                    <button class="btn small ghost" type="button" id="rangeFull">Full range</button>
+                </div>
+                <p class="hint">The whole range always fits at true scale. Scroll or pinch on the map to zoom and drag to move around, or use the zoom buttons.</p>
+            </section>
+
+            <section class="section">
+                <div class="section-head"><h2>Room layout</h2><button class="btn small" type="button" id="btnArrange">Arrange on map</button></div>
+                <p class="hint" style="margin-top:0">Place the switch in your room so the map matches the space. This only changes the picture, never the switch, and is saved for everyone who opens the addon.</p>
+                <div class="grid-3" style="margin-top:10px">
+                    <label class="mini">Switch X<input type="number" id="layoutX" step="1"></label>
+                    <label class="mini">Switch Y<input type="number" id="layoutY" step="1"></label>
+                    <label class="mini">Facing (°)<input type="number" id="layoutRot" step="1"></label>
+                </div>
+                <div class="button-row">
+                    <button class="btn small" type="button" id="btnTurnLeft">Turn left</button>
+                    <button class="btn small" type="button" id="btnTurnRight">Turn right</button>
+                    <button class="btn small" type="button" id="btnRoom">Add room outline</button>
+                    <button class="btn small ghost" type="button" id="btnLayoutReset">Reset</button>
+                </div>
+                <div class="grid-2" id="roomFields" style="margin-top:10px" hidden>
+                    <label class="mini">Room width<input type="number" id="roomW" min="20" step="1"></label>
+                    <label class="mini">Room depth<input type="number" id="roomD" min="20" step="1"></label>
+                </div>
+            </section>
+        </div>
+    </aside>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<dialog id="confirmDialog">
+    <form method="dialog">
+        <p id="confirmText"></p>
+        <div class="button-row">
+            <button class="btn ghost" value="cancel">Cancel</button>
+            <button class="btn primary" value="ok" id="confirmOk">Continue</button>
+        </div>
+    </form>
+</dialog>
 
-        const statusDiv      = document.getElementById('statusDiv');
-        const packetInfo     = document.getElementById('packetInfo');
-        const timestampSpan  = document.getElementById('timestamp');
-        const packetAgeSpan  = document.getElementById('packetAge');
-        const deviceSelect   = document.getElementById('deviceSelect');
-        const dataTableBody  = document.getElementById('dataTableBody');
-
-        const nonMmwaveWarning  = document.getElementById('nonMmwaveWarning');
-        const configSidebar     = document.getElementById('configSidebar');
-        const btnForceSync      = document.getElementById('btnForceSync');
-        const occupancyVal      = document.getElementById('occupancyVal');
-        const illuminanceVal    = document.getElementById('illuminanceVal');
-
-        const connectionBanner  = document.getElementById('connectionBanner');
-        const wsStatusDot       = document.getElementById('wsStatusDot');
-        const wsStatusLabel     = document.getElementById('wsStatusLabel');
-        const mqttStatusDot     = document.getElementById('mqttStatusDot');
-        const mqttStatusLabel   = document.getElementById('mqttStatusLabel');
-        const toastContainer    = document.getElementById('toastContainer');
-        const targetReportBanner  = document.getElementById('targetReportBanner');
-        const zhaSetupBanner     = document.getElementById('zhaSetupBanner');
-        const quirkWarningBanner   = document.getElementById('quirkWarningBanner');
-        const bindingWarningBanner = document.getElementById('bindingWarningBanner');
-        const stackBadge           = document.getElementById('stackBadge');
-
-        const vizXMin = document.getElementById('vizXMin');
-        const vizXMax = document.getElementById('vizXMax');
-        const vizYMin = document.getElementById('vizYMin');
-        const vizYMax = document.getElementById('vizYMax');
-
-        let targetHistory = {};
-        const HISTORY_LENGTH = 15;
-
-        let isInteracting = false;
-        const chartElement = document.getElementById('chart');
-        chartElement.addEventListener('mousedown',  () => { isInteracting = true; });
-        chartElement.addEventListener('mouseup',    () => { isInteracting = false; });
-        chartElement.addEventListener('mouseleave', () => { isInteracting = false; });
-        chartElement.addEventListener('touchstart', () => { isInteracting = true; },  {passive: true});
-        chartElement.addEventListener('touchend',   () => { isInteracting = false; });
-
-        // ---------------------------------------------------------------------------
-        // Stack state
-        // ---------------------------------------------------------------------------
-        let activeStack = null;   // 'z2m' | 'zha' | null
-
-        function applyStack(stack) {
-            activeStack = stack;
-
-            // Body class drives CSS .z2m-only / .zha-only visibility
-            document.body.classList.remove('stack-z2m', 'stack-zha');
-            if (stack === 'z2m') document.body.classList.add('stack-z2m');
-            if (stack === 'zha') document.body.classList.add('stack-zha');
-
-            // Stack badge
-            stackBadge.className = `stack-badge ${stack || 'unknown'}`;
-            if (stack === 'z2m') {
-                stackBadge.textContent = '⬡ Z2M';
-                stackBadge.title = 'Zigbee2MQTT stack';
-            } else if (stack === 'zha') {
-                stackBadge.textContent = '⬡ ZHA';
-                stackBadge.title = 'ZHA (Zigbee Home Automation) stack';
-            } else {
-                stackBadge.textContent = '···';
-                stackBadge.title = 'Zigbee stack unknown';
-            }
-
-            // Status bar connection label
-            mqttStatusLabel.textContent = stack === 'zha' ? 'HA' : 'MQTT';
-        }
-
-        // ---------------------------------------------------------------------------
-        // Zone Management State
-        // ---------------------------------------------------------------------------
-        let deviceZones = {
-            mmwave_detection_areas:    { area1: null, area2: null, area3: null, area4: null },
-            mmwave_interference_areas: { area1: null, area2: null, area3: null, area4: null },
-            mmwave_stay_areas:         { area1: null, area2: null, area3: null, area4: null }
-        };
-        // When each zone type last arrived from the switch (0 = not since the device was selected).
-        // An empty [] zone list is the backend's "nothing reported yet" placeholder and doesn't count.
-        let zoneReportAt = { mmwave_detection_areas: 0, mmwave_interference_areas: 0, mmwave_stay_areas: 0 };
-
-        let isEditingZone  = false;
-        let editingTarget  = null;
-        let draftZoneConfig = null;
-
-        // Recording mode state – 3 independent slots
-        let isRecording = false;
-        let activeRecordingSlot = 0;
-        const RECORDING_MAX_POINTS = 5000;
-        const RECORDING_SLOT_COLORS = [
-            'rgba(255, 152, 0, 0.4)',   // orange
-            'rgba(0, 200, 83, 0.4)',    // green
-            'rgba(156, 39, 176, 0.4)'   // purple
-        ];
-        const RECORDING_SLOT_LINE_COLORS = [
-            'rgba(255, 152, 0, 0.8)',
-            'rgba(0, 200, 83, 0.8)',
-            'rgba(156, 39, 176, 0.8)'
-        ];
-        let recordingSlots = [
-            { buffer: [], bounds: null },
-            { buffer: [], bounds: null },
-            { buffer: [], bounds: null }
-        ];
-
-        const zoneEditorSelect   = document.getElementById('zoneEditorSelect');
-        const zoneEditorRawData  = document.getElementById('zoneEditorRawData');
-        const btnStartEdit       = document.getElementById('btnStartEdit');
-        const editXMin = document.getElementById('editXMin');
-        const editXMax = document.getElementById('editXMax');
-        const editYMin = document.getElementById('editYMin');
-        const editYMax = document.getElementById('editYMax');
-        const editZMin = document.getElementById('editZMin');
-        const editZMax = document.getElementById('editZMax');
-
-        // ---------------------------------------------------------------------------
-        // Packet age ticker
-        // ---------------------------------------------------------------------------
-        let lastPacketTime = null;
-        setInterval(() => {
-            if (lastPacketTime) {
-                const age = (Date.now() - lastPacketTime) / 1000;
-                packetAgeSpan.innerText = `(${age.toFixed(1)}s ago)`;
-                packetAgeSpan.style.color = age > 5 ? '#ff5252' : age > 2 ? '#ff9800' : '#666';
-            } else {
-                packetAgeSpan.innerText = "";
-            }
-        }, 100);
-
-        let lastCommandId = null;
-
-        // ---------------------------------------------------------------------------
-        // Toast / banner helpers
-        // ---------------------------------------------------------------------------
-        function showToast(message, type, duration) {
-            type = type || 'info';
-            duration = duration || 3000;
-            const toast = document.createElement('div');
-            toast.className = 'toast toast-' + type;
-            toast.textContent = message;
-            toastContainer.appendChild(toast);
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                toast.style.transition = 'opacity 0.3s';
-                setTimeout(() => toast.remove(), 300);
-            }, duration);
-        }
-
-        let bannerTimeout = null;
-        function showBanner(message, type, autoDismiss) {
-            connectionBanner.textContent = message;
-            connectionBanner.className = type || '';
-            connectionBanner.style.display = 'block';
-            if (bannerTimeout) clearTimeout(bannerTimeout);
-            if (autoDismiss) {
-                bannerTimeout = setTimeout(() => { connectionBanner.style.display = 'none'; }, autoDismiss);
-            }
-        }
-        function hideBanner() {
-            connectionBanner.style.display = 'none';
-            if (bannerTimeout) clearTimeout(bannerTimeout);
-        }
-
-        function setWsStatus(state) {
-            wsStatusDot.className = 'connection-dot dot-' + state;
-            wsStatusLabel.textContent = state === 'connected' ? 'Server' : state === 'disconnected' ? 'Server ✗' : 'Server...';
-        }
-
-        function setBackendStatus(connected) {
-            // "Backend" = MQTT broker for Z2M, HA WebSocket for ZHA
-            mqttStatusDot.className = 'connection-dot dot-' + (connected ? 'connected' : 'disconnected');
-            const label = activeStack === 'zha' ? 'HA' : 'MQTT';
-            mqttStatusLabel.textContent = connected ? label : label + ' ✗';
-        }
-
-        // ---------------------------------------------------------------------------
-        // Mobile layout
-        // ---------------------------------------------------------------------------
-        function handleMobileView() {
-            if (window.innerWidth <= 900) {
-                document.querySelectorAll('.mobile-collapsed').forEach(el => el.removeAttribute('open'));
-            } else {
-                document.querySelectorAll('.mobile-collapsed').forEach(el => el.setAttribute('open', ''));
-            }
-        }
-        window.addEventListener('load', handleMobileView);
-
-        window.addEventListener('resize', function() {
-            try { Plotly.Plots.resize('chart'); } catch(e) {}
-        });
-
-        document.getElementById('chartContainer').addEventListener('toggle', function(event) {
-            if (event.target.open) {
-                setTimeout(() => { try { Plotly.Plots.resize('chart'); } catch(e) {} }, 50);
-            }
-        });
-
-        function updateTimestamp() {
-            const now = new Date();
-            timestampSpan.innerText = now.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second:'2-digit' }) + '.' + now.getMilliseconds().toString().padStart(3, '0');
-            lastPacketTime = Date.now();
-        }
-
-        // ---------------------------------------------------------------------------
-        // Visualizer settings
-        // ---------------------------------------------------------------------------
-        let showInterference = true, showDetection = true, showStay = true;
-        let showGrid = true, showLabels = true, showZValues = false;
-        let showDetection1 = true, showDetection2 = true, showDetection3 = true, showDetection4 = true;
-        let chartXMin = -600, chartXMax = 600, chartYMin = -100, chartYMax = 650;
-        let stayInvertEnabled = false;  // #41: pre-invert stay-area width to counter firmware mirror bug (opt-in)
-        let lockAspectRatio = false;   // #7: opt-in 1:1 aspect lock for the radar map
-
-        try {
-            if (localStorage.getItem('vizShowInterference') !== null) showInterference = localStorage.getItem('vizShowInterference') === 'true';
-            if (localStorage.getItem('vizShowDetection') !== null)    showDetection    = localStorage.getItem('vizShowDetection') === 'true';
-            if (localStorage.getItem('vizShowStay') !== null)         showStay         = localStorage.getItem('vizShowStay') === 'true';
-            if (localStorage.getItem('vizShowGrid') !== null)         showGrid         = localStorage.getItem('vizShowGrid') === 'true';
-            if (localStorage.getItem('vizShowLabels') !== null)       showLabels       = localStorage.getItem('vizShowLabels') === 'true';
-            if (localStorage.getItem('vizShowZValues') !== null)      showZValues      = localStorage.getItem('vizShowZValues') === 'true';
-            if (localStorage.getItem('vizShowDetection1') !== null) showDetection1 = localStorage.getItem('vizShowDetection1') === 'true';
-            if (localStorage.getItem('vizShowDetection2') !== null) showDetection2 = localStorage.getItem('vizShowDetection2') === 'true';
-            if (localStorage.getItem('vizShowDetection3') !== null) showDetection3 = localStorage.getItem('vizShowDetection3') === 'true';
-            if (localStorage.getItem('vizShowDetection4') !== null) showDetection4 = localStorage.getItem('vizShowDetection4') === 'true';
-            if (localStorage.getItem('stayInvertEnabled') !== null)   stayInvertEnabled = localStorage.getItem('stayInvertEnabled') === 'true';
-            if (localStorage.getItem('lockAspectRatio') !== null)     lockAspectRatio   = localStorage.getItem('lockAspectRatio') === 'true';
-            let stored;
-            stored = parseInt(localStorage.getItem('vizXMin')); if (!isNaN(stored)) chartXMin = stored;
-            stored = parseInt(localStorage.getItem('vizXMax')); if (!isNaN(stored)) chartXMax = stored;
-            stored = parseInt(localStorage.getItem('vizYMin')); if (!isNaN(stored)) chartYMin = stored;
-            stored = parseInt(localStorage.getItem('vizYMax')); if (!isNaN(stored)) chartYMax = stored;
-        } catch(e) { console.log('Storage access error', e); }
-
-        const vizToggleInterference = document.getElementById('vizToggleInterference');
-        const vizToggleDetection    = document.getElementById('vizToggleDetection');
-        const vizToggleStay         = document.getElementById('vizToggleStay');
-        const vizToggleGrid         = document.getElementById('vizToggleGrid');
-        const vizToggleLabels       = document.getElementById('vizToggleLabels');
-        const vizToggleZValues      = document.getElementById('vizToggleZValues');
-        const vizToggleDetection1   = document.getElementById('vizToggleDetection1');
-        const vizToggleDetection2   = document.getElementById('vizToggleDetection2');
-        const vizToggleDetection3   = document.getElementById('vizToggleDetection3');
-        const vizToggleDetection4   = document.getElementById('vizToggleDetection4');
-        const toggleStayInvert      = document.getElementById('toggleStayInvert');
-        const toggleAspectLock      = document.getElementById('toggleAspectLock');
-
-        vizXMin.value = chartXMin; vizXMax.value = chartXMax;
-        vizYMin.value = chartYMin; vizYMax.value = chartYMax;
-
-        function applyVizSettings() {
-            if (vizToggleInterference) vizToggleInterference.checked = showInterference;
-            if (vizToggleDetection)    vizToggleDetection.checked    = showDetection;
-            if (vizToggleStay)         vizToggleStay.checked         = showStay;
-            if (vizToggleGrid)         vizToggleGrid.checked         = showGrid;
-            if (vizToggleLabels)       vizToggleLabels.checked       = showLabels;
-            if (vizToggleZValues)      vizToggleZValues.checked      = showZValues;
-            if (vizToggleDetection1)   vizToggleDetection1.checked   = showDetection1;
-            if (vizToggleDetection2)   vizToggleDetection2.checked   = showDetection2;
-            if (vizToggleDetection3)   vizToggleDetection3.checked   = showDetection3;
-            if (vizToggleDetection4)   vizToggleDetection4.checked   = showDetection4;
-            if (toggleStayInvert)      toggleStayInvert.checked      = stayInvertEnabled;
-            if (toggleAspectLock)      toggleAspectLock.checked      = lockAspectRatio;
-
-            // #7: apply or clear the 1:1 aspect constraint based on the toggle.
-            // Keeping it on the shared layout object means every react/relayout
-            // below honours it.
-            if (lockAspectRatio) {
-                layout.yaxis.scaleanchor = 'x';
-                layout.yaxis.scaleratio  = 1;
-                // constrain:'domain' letterboxes within the container (keeps the
-                // configured cm ranges and adds neutral margins) instead of the
-                // default 'range' behaviour that expands the visible area.
-                layout.yaxis.constrain = 'domain';
-                layout.xaxis.constrain = 'domain';
-            } else {
-                delete layout.yaxis.scaleanchor;
-                delete layout.yaxis.scaleratio;
-                delete layout.yaxis.constrain;
-                delete layout.xaxis.constrain;
-            }
-
-            const chartDiv = document.getElementById('chart');
-            if (chartDiv && chartDiv.data) {
-                try {
-                    layout.shapes      = getChartShapes();
-                    layout.annotations = getChartAnnotations();
-                    if (isEditingZone) {
-                        Plotly.react('chart', getEditModeTraces(), layout, chartConfig);
-                    } else {
-                        const t0 = chartDiv.data[0] || { x: [], y: [], mode: 'markers+text', text: [], textposition: 'top center', type: 'scatter' };
-                        const t1 = chartDiv.data[1] || { x: [], y: [], mode: 'lines', line: {color: '#00bcd4', width: 3}, opacity: 0.3, type: 'scatter' };
-                        Plotly.react('chart', [t0, t1, ...getFovTraces()], layout, chartConfig);
-                    }
-                } catch(e) { console.warn('Plotly settings update error', e); }
-            }
-        }
-
-        function updateRadarScale() {
-            const xMin = parseInt(vizXMin.value), xMax = parseInt(vizXMax.value);
-            const yMin = parseInt(vizYMin.value), yMax = parseInt(vizYMax.value);
-            if (isNaN(xMin) || isNaN(xMax) || isNaN(yMin) || isNaN(yMax)) return;
-            chartXMin = xMin; chartXMax = xMax;
-            chartYMin = yMin; chartYMax = yMax;
-            localStorage.setItem('vizXMin', chartXMin); localStorage.setItem('vizXMax', chartXMax);
-            localStorage.setItem('vizYMin', chartYMin); localStorage.setItem('vizYMax', chartYMax);
-            layout.xaxis.range = [chartXMin, chartXMax];
-            layout.yaxis.range = [chartYMin, chartYMax];
-            const chartDiv = document.getElementById('chart');
-            if (chartDiv && chartDiv.layout) {
-                try { Plotly.relayout('chart', {'xaxis.range': [chartXMin, chartXMax], 'yaxis.range': [chartYMin, chartYMax]}); } catch(e) {}
-            }
-        }
-
-        function resetRadarScale() {
-            vizXMin.value = -600; vizXMax.value = 600; vizYMin.value = -100; vizYMax.value = 650;
-            updateRadarScale();
-        }
-
-        function autoScaleRadar() {
-            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, hasZones = false;
-            const checkZone = (zone) => {
-                if (zone && (zone.x_max !== 0 || zone.x_min !== 0 || zone.y_max !== 0 || zone.y_min !== 0)) {
-                    hasZones = true;
-                    if (zone.x_min < minX) minX = zone.x_min;
-                    if (zone.x_max > maxX) maxX = zone.x_max;
-                    if (zone.y_min < minY) minY = zone.y_min;
-                    if (zone.y_max > maxY) maxY = zone.y_max;
-                }
-            };
-            Object.values(deviceZones.mmwave_detection_areas).forEach(checkZone);
-            Object.values(deviceZones.mmwave_interference_areas).forEach(checkZone);
-            Object.values(deviceZones.mmwave_stay_areas).forEach(checkZone);
-            if (!hasZones) { resetRadarScale(); return; }
-            const buffer = 100;
-            vizXMin.value = Math.round(minX - buffer); vizXMax.value = Math.round(maxX + buffer);
-            vizYMin.value = Math.round(minY - buffer); vizYMax.value = Math.round(maxY + buffer);
-            updateRadarScale();
-        }
-
-        if (vizToggleInterference) vizToggleInterference.addEventListener('change', (e) => { showInterference = e.target.checked; localStorage.setItem('vizShowInterference', showInterference); applyVizSettings(); });
-        if (vizToggleDetection)    vizToggleDetection.addEventListener('change',    (e) => { showDetection    = e.target.checked; localStorage.setItem('vizShowDetection',    showDetection);    applyVizSettings(); });
-        if (vizToggleStay)         vizToggleStay.addEventListener('change',         (e) => { showStay         = e.target.checked; localStorage.setItem('vizShowStay',         showStay);         applyVizSettings(); });
-        if (vizToggleGrid)         vizToggleGrid.addEventListener('change',         (e) => { showGrid         = e.target.checked; localStorage.setItem('vizShowGrid',         showGrid);         applyVizSettings(); });
-        if (vizToggleLabels)       vizToggleLabels.addEventListener('change',       (e) => { showLabels       = e.target.checked; localStorage.setItem('vizShowLabels',       showLabels);       applyVizSettings(); });
-        if (vizToggleZValues)      vizToggleZValues.addEventListener('change',      (e) => { showZValues      = e.target.checked; localStorage.setItem('vizShowZValues',      showZValues);      applyVizSettings(); });
-        if (vizToggleDetection1)   vizToggleDetection1.addEventListener('change',   (e) => { showDetection1   = e.target.checked; localStorage.setItem('vizShowDetection1',   showDetection1);   applyVizSettings(); });
-        if (vizToggleDetection2)   vizToggleDetection2.addEventListener('change',   (e) => { showDetection2   = e.target.checked; localStorage.setItem('vizShowDetection2',   showDetection2);   applyVizSettings(); });
-        if (vizToggleDetection3)   vizToggleDetection3.addEventListener('change',   (e) => { showDetection3   = e.target.checked; localStorage.setItem('vizShowDetection3',   showDetection3);   applyVizSettings(); });
-        if (vizToggleDetection4)   vizToggleDetection4.addEventListener('change',   (e) => { showDetection4   = e.target.checked; localStorage.setItem('vizShowDetection4',   showDetection4);   applyVizSettings(); });
-        if (toggleStayInvert)      toggleStayInvert.addEventListener('change',      (e) => { stayInvertEnabled = e.target.checked; localStorage.setItem('stayInvertEnabled', stayInvertEnabled); });
-        if (toggleAspectLock)      toggleAspectLock.addEventListener('change',      (e) => {
-            lockAspectRatio = e.target.checked;
-            localStorage.setItem('lockAspectRatio', lockAspectRatio);
-            // Explicit relayout with `false` reliably clears the constraint when turned off.
-            try {
-                Plotly.relayout('chart', {
-                    // Re-assert configured ranges so 'domain' letterboxes from the
-                    // intended view (and toggling off restores it cleanly).
-                    'xaxis.range': [chartXMin, chartXMax],
-                    'yaxis.range': [chartYMin, chartYMax],
-                    'yaxis.scaleanchor': lockAspectRatio ? 'x' : false,
-                    'yaxis.scaleratio': 1,
-                    'yaxis.constrain': lockAspectRatio ? 'domain' : 'range',
-                    'xaxis.constrain': lockAspectRatio ? 'domain' : 'range'
-                });
-            } catch(err) {}
-            applyVizSettings();
-        });
-
-        // ---------------------------------------------------------------------------
-        // FOV / Radar geometry
-        // ---------------------------------------------------------------------------
-        const RADAR_FOV_RATED_DEG    = 60;
-        const RADAR_FOV_EXTENDED_DEG = 75;
-        const RADAR_MAX_RANGE        = 600;
-        const RADAR_FOV_RATED_RAD    = RADAR_FOV_RATED_DEG    * Math.PI / 180;
-        const RADAR_FOV_EXTENDED_RAD = RADAR_FOV_EXTENDED_DEG * Math.PI / 180;
-
-        function fovArcPoints(radius, fovRad, numPoints) {
-            const points = [];
-            for (let i = 0; i <= numPoints; i++) {
-                const angle = -fovRad + (2 * fovRad) * (i / numPoints);
-                points.push({ x: radius * Math.sin(angle), y: radius * Math.cos(angle) });
-            }
-            return points;
-        }
-
-        function getRadarShapes() {
-            if (!showGrid) return [];
-            return [{
-                type: 'circle', xref: 'x', yref: 'y', x0: -8, x1: 8, y0: -8, y1: 8,
-                fillcolor: 'rgba(255, 60, 60, 0.9)', line: { color: 'red', width: 1 },
-                editable: false, layer: 'below'
-            }];
-        }
-
-        function getFovTraces() {
-            if (!showGrid) return [];
-            let traces = [];
-            const arcStyle          = { color: 'rgba(255, 255, 255, 0.12)', width: 1, dash: 'dot' };
-            const ratedLineStyle    = { color: 'rgba(255, 255, 255, 0.22)', width: 1.5 };
-            const extendedLineStyle = { color: 'rgba(255, 255, 255, 0.10)', width: 1, dash: 'dash' };
-
-            const extLeftX  = RADAR_MAX_RANGE * Math.sin(-RADAR_FOV_EXTENDED_RAD);
-            const extLeftY  = RADAR_MAX_RANGE * Math.cos(-RADAR_FOV_EXTENDED_RAD);
-            const extRightX = RADAR_MAX_RANGE * Math.sin(RADAR_FOV_EXTENDED_RAD);
-            const extRightY = RADAR_MAX_RANGE * Math.cos(RADAR_FOV_EXTENDED_RAD);
-            traces.push({ x: [0, extLeftX],  y: [0, extLeftY],  mode: 'lines', line: extendedLineStyle, hoverinfo: 'skip', showlegend: false, type: 'scatter' });
-            traces.push({ x: [0, extRightX], y: [0, extRightY], mode: 'lines', line: extendedLineStyle, hoverinfo: 'skip', showlegend: false, type: 'scatter' });
-            const extArc = fovArcPoints(RADAR_MAX_RANGE, RADAR_FOV_EXTENDED_RAD, 50);
-            traces.push({ x: extArc.map(p => p.x), y: extArc.map(p => p.y), mode: 'lines', line: extendedLineStyle, hoverinfo: 'skip', showlegend: false, type: 'scatter' });
-
-            const leftX  = RADAR_MAX_RANGE * Math.sin(-RADAR_FOV_RATED_RAD);
-            const leftY  = RADAR_MAX_RANGE * Math.cos(-RADAR_FOV_RATED_RAD);
-            const rightX = RADAR_MAX_RANGE * Math.sin(RADAR_FOV_RATED_RAD);
-            const rightY = RADAR_MAX_RANGE * Math.cos(RADAR_FOV_RATED_RAD);
-            traces.push({ x: [0, leftX],  y: [0, leftY],  mode: 'lines', line: ratedLineStyle, hoverinfo: 'skip', showlegend: false, type: 'scatter' });
-            traces.push({ x: [0, rightX], y: [0, rightY], mode: 'lines', line: ratedLineStyle, hoverinfo: 'skip', showlegend: false, type: 'scatter' });
-
-            [100, 200, 300, 400, 500, 600].forEach(dist => {
-                const arcPts = fovArcPoints(dist, RADAR_FOV_RATED_RAD, 40);
-                traces.push({ x: arcPts.map(p => p.x), y: arcPts.map(p => p.y), mode: 'lines', line: arcStyle, hoverinfo: 'skip', showlegend: false, type: 'scatter' });
-            });
-
-            traces.push({
-                x: [0, 0, 0, 0, 0, 0], y: [100, 200, 300, 400, 500, 600],
-                mode: 'text', text: ['1m', '2m', '3m', '4m', '5m', '6m'],
-                textfont: { color: 'rgba(255,255,255,0.25)', size: 10 },
-                textposition: 'middle right', hoverinfo: 'skip', showlegend: false, type: 'scatter'
-            });
-            return traces;
-        }
-
-        function dimColor(rgba, newOpacity) {
-            return rgba.replace(/[\d.]+\)$/, newOpacity + ')');
-        }
-
-        function getBackgroundZoneTraces() {
-            if (!isEditingZone) return [];
-            let traces = [];
-            const addZoneTrace = (config, lineColor, fillColor, targetKey) => {
-                if (!config || editingTarget === targetKey) return;
-                traces.push({
-                    x: [config.x_min, config.x_max, config.x_max, config.x_min, config.x_min],
-                    y: [config.y_min, config.y_min, config.y_max, config.y_max, config.y_min],
-                    mode: 'lines', fill: 'toself', fillcolor: fillColor,
-                    line: { color: lineColor, width: 1.5 },
-                    hoverinfo: 'skip', showlegend: false, type: 'scatter'
-                });
-            };
-            if (showDetection) {
-                Object.entries(deviceZones.mmwave_detection_areas).forEach(([areaId, config]) => {
-                    const vis = (areaId==='area1'&&!showDetection1)||(areaId==='area2'&&!showDetection2)||(areaId==='area3'&&!showDetection3)||(areaId==='area4'&&!showDetection4);
-                    if (!vis) {
-                        const color = areaId === 'area1' ? 'rgba(0, 188, 212,' : 'rgba(76, 175, 80,';
-                        addZoneTrace(config, color + '0.25)', color + '0.05)', `mmwave_detection_areas:${areaId}`);
-                    }
-                });
-            }
-            if (showStay)         Object.entries(deviceZones.mmwave_stay_areas).forEach(([id, c])         => addZoneTrace(c, 'rgba(255, 152, 0, 0.25)', 'rgba(255, 152, 0, 0.05)', `mmwave_stay_areas:${id}`));
-            if (showInterference) Object.entries(deviceZones.mmwave_interference_areas).forEach(([id, c]) => addZoneTrace(c, 'rgba(255, 82, 82, 0.25)',  'rgba(255, 82, 82, 0.05)',  `mmwave_interference_areas:${id}`));
-            return traces;
-        }
-
-        function getEditModeTraces() {
-            const chartDiv = document.getElementById('chart');
-            let t0 = { x: [], y: [], mode: 'markers+text', text: [], textposition: 'top center', marker: { color: '#00bcd4', line: {color: 'white', width: 2} }, type: 'scatter' };
-            let t1 = { x: [], y: [], mode: 'lines', line: {color: '#00bcd4', width: 3}, opacity: 0.3, type: 'scatter' };
-            if (chartDiv && chartDiv.data && chartDiv.data.length >= 2) { t0 = chartDiv.data[0]; t1 = chartDiv.data[1]; }
-            return [t0, t1, ...getRecordingTraces(), ...getFovTraces(), ...getBackgroundZoneTraces()];
-        }
-
-        function getRecordingTraces() {
-            const traces = [];
-            const pad = parseInt(document.getElementById('recordingPadding')?.value) || 0;
-            for (let i = 0; i < 3; i++) {
-                const slot = recordingSlots[i];
-                if (slot.buffer.length === 0) continue;
-                traces.push({
-                    x: slot.buffer.map(p => p.x),
-                    y: slot.buffer.map(p => p.y),
-                    mode: 'markers',
-                    marker: { size: 4, color: RECORDING_SLOT_COLORS[i], symbol: 'circle' },
-                    type: 'scatter',
-                    hoverinfo: 'skip',
-                    showlegend: false
-                });
-                if (slot.bounds) {
-                    const xMin = slot.bounds.x_min - pad, xMax = slot.bounds.x_max + pad;
-                    const yMin = slot.bounds.y_min - pad, yMax = slot.bounds.y_max + pad;
-                    traces.push({
-                        x: [xMin, xMax, xMax, xMin, xMin],
-                        y: [yMin, yMin, yMax, yMax, yMin],
-                        mode: 'lines',
-                        line: { color: RECORDING_SLOT_LINE_COLORS[i], width: 2, dash: 'dash' },
-                        type: 'scatter',
-                        hoverinfo: 'skip',
-                        showlegend: false
-                    });
-                }
-            }
-            return traces;
-        }
-
-        function getChartShapes() {
-            let shapes = getRadarShapes();
-            if (isEditingZone) {
-                if (draftZoneConfig && editingTarget) {
-                    let lineColor = 'rgba(0, 188, 212, 0.9)', fillColor = 'rgba(0, 188, 212, 0.2)';
-                    if (editingTarget.startsWith('mmwave_stay'))         { lineColor = 'rgba(255, 152, 0, 0.9)'; fillColor = 'rgba(255, 152, 0, 0.2)'; }
-                    if (editingTarget.startsWith('mmwave_interference'))  { lineColor = 'rgba(255, 82, 82, 0.9)'; fillColor = 'rgba(255, 82, 82, 0.3)'; }
-                    shapes.push(createShapeObj(draftZoneConfig, lineColor, fillColor, true));
-                }
-                return shapes;
-            }
-            if (showDetection) {
-                Object.entries(deviceZones.mmwave_detection_areas).forEach(([areaId, config]) => {
-                    const vis = !((areaId==='area1'&&!showDetection1)||(areaId==='area2'&&!showDetection2)||(areaId==='area3'&&!showDetection3)||(areaId==='area4'&&!showDetection4));
-                    if (vis && config) {
-                        const color = areaId === 'area1' ? 'rgba(0, 188, 212, 0.8)' : 'rgba(76, 175, 80, 0.9)';
-                        shapes.push(createShapeObj(config, color.replace('0.8','0.6').replace('0.9','0.6'), color.replace('0.8','0.1').replace('0.9','0.1'), false));
-                    }
-                });
-            }
-            if (showStay)         Object.entries(deviceZones.mmwave_stay_areas).forEach(([, c])         => { if (c) shapes.push(createShapeObj(c, 'rgba(255, 152, 0, 0.6)', 'rgba(255, 152, 0, 0.1)', false)); });
-            if (showInterference) Object.entries(deviceZones.mmwave_interference_areas).forEach(([, c]) => { if (c) shapes.push(createShapeObj(c, 'rgba(255, 82, 82, 0.6)',  'rgba(255, 82, 82, 0.2)',  false)); });
-            return shapes;
-        }
-
-        function getChartAnnotations() {
-            if (!showLabels) return [];
-            let annotations = [];
-            const addLabel = (config, text, color, targetKey) => {
-                if (!config) return;
-                let c = isEditingZone ? (editingTarget === targetKey ? null : dimColor(color, '0.3')) : color;
-                if (!c) return;
-                let labelText = text;
-                if (showZValues && !isEditingZone) labelText += `<br>Z: ${config.z_min}-${config.z_max}`;
-                annotations.push({
-                    x: (config.x_min + config.x_max) / 2, y: (config.y_min + config.y_max) / 2,
-                    xref: 'x', yref: 'y', text: labelText, showarrow: false,
-                    font: { color: 'white', size: isEditingZone ? 10 : 12, family: 'sans-serif', weight: 'bold' },
-                    bgcolor: c, borderpad: 2, opacity: isEditingZone ? 0.5 : 0.9
-                });
-            };
-            if (showDetection) {
-                Object.entries(deviceZones.mmwave_detection_areas).forEach(([areaId, config]) => {
-                    const vis = !((areaId==='area1'&&!showDetection1)||(areaId==='area2'&&!showDetection2)||(areaId==='area3'&&!showDetection3)||(areaId==='area4'&&!showDetection4));
-                    if (vis) {
-                        const num = areaId.replace('area', '');
-                        const label = areaId === 'area1' ? "D1 (Primary)" : `D${num}`;
-                        const color = areaId === 'area1' ? 'rgba(0, 188, 212, 0.8)' : 'rgba(76, 175, 80, 0.8)';
-                        addLabel(config, label, color, `mmwave_detection_areas:${areaId}`);
-                    }
-                });
-            }
-            if (showStay)         Object.entries(deviceZones.mmwave_stay_areas).forEach(([id, c])         => addLabel(c, `S${id.replace('area','')}`, 'rgba(255, 152, 0, 0.8)', `mmwave_stay_areas:${id}`));
-            if (showInterference) Object.entries(deviceZones.mmwave_interference_areas).forEach(([id, c]) => addLabel(c, `I${id.replace('area','')}`, 'rgba(255, 82, 82, 0.8)', `mmwave_interference_areas:${id}`));
-            return annotations;
-        }
-
-        function createShapeObj(config, lineColor, fillColor, isEditable) {
-            return {
-                type: 'rect',
-                x0: config.x_min, x1: config.x_max, y0: config.y_min, y1: config.y_max,
-                line: { color: lineColor, width: 2, dash: isEditable ? 'dot' : 'solid' },
-                fillcolor: fillColor, editable: isEditable
-            };
-        }
-
-        function sendCommand(actionId) {
-            socket.emit('send_command', actionId);
-            if (actionId === 1 || actionId === 3) {
-                lastCommandId = actionId;
-                packetInfo.innerText = actionId === 1 ? "Scanning for interference..." : "Clearing interference zones...";
-            }
-            if (actionId === 4) packetInfo.innerText = "Resetting detection zones...";
-            if (actionId === 5) packetInfo.innerText = "Clearing stay zones...";
-        }
-
-        document.querySelectorAll('.sidebar input, .sidebar select').forEach(input => {
-            if (!input.hasAttribute('data-param')) return;  // page-only controls (map/editor inputs, toggles, file picker)
-            input.addEventListener('change', function() {
-                socket.emit('update_parameter', { param: this.getAttribute('data-param'), value: this.value });
-            });
-        });
-
-        // ---------------------------------------------------------------------------
-        // Socket event handlers
-        // ---------------------------------------------------------------------------
-
-        socket.on('connect', () => {
-            setWsStatus('connected');
-            hideBanner();
-            socket.emit('request_devices');
-        });
-
-        socket.on('disconnect', () => {
-            setWsStatus('disconnected');
-            showBanner('WebSocket disconnected — reconnecting...', '', null);
-        });
-
-        socket.on('connect_error', () => {
-            setWsStatus('disconnected');
-            showBanner('Connection error — retrying...', '', null);
-        });
-
-        socket.on('reconnect', () => {
-            setWsStatus('connected');
-            showBanner('Reconnected!', 'ok', 3000);
-            socket.emit('request_devices');
-            if (deviceSelect.value) socket.emit('change_device', deviceSelect.value);
-        });
-
-        socket.on('mqtt_status', function(data) {
-            setBackendStatus(data.connected);
-            if (!data.connected) {
-                const label = activeStack === 'zha' ? 'HA WebSocket' : 'MQTT broker';
-                showBanner(`${label} disconnected` + (data.error ? ': ' + data.error : ''), '', null);
-            } else {
-                if (socket.connected) hideBanner();
-            }
-        });
-
-        // New: stack identity from backend
-        socket.on('stack_info', function(data) {
-            applyStack(data.stack);
-        });
-
-        // ZHA-only: custom quirk installation status
-        socket.on('zha_device_info', function(data) {
-            if (activeStack === 'zha' && data.quirk_ok === false) {
-                quirkWarningBanner.style.display = 'block';
-            } else {
-                quirkWarningBanner.style.display = 'none';
-            }
-        });
-
-        // ZHA-only: binding timeout — no data received after selecting a device
-        socket.on('zha_binding_warning', function(data) {
-            if (activeStack === 'zha' && data.show) {
-                bindingWarningBanner.style.display = 'block';
-            } else {
-                bindingWarningBanner.style.display = 'none';
-            }
-        });
-
-        socket.on('command_error', function(data) {
-            showToast('Error: ' + (data.error || 'Unknown error'), 'error', 5000);
-        });
-
-        socket.on('command_ack', function(data) {
-            console.log('Command acknowledged:', data);
-        });
-
-        socket.on('device_list', function(devices) {
-            const currentSelection = deviceSelect.value;
-            deviceSelect.innerHTML = '<option value="" disabled selected>Select an Inovelli Switch</option>';
-            devices.forEach(device => {
-                const option = document.createElement('option');
-                option.value = device.topic;
-                option.text  = device.friendly_name;
-                deviceSelect.appendChild(option);
-            });
-            if (currentSelection) deviceSelect.value = currentSelection;
-
-            // Show ZHA setup banner only when in ZHA mode and list is empty
-            if (activeStack === 'zha' && devices.length === 0) {
-                zhaSetupBanner.style.display = 'block';
-            } else {
-                zhaSetupBanner.style.display = 'none';
-            }
-        });
-
-        deviceSelect.addEventListener('change', function() {
-            socket.emit('change_device', this.value);
-            socket.emit('force_sync');
-
-            statusDiv.innerText  = `Monitoring: ${this.options[this.selectedIndex].text}`;
-            packetInfo.innerText = "Awaiting data...";
-            timestampSpan.innerText = "--:--:--";
-            packetAgeSpan.innerText = "";
-            lastPacketTime = null;
-
-            occupancyVal.innerText = "Waiting..."; occupancyVal.className = "sensor-val badge-clear";
-            illuminanceVal.innerText = "-- lx";
-            for (let i = 1; i <= 4; i++) {
-                const badge = document.getElementById(`area${i}Val`);
-                if (badge) { badge.innerText = "CLEAR"; badge.className = "zone-badge"; }
-            }
-
-            targetHistory = {};
-            zoneReportAt = { mmwave_detection_areas: 0, mmwave_interference_areas: 0, mmwave_stay_areas: 0 };
-            deviceZones = {
-                global: null,
-                mmwave_detection_areas:    { area1: null, area2: null, area3: null, area4: null },
-                mmwave_interference_areas: { area1: null, area2: null, area3: null, area4: null },
-                mmwave_stay_areas:         { area1: null, area2: null, area3: null, area4: null }
-            };
-
-            if (isEditingZone) cancelZoneEdit();
-
-            try { Plotly.update('chart', {x: [[]], y: [[]], text: [[]]}, {shapes: getChartShapes(), annotations: []}); } catch(e) {}
-            dataTableBody.innerHTML = '<tr><td colspan="5" class="no-data">No targets detected</td></tr>';
-            nonMmwaveWarning.style.display    = 'none';
-            targetReportBanner.style.display  = 'none';
-            quirkWarningBanner.style.display   = 'none';
-            bindingWarningBanner.style.display = 'none';
-        });
-
-        function parseZ2MArea(area) {
-            if (!area || typeof area !== 'object') return null;
-            let x0, x1, y0, y1, z0, z1;
-            if ('width_min' in area) {
-                x0 = area.width_min; x1 = area.width_max;
-                y0 = area.depth_min; y1 = area.depth_max;
-            } else if ('x_min' in area) {
-                x0 = area.x_min; x1 = area.x_max;
-                y0 = area.y_min; y1 = area.y_max;
-            } else { return null; }
-            if ('height_min' in area)  { z0 = area.height_min; z1 = area.height_max; }
-            else if ('z_min' in area)  { z0 = area.z_min;      z1 = area.z_max; }
-            else                       { z0 = -300;             z1 = 300; }
-            if (x0 === 0 && x1 === 0 && y0 === 0 && y1 === 0) return null;
-            return { x_min: x0, x_max: x1, y_min: y0, y_max: y1, z_min: z0, z_max: z1 };
-        }
-
-        socket.on('device_config', function(msg) {
-            if (!msg.topic || !msg.payload) return;
-            const config = msg.payload;
-            if (msg.topic !== deviceSelect.value) return;
-
-            updateTimestamp();
-            for (const key of Object.keys(zoneReportAt)) if (key in config) zoneReportAt[key] = Date.now();
-            if ("mmWaveWidthMin" in config) zoneReportAt.mmwave_detection_areas = Date.now();   // legacy flat area 1
-
-            if ("mmWaveWidthMin" in config) {
-                if (!deviceZones.mmwave_detection_areas.area1) deviceZones.mmwave_detection_areas.area1 = { x_min: -100, x_max: 100, y_min: 0, y_max: 600, z_min: -300, z_max: 300 };
-                if ("mmWaveWidthMin"  in config) deviceZones.mmwave_detection_areas.area1.x_min = parseInt(config.mmWaveWidthMin);
-                if ("mmWaveWidthMax"  in config) deviceZones.mmwave_detection_areas.area1.x_max = parseInt(config.mmWaveWidthMax);
-                if ("mmWaveDepthMin"  in config) deviceZones.mmwave_detection_areas.area1.y_min = parseInt(config.mmWaveDepthMin);
-                if ("mmWaveDepthMax"  in config) deviceZones.mmwave_detection_areas.area1.y_max = parseInt(config.mmWaveDepthMax);
-                if ("mmWaveHeightMin" in config) deviceZones.mmwave_detection_areas.area1.z_min = parseInt(config.mmWaveHeightMin);
-                if ("mmWaveHeightMax" in config) deviceZones.mmwave_detection_areas.area1.z_max = parseInt(config.mmWaveHeightMax);
-            }
-
-            if ("mmwave_detection_areas" in config) {
-                const raw = config.mmwave_detection_areas;
-                const areas = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
-                for (let i = 1; i <= 4; i++) deviceZones.mmwave_detection_areas[`area${i}`] = parseZ2MArea(areas[`area${i}`]);
-            }
-            if ("mmwave_interference_areas" in config) {
-                const raw = config.mmwave_interference_areas;
-                const areas = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
-                for (let i = 1; i <= 4; i++) deviceZones.mmwave_interference_areas[`area${i}`] = parseZ2MArea(areas[`area${i}`]);
-                if (lastCommandId === 3 && (!raw || (typeof raw === 'object' && Object.keys(raw).length === 0))) {
-                    packetInfo.innerText = "Interference Cleared";
-                    setTimeout(() => { if (packetInfo.innerText === "Interference Cleared") packetInfo.innerText = "Monitoring..."; }, 2000);
-                    lastCommandId = null;
-                }
-            }
-            if ("mmwave_stay_areas" in config) {
-                const raw = config.mmwave_stay_areas;
-                const areas = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
-                for (let i = 1; i <= 4; i++) deviceZones.mmwave_stay_areas[`area${i}`] = parseZ2MArea(areas[`area${i}`]);
-            }
-
-            if (!isEditingZone) {
-                try { Plotly.relayout('chart', {shapes: getChartShapes(), annotations: getChartAnnotations()}); } catch(e) {}
-            }
-
-            if ("occupancy" in config) {
-                occupancyVal.innerText  = config.occupancy === true ? "DETECTED" : "CLEAR";
-                occupancyVal.className  = config.occupancy === true ? "sensor-val badge-detected" : "sensor-val badge-clear";
-            }
-            if ("illuminance" in config) illuminanceVal.innerText = `${config.illuminance} lx`;
-
-            for (let i = 1; i <= 4; i++) {
-                const badge = document.getElementById(`area${i}Val`);
-                const key   = `mmwave_area${i}_occupancy`;
-                if (key in config && badge) {
-                    if (config[key] === true || config[key] === "ON") {
-                        badge.innerText   = "DETECTED";
-                        badge.className   = "zone-badge zone-active";
-                    } else {
-                        badge.innerText   = "CLEAR";
-                        badge.className   = "zone-badge";
-                    }
-                }
-            }
-
-            if ("mmWaveVersion" in config) {
-                nonMmwaveWarning.style.display    = 'none';
-                configSidebar.style.opacity       = '1';
-                configSidebar.style.pointerEvents = 'auto';
-                btnForceSync.disabled             = false;
-            }
-
-            if ("mmWaveTargetInfoReport" in config) {
-                targetReportBanner.style.display = config.mmWaveTargetInfoReport === 'Enable' ? 'none' : 'block';
-            }
-
-            for (const [key, value] of Object.entries(config)) {
-                const el = document.getElementById(key);
-                if (el) el.value = value;
-            }
-        });
-
-        // ---------------------------------------------------------------------------
-        // Plotly init
-        // ---------------------------------------------------------------------------
-        const layout = {
-            paper_bgcolor: '#1a1a1a', plot_bgcolor: '#1a1a1a',
-            xaxis: { range: [chartXMin, chartXMax], title: 'X - Width (cm)', gridcolor: '#333', zerolinecolor: '#666', fixedrange: true },
-            yaxis: { range: [chartYMin, chartYMax], title: 'Y - Depth (cm)', gridcolor: '#333', zerolinecolor: '#666', fixedrange: true },
-            margin: { t: 10, b: 40, l: 40, r: 40 }, font: { color: '#eee' }, showlegend: false,
-            shapes: getChartShapes(), annotations: getChartAnnotations()
-        };
-
-        const chartConfig = {
-            modeBarButtonsToRemove: ['select2d', 'lasso2d'],
-            displaylogo: false, scrollZoom: false,
-            edits: { shapePosition: false },
-            responsive: true
-        };
-
-        Plotly.newPlot('chart', [
-            { x: [], y: [], mode: 'markers+text', text: [], textposition: 'top center', type: 'scatter' },
-            { x: [], y: [], mode: 'lines', line: {color: '#00bcd4', width: 3}, opacity: 0.3, type: 'scatter' },
-            ...getFovTraces()
-        ], layout, chartConfig);
-
-        setTimeout(applyVizSettings, 100);
-
-        socket.on('zone_config', function(msg) {
-            if (!msg.topic || !msg.payload) return;
-            if (msg.topic !== deviceSelect.value) return;
-            const config = msg.payload;
-            deviceZones.global = { x_min: config.x_min, x_max: config.x_max, y_min: config.y_min, y_max: config.y_max };
-            if (!isEditingZone) {
-                try { Plotly.relayout('chart', {shapes: getChartShapes(), annotations: getChartAnnotations()}); } catch(e) {}
-            }
-        });
-
-        socket.on('interference_zones', function(msg) {
-            if (!msg.topic || !msg.payload || msg.topic !== deviceSelect.value) return;
-            const zones = msg.payload;
-            if (zones.length) zoneReportAt.mmwave_interference_areas = Date.now();
-            for (let i = 0; i < 4; i++) {
-                if (zones[i]) {
-                    const newArea = parseZ2MArea(zones[i]);
-                    if (newArea) {
-                        if (zones[i].z_min !== undefined) newArea.z_min = zones[i].z_min;
-                        if (zones[i].z_max !== undefined) newArea.z_max = zones[i].z_max;
-                        deviceZones.mmwave_interference_areas[`area${i+1}`] = newArea;
-                    }
-                } else {
-                    deviceZones.mmwave_interference_areas[`area${i+1}`] = null;
-                }
-            }
-            if (!isEditingZone) {
-                try { Plotly.relayout('chart', {shapes: getChartShapes(), annotations: getChartAnnotations()}); } catch(e) {}
-            }
-            const statusBox = document.getElementById('zoneStatus');
-            if (lastCommandId !== null) {
-                const active = zones.filter(Boolean).length;   // empty slots arrive as null
-                statusBox.style.display = 'block';
-                statusBox.style.background = active === 0 ? 'rgba(76, 175, 80, 0.9)' : 'rgba(255, 82, 82, 0.9)';
-                statusBox.innerText = active === 0
-                    ? (lastCommandId === 1 ? "✓ Scan Complete: No active interference found." : "✓ Interference Cleared: Zones reset to zero.")
-                    : `⚠ Auto-Config Complete: Found ${active} zone(s).`;
-                setTimeout(() => { statusBox.style.display = 'none'; }, 5000);
-                lastCommandId = null;
-            }
-        });
-
-        socket.on('detection_zones', function(msg) {
-            if (!msg.topic || !msg.payload || msg.topic !== deviceSelect.value) return;
-            const zones = msg.payload;
-            if (zones.length) zoneReportAt.mmwave_detection_areas = Date.now();
-            for (let i = 0; i < 4; i++) {
-                if (zones[i]) {
-                    const newArea = parseZ2MArea(zones[i]);
-                    if (newArea) {
-                        if (zones[i].z_min !== undefined) newArea.z_min = zones[i].z_min;
-                        if (zones[i].z_max !== undefined) newArea.z_max = zones[i].z_max;
-                        deviceZones.mmwave_detection_areas[`area${i+1}`] = newArea;
-                    }
-                } else {
-                    deviceZones.mmwave_detection_areas[`area${i+1}`] = null;
-                }
-            }
-            if (!isEditingZone) {
-                try { Plotly.relayout('chart', {shapes: getChartShapes(), annotations: getChartAnnotations()}); } catch(e) {}
-            }
-        });
-
-        socket.on('stay_zones', function(msg) {
-            if (!msg.topic || !msg.payload || msg.topic !== deviceSelect.value) return;
-            const zones = msg.payload;
-            if (zones.length) zoneReportAt.mmwave_stay_areas = Date.now();
-            for (let i = 0; i < 4; i++) {
-                if (zones[i]) {
-                    const newArea = parseZ2MArea(zones[i]);
-                    if (newArea) {
-                        if (zones[i].z_min !== undefined) newArea.z_min = zones[i].z_min;
-                        if (zones[i].z_max !== undefined) newArea.z_max = zones[i].z_max;
-                        deviceZones.mmwave_stay_areas[`area${i+1}`] = newArea;
-                    }
-                } else {
-                    deviceZones.mmwave_stay_areas[`area${i+1}`] = null;
-                }
-            }
-            if (!isEditingZone) {
-                try { Plotly.relayout('chart', {shapes: getChartShapes(), annotations: getChartAnnotations()}); } catch(e) {}
-            }
-        });
-
-        socket.on('new_data', function(msg) {
-            if (!msg.topic || !msg.payload || msg.topic !== deviceSelect.value) return;
-            const data = msg.payload;
-            updateTimestamp();
-            packetInfo.innerText = `Targets Visible: ${data.targets.length}`;
-            bindingWarningBanner.style.display = 'none';
-
-            // Filter out targets with NaN coordinates to prevent Plotly SVG errors
-            const targets = data.targets.filter(t => !isNaN(t.x) && !isNaN(t.y) && !isNaN(t.z));
-
-            const currentIds = new Set(targets.map(t => t.id));
-            Object.keys(targetHistory).forEach(id => { if (!currentIds.has(Number(id))) delete targetHistory[id]; });
-            targets.forEach(t => {
-                if (!targetHistory[t.id]) targetHistory[t.id] = [];
-                targetHistory[t.id].push({x: t.x, y: t.y});
-                if (targetHistory[t.id].length > HISTORY_LENGTH) targetHistory[t.id].shift();
-            });
-
-            // Recording accumulation into active slot
-            if (isRecording) {
-                const slot = recordingSlots[activeRecordingSlot];
-                if (slot.buffer.length < RECORDING_MAX_POINTS) {
-                    targets.forEach(t => {
-                        if (slot.buffer.length >= RECORDING_MAX_POINTS) return;
-                        slot.buffer.push({x: t.x, y: t.y, z: t.z});
-                        if (!slot.bounds) {
-                            slot.bounds = { x_min: t.x, x_max: t.x, y_min: t.y, y_max: t.y, z_min: t.z, z_max: t.z };
-                        } else {
-                            if (t.x < slot.bounds.x_min) slot.bounds.x_min = t.x;
-                            if (t.x > slot.bounds.x_max) slot.bounds.x_max = t.x;
-                            if (t.y < slot.bounds.y_min) slot.bounds.y_min = t.y;
-                            if (t.y > slot.bounds.y_max) slot.bounds.y_max = t.y;
-                            if (t.z < slot.bounds.z_min) slot.bounds.z_min = t.z;
-                            if (t.z > slot.bounds.z_max) slot.bounds.z_max = t.z;
-                        }
-                    });
-                    document.getElementById('recordingStatus').textContent =
-                        `${slot.buffer.length} pts` + (slot.buffer.length >= RECORDING_MAX_POINTS ? ' (max)' : '');
-                }
-            }
-
-            let historyX = [], historyY = [];
-            Object.values(targetHistory).forEach(points => {
-                points.forEach(p => { historyX.push(p.x); historyY.push(p.y); });
-                historyX.push(null); historyY.push(null);
-            });
-
-            const sizes = targets.map(t => Math.max(8, Math.min(40, 10 + (t.z / 5))));
-
-            const hasRecordingData = isRecording || recordingSlots.some(s => s.buffer.length > 0);
-
-            try {
-                if (isEditingZone) {
-                    if (isInteracting) return;
-                    if (hasRecordingData) {
-                        layout.shapes = getChartShapes();
-                        layout.annotations = getChartAnnotations();
-                        Plotly.react('chart', getEditModeTraces(), layout, chartConfig);
-                    } else {
-                        Plotly.restyle('chart', {
-                            x: [targets.map(t => t.x), historyX],
-                            y: [targets.map(t => t.y), historyY],
-                            text: [targets.map(t => `ID: ${t.id} [Z:${t.z}cm]`), null],
-                            'marker.size': [sizes, null]
-                        }, [0, 1]);
-                    }
-                } else if (hasRecordingData) {
-                    Plotly.react('chart', [
-                        { x: targets.map(t => t.x), y: targets.map(t => t.y), text: targets.map(t => `ID: ${t.id} [Z:${t.z}cm]`), mode: 'markers+text', textposition: 'top center', marker: { size: sizes, color: '#00bcd4', line: {color: 'white', width: 2} }, type: 'scatter' },
-                        { x: historyX, y: historyY, mode: 'lines', line: {color: '#00bcd4', width: 3}, opacity: 0.3, type: 'scatter' },
-                        ...getRecordingTraces(),
-                        ...getFovTraces()
-                    ], layout);
-                } else {
-                    Plotly.react('chart', [
-                        { x: targets.map(t => t.x), y: targets.map(t => t.y), text: targets.map(t => `ID: ${t.id} [Z:${t.z}cm]`), mode: 'markers+text', textposition: 'top center', marker: { size: sizes, color: '#00bcd4', line: {color: 'white', width: 2} }, type: 'scatter' },
-                        { x: historyX, y: historyY, mode: 'lines', line: {color: '#00bcd4', width: 3}, opacity: 0.3, type: 'scatter' },
-                        ...getFovTraces()
-                    ], layout);
-                }
-            } catch(e) { console.warn('Plotly update error', e); }
-
-            if (data.targets.length === 0) {
-                dataTableBody.innerHTML = '<tr><td colspan="5" class="no-data">Scanning for motion...</td></tr>';
-                return;
-            }
-            let tableHtml = '';
-            data.targets.forEach(t => {
-                let dopStatus = "Stationary", dopColor = "#888";
-                if      (t.dop > 10)  { dopStatus = `▲ Moving Away (${t.dop})`;  dopColor = "#ff9800"; }
-                else if (t.dop < -10) { dopStatus = `▼ Approaching (${t.dop})`; dopColor = "#4caf50"; }
-                tableHtml += `<tr><td style="font-weight:bold;color:#00bcd4">${t.id}</td><td>${t.x} cm</td><td>${t.y} cm</td><td>${t.z} cm</td><td style="color:${dopColor};font-weight:bold">${dopStatus}</td></tr>`;
-            });
-            dataTableBody.innerHTML = tableHtml;
-        });
-
-        // ---------------------------------------------------------------------------
-        // Zone editor
-        // ---------------------------------------------------------------------------
-        function startZoneEdit() {
-            const target = zoneEditorSelect.value;
-            if (!target) return;
-            editingTarget = target;
-            isEditingZone = true;
-            btnStartEdit.style.display = 'none';
-
-            let config = null;
-            if (target === 'global') {
-                config = deviceZones.global;
-            } else {
-                const [category, area] = target.split(':');
-                config = deviceZones[category][area];
-            }
-            if (!config) config = { x_min: -100, x_max: 100, y_min: 50, y_max: 250, z_min: -300, z_max: 300 };
-            if (config.z_min === undefined) config.z_min = -300;
-            if (config.z_max === undefined) config.z_max = 300;
-
-            draftZoneConfig = JSON.parse(JSON.stringify(config));
-            zoneEditorRawData.style.display = 'block';
-            updateDraftCoordsText();
-
-            chartConfig.edits.shapePosition = true;
-            layout.shapes = getChartShapes();
-            layout.annotations = getChartAnnotations();
-            try { Plotly.react('chart', getEditModeTraces(), layout, chartConfig); } catch(e) {}
-        }
-
-        document.getElementById('chart').on('plotly_relayout', function(eventData) {
-            if (!isEditingZone) return;
-            if (Object.keys(eventData).some(k => k.includes('shapes['))) {
-                const shapes = document.getElementById('chart').layout.shapes;
-                const activeShape = shapes.find(s => s.editable === true);
-                if (activeShape) {
-                    draftZoneConfig.x_min = Math.round(activeShape.x0);
-                    draftZoneConfig.x_max = Math.round(activeShape.x1);
-                    draftZoneConfig.y_min = Math.round(activeShape.y0);
-                    draftZoneConfig.y_max = Math.round(activeShape.y1);
-                    updateDraftCoordsText();
-                }
-            }
-        });
-
-        function manualZoneUpdate() {
-            if (!isEditingZone) return;
-            draftZoneConfig = {
-                x_min: parseInt(editXMin.value) || 0, x_max: parseInt(editXMax.value) || 0,
-                y_min: parseInt(editYMin.value) || 0, y_max: parseInt(editYMax.value) || 0,
-                z_min: parseInt(editZMin.value) || 0, z_max: parseInt(editZMax.value) || 0,
-            };
-            updateDraftCoordsText();
-            layout.shapes = getChartShapes();
-            try { Plotly.react('chart', getEditModeTraces(), layout, chartConfig); } catch(e) {}
-        }
-
-        function updateDraftCoordsText() {
-            if (draftZoneConfig) {
-                editXMin.value = draftZoneConfig.x_min; editXMax.value = draftZoneConfig.x_max;
-                editYMin.value = draftZoneConfig.y_min; editYMax.value = draftZoneConfig.y_max;
-                editZMin.value = draftZoneConfig.z_min; editZMax.value = draftZoneConfig.z_max;
-            }
-        }
-
-        // Device payload that clears an area slot
-        const EMPTY_AREA = { width_min: 0, width_max: 0, depth_min: 0, depth_max: 0, height_min: 0, height_max: 0 };
-
-        // Device write format for one area. Shared by the zone editor and backup restore.
-        function zoneToDevicePayload(category, zone) {
-            const x_vals = [parseInt(zone.x_min), parseInt(zone.x_max)].sort((a,b)=>a-b);
-            const y_vals = [parseInt(zone.y_min), parseInt(zone.y_max)].sort((a,b)=>a-b);
-            const z_vals = [parseInt(zone.z_min), parseInt(zone.z_max)].sort((a,b)=>a-b);
-
-            // #41: the VZM32-SN firmware mirrors the WIDTH (X) axis on stay areas,
-            // so a normally-entered zone lands inverted and only corrects on a second
-            // apply. When the workaround is on, pre-invert X (negate + swap to keep
-            // min < max) so a single apply stores the intended values. Detection and
-            // interference areas are unaffected.
-            let width_min = x_vals[0], width_max = x_vals[1];
-            if (stayInvertEnabled && category === 'mmwave_stay_areas') {
-                width_min = -x_vals[1];
-                width_max = -x_vals[0];
-            }
-            return {
-                width_min: width_min, width_max: width_max,
-                depth_min: y_vals[0], depth_max: y_vals[1],
-                height_min: z_vals[0], height_max: z_vals[1]
-            };
-        }
-
-        function applyZoneEdit() {
-            if (!draftZoneConfig) return;
-            const [category, area] = editingTarget.split(':');
-            const areaPayload = {};
-            areaPayload[area] = zoneToDevicePayload(category, draftZoneConfig);
-            socket.emit('update_parameter', { param: category, value: areaPayload });
-            endZoneEdit();
-            packetInfo.innerText = "Zone Saved!";
-        }
-
-        function deleteZone() {
-            if (!confirm("Are you sure you want to delete this zone?")) return;
-            const [category, area] = zoneEditorSelect.value.split(':');
-            const areaPayload = {};
-            areaPayload[area] = EMPTY_AREA;
-            socket.emit('update_parameter', { param: category, value: areaPayload });
-            packetInfo.innerText = "Zone Deleted.";
-            endZoneEdit();
-        }
-
-        // --- Zone backup / restore (#52) ---
-        const ZONE_BACKUP_TYPE = 'mmwave_vis_zone_backup';
-        const ZONE_BACKUP_GROUPS = {
-            detection:    'mmwave_detection_areas',
-            interference: 'mmwave_interference_areas',
-            stay:         'mmwave_stay_areas',
-        };
-        const ZONE_GROUP_NAMES = Object.fromEntries(Object.entries(ZONE_BACKUP_GROUPS).map(([g, c]) => [c, g]));
-        const ZONE_KEYS = ['x_min', 'x_max', 'y_min', 'y_max', 'z_min', 'z_max'];
-        const ZONE_RESTORE_GAP_MS = 600;   // space out writes so a slow Zigbee network keeps up
-        const btnExportZones   = document.getElementById('btnExportZones');
-        const btnImportZones   = document.getElementById('btnImportZones');
-        const importZonesFile  = document.getElementById('importZonesFile');
-        const zoneBackupStatus = document.getElementById('zoneBackupStatus');
-        const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-        function selectedDeviceName() {
-            const opt = deviceSelect.options[deviceSelect.selectedIndex];
-            return deviceSelect.value && opt ? opt.text : '';
-        }
-
-        function setBackupBusy(busy) {
-            btnExportZones.disabled = btnImportZones.disabled = busy;
-        }
-
-        // Ask the switch to report all three zone types and wait for each to come back.
-        // Resolves with the zone types that didn't report in time (empty when all did).
-        async function readZonesFromSwitch(timeoutMs = 12000) {
-            const since = Date.now();
-            socket.emit('send_command', 2);   // query_areas
-            await sleep(3000);                // Z2M republishes cached state on unrelated updates; give the real reports time
-            while (Date.now() - since < timeoutMs) {
-                if (Object.values(zoneReportAt).every(t => t > since)) {
-                    await sleep(1500);        // let the last report of the batch land
-                    return [];
-                }
-                await sleep(250);
-            }
-            return Object.keys(zoneReportAt).filter(c => zoneReportAt[c] <= since);
-        }
-
-        async function exportZones() {
-            if (!deviceSelect.value) { showToast('Select a switch first.', 'error'); return; }
-            const topic = deviceSelect.value;
-            setBackupBusy(true);
-            zoneBackupStatus.textContent = 'Reading zones from the switch...';
-            const missing = await readZonesFromSwitch();
-            setBackupBusy(false);
-            if (deviceSelect.value !== topic) { zoneBackupStatus.textContent = ''; return; }
-            if (missing.length) {
-                const names = missing.map(c => ZONE_GROUP_NAMES[c]).join(', ');
-                zoneBackupStatus.textContent = '';
-                showToast(`The switch didn't report its ${names} zones, so nothing was saved. Try again in a moment.`, 'error', 6000);
-                return;
-            }
-
-            const zones = {};
-            let count = 0;
-            for (const [group, category] of Object.entries(ZONE_BACKUP_GROUPS)) {
-                zones[group] = {};
-                for (let i = 1; i <= 4; i++) {
-                    const a = deviceZones[category][`area${i}`];
-                    zones[group][`area${i}`] = a ? Object.fromEntries(ZONE_KEYS.map(k => [k, Math.round(Number(a[k]) || 0)])) : null;
-                    if (a) count++;
-                }
-            }
-
-            const name = selectedDeviceName();
-            const backup = { type: ZONE_BACKUP_TYPE, version: 1, exported: new Date().toISOString(), device: name, stack: activeStack, zones };
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }));
-            const safeName = name.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'switch';
-            link.download = `mmwave-zones-${safeName}-${backup.exported.slice(0, 10)}.json`;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-            zoneBackupStatus.textContent = `Exported ${count} zone${count === 1 ? '' : 's'} from ${name}.`;
-        }
-
-        // Validate a backup file and turn it into an ordered list of area writes.
-        // A zone type missing from the file is left alone on the switch (listed in `skipped`).
-        function parseZoneBackup(text) {
-            let data;
-            try { data = JSON.parse(text); } catch (e) { throw new Error('That file isn\'t valid JSON.'); }
-            if (!data || data.type !== ZONE_BACKUP_TYPE || !data.zones || typeof data.zones !== 'object' || Array.isArray(data.zones)) {
-                throw new Error('That file isn\'t a zone backup from this addon.');
-            }
-            if (data.version !== 1) throw new Error(`Unsupported zone backup version: ${data.version}`);
-
-            const writes = [], skipped = [];
-            for (const [group, category] of Object.entries(ZONE_BACKUP_GROUPS)) {
-                const areas = data.zones[group];
-                if (areas == null) { skipped.push(group); continue; }
-                if (typeof areas !== 'object' || Array.isArray(areas)) throw new Error(`The ${group} zones in that file are malformed.`);
-                for (let i = 1; i <= 4; i++) {
-                    const area = areas[`area${i}`];
-                    if (area == null) {
-                        // Detection area 1 holds the room limits; never wipe it
-                        if (group === 'detection' && i === 1) continue;
-                        writes.push({ category, area: `area${i}`, zone: null });
-                        continue;
-                    }
-                    const zone = {};
-                    for (const k of ZONE_KEYS) {
-                        const v = Number(area[k]);
-                        if (!Number.isInteger(v) || Math.abs(v) > 10000) throw new Error(`Bad ${k} in ${group} area ${i}.`);
-                        zone[k] = v;
-                    }
-                    writes.push({ category, area: `area${i}`, zone });
-                }
-            }
-            if (!writes.length) throw new Error('That backup has no zones in it.');
-            return { data, writes, skipped };
-        }
-
-        importZonesFile.addEventListener('change', async function() {
-            const file = this.files[0];
-            this.value = '';   // so picking the same file again still fires
-            if (!file) return;
-            if (!deviceSelect.value) { showToast('Select a switch first.', 'error'); return; }
-
-            let parsed;
-            try { parsed = parseZoneBackup(await file.text()); }
-            catch (e) { showToast(e.message, 'error', 6000); return; }
-
-            const { data, writes, skipped } = parsed;
-            const source = data.device ? `"${data.device}"` : 'this backup';
-            const saved  = data.exported ? ` (saved ${new Date(data.exported).toLocaleString()})` : '';
-            const zoneCount = writes.filter(w => w.zone).length;
-            const clearCount = writes.length - zoneCount;
-            let msg = `Restore zones from ${source}${saved} onto "${selectedDeviceName()}"?\n\n` +
-                      `${zoneCount} zone${zoneCount === 1 ? '' : 's'} will be written`;
-            if (clearCount) msg += ` and ${clearCount} empty slot${clearCount === 1 ? '' : 's'} cleared`;
-            msg += '.';
-            if (skipped.length) msg += `\n\nNot in the backup, left as they are: ${skipped.join(', ')} zones.`;
-            if (!confirm(msg)) return;
-            restoreZones(writes);
-        });
-
-        function sameZone(a, b) {
-            if (!a || !b) return !a && !b;
-            return ZONE_KEYS.every(k => Number(a[k]) === Number(b[k]));
-        }
-
-        // True when `stored` is `expected` with its width (X) axis mirrored
-        function isMirroredX(stored, expected) {
-            return !!stored && !!expected &&
-                Number(stored.x_min) === -Number(expected.x_max) && Number(stored.x_max) === -Number(expected.x_min) &&
-                ['y_min', 'y_max', 'z_min', 'z_max'].every(k => Number(stored[k]) === Number(expected[k]));
-        }
-
-        async function restoreZones(writes) {
-            if (isEditingZone) endZoneEdit();
-            setBackupBusy(true);
-            const topic = deviceSelect.value;
-            const name = selectedDeviceName();
-            const errors = [];
-            const onError = d => errors.push((d && d.error) || 'Unknown error');
-            socket.on('command_error', onError);
-
-            const finish = (text, ok) => {
-                zoneBackupStatus.textContent = text;
-                showToast(text, ok ? 'success' : 'error', ok ? 5000 : 8000);
-            };
-            // Send one area at a time; returns why it had to stop, or null
-            const send = async (list, label) => {
-                for (let i = 0; i < list.length; i++) {
-                    if (deviceSelect.value !== topic) return 'a different switch was selected';
-                    if (!socket.connected) return 'the connection to the addon dropped';
-                    if (errors.length) return `the switch rejected a write (${errors[0]})`;
-                    const w = list[i];
-                    socket.emit('update_parameter', { param: w.category, value: { [w.area]: w.payload } });
-                    zoneBackupStatus.textContent = `${label} ${i + 1}/${list.length}`;
-                    await sleep(ZONE_RESTORE_GAP_MS);
-                }
-                return errors.length ? `the switch rejected a write (${errors[0]})` : null;
-            };
-            const slotName = w => `${ZONE_GROUP_NAMES[w.category]} area ${w.area.slice(4)}`;
-            const current = w => deviceZones[w.category][w.area];
-            const isStayMirror = w => w.category === 'mmwave_stay_areas' && !!w.zone && isMirroredX(current(w), w.zone);
-            const started = Date.now();
-
-            // Re-read the switch until every slot in `list` has held the same value on two reads in a row
-            // and `accept` is happy with it, or time runs out. Returns the zone types that never reported.
-            // Firmware 1.02 takes ~6 s to apply a zone write, and after a stay write it briefly reports
-            // the raw value before the mirrored one, so a single read can be misleading.
-            const settle = async (list, accept, timeoutMs = 45000) => {
-                const deadline = Date.now() + timeoutMs;
-                let prev = null;
-                await sleep(3000);
-                while (true) {
-                    zoneBackupStatus.textContent = `Checking the switch... (${Math.round((Date.now() - started) / 1000)}s)`;
-                    const missing = await readZonesFromSwitch();
-                    if (deviceSelect.value !== topic) return [];
-                    const snap = list.map(w => JSON.stringify(current(w)));
-                    const steady = prev !== null && snap.every((v, i) => v === prev[i]);
-                    if (!missing.length && steady && list.every(accept)) return [];
-                    if (Date.now() > deadline) return missing;
-                    prev = snap;
-                }
-            };
-
-            try {
-                const sent = writes.map(w => ({ ...w, payload: w.zone ? zoneToDevicePayload(w.category, w.zone) : EMPTY_AREA }));
-                let stopped = await send(sent, 'Restoring zones...');
-                if (stopped) return finish(`Restore stopped because ${stopped}. Some zones may not have been written.`, false);
-
-                let missing = await settle(sent, w => sameZone(current(w), w.zone) || isStayMirror(w));
-
-                // Firmware with the stay-area bug stores the width axis mirrored; send those once more, flipped
-                const flipped = missing.length ? [] : sent.filter(isStayMirror);
-                if (flipped.length && deviceSelect.value === topic) {
-                    const again = flipped.map(w => ({ ...w, payload: { ...w.payload, width_min: -w.payload.width_max, width_max: -w.payload.width_min } }));
-                    stopped = await send(again, 'Fixing mirrored stay zones...');
-                    if (stopped) return finish(`Restore stopped because ${stopped}. Some zones may not have been written.`, false);
-                    missing = await settle(again, w => sameZone(current(w), w.zone));
-                }
-
-                if (deviceSelect.value !== topic) return finish('Restore stopped because a different switch was selected.', false);
-                if (missing.length) {
-                    const names = missing.map(c => ZONE_GROUP_NAMES[c]).join(', ');
-                    return finish(`Zones were sent, but the switch didn't report its ${names} zones back, so the restore couldn't be checked. Use Force Sync to look.`, false);
-                }
-                const wrong = writes.filter(w => !sameZone(current(w), w.zone));
-                if (wrong.length) return finish(`Restore finished, but ${wrong.length} slot${wrong.length === 1 ? '' : 's'} don't match the backup: ${wrong.map(slotName).join(', ')}.`, false);
-
-                let text = `Restored and checked ${writes.length} zone slots on ${name}.`;
-                if (flipped.length) text += ' This switch mirrors stay zones, so they were re-sent flipped. Turning on the stay-area auto-correct in the Zone Editor makes manual edits land right too.';
-                finish(text, true);
-            } finally {
-                socket.off('command_error', onError);
-                setBackupBusy(false);
-            }
-        }
-
-        function toggleRecording() {
-            if (isRecording) { stopRecording(); } else { startRecording(); }
-        }
-
-        function startRecording() {
-            activeRecordingSlot = parseInt(document.getElementById('recordingSlotSelect').value);
-            isRecording = true;
-            recordingSlots[activeRecordingSlot] = { buffer: [], bounds: null };
-            const btn = document.getElementById('btnRecord');
-            btn.classList.add('recording-active');
-            btn.innerHTML = '&#9632; Stop Recording';
-            document.getElementById('recordingSlotSelect').disabled = true;
-            document.getElementById('recordingStatus').textContent = '0 points';
-        }
-
-        function stopRecording() {
-            isRecording = false;
-            const btn = document.getElementById('btnRecord');
-            btn.classList.remove('recording-active');
-            btn.innerHTML = '&#9679; Record Movement';
-            document.getElementById('recordingSlotSelect').disabled = false;
-            const slot = recordingSlots[activeRecordingSlot];
-            document.getElementById('recordingStatus').textContent =
-                slot.buffer.length > 0 ? `Slot ${activeRecordingSlot + 1}: ${slot.buffer.length} pts` : 'No points recorded';
-            updateSlotInfo();
-        }
-
-        function applySlotToZone() {
-            const idx = parseInt(document.getElementById('recordingSlotSelect').value);
-            const slot = recordingSlots[idx];
-            if (!slot.bounds) { alert('Slot ' + (idx + 1) + ' has no recorded data.'); return; }
-            if (!isEditingZone || !draftZoneConfig) { alert('Open a zone in the Zone Editor first, then apply.'); return; }
-            const pad = parseInt(document.getElementById('recordingPadding').value) || 0;
-            draftZoneConfig.x_min = slot.bounds.x_min - pad;
-            draftZoneConfig.x_max = slot.bounds.x_max + pad;
-            draftZoneConfig.y_min = slot.bounds.y_min - pad;
-            draftZoneConfig.y_max = slot.bounds.y_max + pad;
-            draftZoneConfig.z_min = slot.bounds.z_min - pad;
-            draftZoneConfig.z_max = slot.bounds.z_max + pad;
-            updateDraftCoordsText();
-            layout.shapes = getChartShapes();
-            try { Plotly.react('chart', getEditModeTraces(), layout, chartConfig); } catch(e) {}
-        }
-
-        function clearSlot() {
-            if (isRecording) return;
-            const idx = parseInt(document.getElementById('recordingSlotSelect').value);
-            recordingSlots[idx] = { buffer: [], bounds: null };
-            document.getElementById('recordingStatus').textContent = '';
-            updateSlotInfo();
-        }
-
-        function updateSlotInfo() {
-            const parts = [];
-            for (let i = 0; i < 3; i++) {
-                const n = recordingSlots[i].buffer.length;
-                if (n > 0) parts.push('Slot ' + (i + 1) + ': ' + n + ' pts');
-            }
-            document.getElementById('recordingSlotInfo').textContent = parts.length > 0 ? parts.join(' · ') : 'No recordings yet.';
-        }
-
-        function cancelZoneEdit() {
-            endZoneEdit();
-            socket.emit('force_sync');
-        }
-
-        // --- Z-Wave packet capture (diagnostic) ---
-        const zwcPanel    = document.getElementById('zwCapturePanel');
-        const zwcButton   = document.getElementById('zwCaptureBtn');
-        const zwcStatus   = document.getElementById('zwcStatus');
-        const zwcDevices  = document.getElementById('zwcDevices');
-        const zwcStart    = document.getElementById('zwcStart');
-        const zwcStop     = document.getElementById('zwcStop');
-        const zwcDownload = document.getElementById('zwcDownload');
-        zwcDownload.href  = INGRESS_PATH + '/zwave_capture.log';
-
-        function toggleZwCapture(open) {
-            const show = open ?? zwcPanel.style.display !== 'block';
-            // Banners above the header shift it down; open just below the button
-            if (show) zwcPanel.style.top = (zwcButton.getBoundingClientRect().bottom + 6) + 'px';
-            zwcPanel.style.display = show ? 'block' : 'none';
-            if (show) socket.emit('zwave_capture_status');
-        }
-        zwcButton.addEventListener('click', () => toggleZwCapture());
-        document.getElementById('zwcClose').addEventListener('click', () => toggleZwCapture(false));
-        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && zwcPanel.style.display === 'block') toggleZwCapture(false); });
-        zwcStart.addEventListener('click', () => socket.emit('zwave_capture_start'));
-        zwcStop.addEventListener('click', () => socket.emit('zwave_capture_stop'));
-
-        function fmtDuration(s) { return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
-
-        socket.on('zwave_capture_status', function(st) {
-            const running = ['starting', 'capturing', 'stopping'].includes(st.state);
-            zwcStart.disabled    = running;
-            zwcStart.textContent = st.has_data ? 'Start new capture' : 'Start';
-            zwcStop.disabled     = !['starting', 'capturing'].includes(st.state);
-            zwcDownload.classList.toggle('zwc-disabled', !st.has_data);
-            zwcButton.classList.toggle('recording', running);
-
-            const counts = `${st.lines.toLocaleString()} lines, ${st.proprietary} Manufacturer Proprietary`;
-            let text;
-            switch (st.state) {
-                case 'starting':  text = 'Connecting to Z-Wave JS...'; break;
-                case 'capturing': text = `● Capturing ${fmtDuration(st.elapsed)} / ${fmtDuration(st.max_duration)} (${counts})`; break;
-                case 'stopping':  text = 'Stopping...'; break;
-                case 'stopped':   text = `Finished after ${fmtDuration(st.elapsed)} (${counts})`; break;
-                case 'error':     text = `Error: ${st.error}` + (st.lines ? ` (${counts})` : ''); break;
-                default:          text = 'Idle.';
-            }
-            if (st.note) text += ' ' + st.note;
-            zwcStatus.textContent = text;
-            zwcStatus.className = 'zwc-status' + (st.state === 'error' ? ' zwc-error' : st.state === 'capturing' ? ' zwc-live' : '');
-
-            if (st.devices && st.devices.length) {
-                zwcDevices.textContent = 'Inovelli nodes: ' + st.devices.map(d =>
-                    `node ${d.node_id ?? '?'} ${d.model}${d.firmware ? ' fw ' + d.firmware : ''}`).join(', ');
-            } else {
-                zwcDevices.textContent = st.entry_title ? 'No Inovelli devices found on this Z-Wave network.' : '';
-            }
-        });
-
-        function endZoneEdit() {
-            isEditingZone  = false;
-            editingTarget  = null;
-            draftZoneConfig = null;
-            zoneEditorRawData.style.display = 'none';
-            btnStartEdit.style.display = 'block';
-            chartConfig.edits.shapePosition = false;
-            layout.shapes      = getChartShapes();
-            layout.annotations = getChartAnnotations();
-            try {
-                Plotly.react('chart', [
-                    { x: [], y: [], mode: 'markers+text', text: [], textposition: 'top center', marker: { color: '#00bcd4', line: {color: 'white', width: 2} }, type: 'scatter' },
-                    { x: [], y: [], mode: 'lines', line: {color: '#00bcd4', width: 3}, opacity: 0.3, type: 'scatter' },
-                    ...getFovTraces()
-                ], layout, chartConfig);
-            } catch(e) {}
-        }
-    </script>
 </body>
 </html>

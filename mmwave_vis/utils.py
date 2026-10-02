@@ -94,6 +94,59 @@ def validate_parameter(param, value):
     return False, f"Unknown parameter type: {ptype}"
 
 
+LAYOUT_COORD_RANGE = ZONE_COORD_RANGE[1]   # cm, same bound as zone coordinates
+ROOM_KEYS = ('x_min', 'x_max', 'y_min', 'y_max')
+
+
+def layout_key(topic, ieee=None):
+    """Storage key for a switch's room layout: its IEEE address when known
+    (survives renaming the switch, and is the same on ZHA and Z2M), else its topic."""
+    if isinstance(ieee, str) and ieee:
+        return f"ieee:{ieee.lower()}"
+    return topic
+
+
+def _layout_number(value, name):
+    # bool is an int subclass; a JSON true/false is never a coordinate
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
+        raise ValueError(f"{name} must be a number")
+    if abs(value) > LAYOUT_COORD_RANGE:
+        raise ValueError(f"{name}={value} out of range")
+    return value
+
+
+def normalize_layout(layout):
+    """Check a room layout from the page and return a cleaned copy.
+
+    A layout places the switch in its room for display only: `x`/`y` are where
+    the switch sits (cm), `rot` the way it faces (degrees, counter-clockwise),
+    and `room` is an optional wall outline `{x_min, x_max, y_min, y_max}`.
+    Returns (layout, None) or (None, error message). Unknown keys are dropped.
+    """
+    if not isinstance(layout, dict):
+        return None, "Layout must be an object"
+    try:
+        clean = {
+            'x':   round(_layout_number(layout.get('x', 0), 'x')),
+            'y':   round(_layout_number(layout.get('y', 0), 'y')),
+            'rot': round(_layout_number(layout.get('rot', 0), 'rot') % 360, 1),
+            'room': None,
+        }
+        room = layout.get('room')
+        if room is not None:
+            if not isinstance(room, dict):
+                raise ValueError("room must be an object or null")
+            r = {k: round(_layout_number(room.get(k), f"room.{k}")) for k in ROOM_KEYS}
+            if r['x_min'] >= r['x_max'] or r['y_min'] >= r['y_max']:
+                raise ValueError("room min values must be below max values")
+            clean['room'] = r
+    except ValueError as e:
+        return None, str(e)
+    if clean['rot'] == 360:   # 359.96 rounds up
+        clean['rot'] = 0
+    return clean, None
+
+
 def safe_int(value, default=0):
     """Safely convert a value to int, returning default on failure."""
     try:

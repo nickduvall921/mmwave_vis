@@ -76,6 +76,9 @@ MQTT_BASE_TOPIC = (
     or 'zigbee2mqtt'
 )
 HA_URL          = _cfg('ha_url',          'HA_URL',          'http://supervisor')
+# Where room layouts are saved. /data persists across addon updates (and is the
+# mapped volume in the standalone Docker setup).
+DATA_DIR        = os.environ.get('DATA_DIR', '/data')
 
 # MQTT TLS/SSL (for standalone Docker users with TLS-enabled brokers)
 MQTT_USE_TLS      = _as_bool(_cfg('mqtt_use_tls',      'MQTT_USE_TLS',      False))
@@ -142,7 +145,11 @@ session_topics_lock = threading.Lock()
 from utils import (
     VALID_PARAMETERS, VALID_ZONE_KEYS, ZONE_COORD_RANGE,
     validate_parameter, safe_int, decode_raw_targets, decode_raw_zones,
+    normalize_layout, layout_key,
 )
+from layout_store import LayoutStore
+
+layout_store = LayoutStore(os.path.join(DATA_DIR, 'layouts.json'))
 
 
 # ---------------------------------------------------------------------------
@@ -154,10 +161,11 @@ def get_sessions_for_topic(topic):
         return [sid for sid, t in session_topics.items() if t == topic]
 
 
-def emit_to_topic_subscribers(event, data, topic):
+def emit_to_topic_subscribers(event, data, topic, skip_sid=None):
     """Emit a socket.io event to all sessions currently watching a given device."""
     for sid in get_sessions_for_topic(topic):
-        socketio.emit(event, data, to=sid)
+        if sid != skip_sid:
+            socketio.emit(event, data, to=sid)
 
 
 # ===========================================================================
@@ -172,6 +180,7 @@ class Z2MDriver:
         self.device_list      = {}
         self.device_list_lock = threading.Lock()
         self.mqtt_connected   = False
+        self._ieee_by_name    = {}   # from Z2M's retained bridge/devices list
 
         self._client = mqtt.Client()
         if MQTT_USERNAME and MQTT_PASSWORD:
@@ -203,6 +212,25 @@ class Z2MDriver:
     def get_device_list_snapshot(self):
         with self.device_list_lock:
             return [dict(d) for d in self.device_list.values()]
+
+    def _remember_ieee(self, devices):
+        # Friendly names can be changed in Z2M; the IEEE address can't, so room
+        # layouts are keyed by it when Z2M has told us the mapping.
+        names = {
+            d['friendly_name']: d['ieee_address']
+            for d in devices
+            if isinstance(d, dict) and isinstance(d.get('friendly_name'), str)
+            and isinstance(d.get('ieee_address'), str)
+        }
+        with self.device_list_lock:
+            self._ieee_by_name = names
+
+    def ieee_for_topic(self, topic):
+        prefix = f"{MQTT_BASE_TOPIC}/"
+        if not isinstance(topic, str) or not topic.startswith(prefix):
+            return None
+        with self.device_list_lock:
+            return self._ieee_by_name.get(topic[len(prefix):])
 
     def set_device(self, sid, new_topic):
         with session_topics_lock:
@@ -379,6 +407,9 @@ class Z2MDriver:
                 payload = json.loads(payload_str)
             except json.JSONDecodeError:
                 return
+            if topic == f"{MQTT_BASE_TOPIC}/bridge/devices" and isinstance(payload, list):
+                self._remember_ieee(payload)
+                return
             if not isinstance(payload, dict):
                 return
 
@@ -423,9 +454,12 @@ class Z2MDriver:
                 print(f"Z2M: device discovery error for {topic}: {e}", flush=True)
 
             # --- Identify device ---
+            # Exact topic only: <device>/set and <device>/get are this addon's own
+            # commands echoed back by the broker (not switch state), and a prefix
+            # match would also hand "Hall Switch 2" messages to "Hall Switch".
             with self.device_list_lock:
                 fname = next(
-                    (n for n, d in self.device_list.items() if topic.startswith(d['topic'])),
+                    (n for n, d in self.device_list.items() if topic == d['topic']),
                     None
                 )
                 if not fname:
@@ -620,24 +654,39 @@ class ZHADriver:
         else:
             print(f"ZHA: unknown topic {new_topic}", flush=True)
 
-    def update_parameter(self, sid, param, value):
+    def _target_session_device(self, sid):
+        """IEEE of the switch this browser has selected, made the monitored one.
+
+        ZHAClient watches a single switch for every browser, and its writes go to
+        that switch. If another browser has since selected a different one, point
+        it back at this browser's switch so a command never lands on the wrong device.
+        Returns None (after telling the browser) when no known switch is selected.
+        """
         with session_topics_lock:
             topic = session_topics.get(sid)
         if not topic:
             socketio.emit('command_error', {'error': 'No device selected'}, to=sid)
-            return
+            return None
+        ieee = self._topic_to_ieee(topic)
+        if not ieee or ieee not in self._zha.device_list:
+            socketio.emit('command_error', {'error': 'Device not found'}, to=sid)
+            return None
+        if self._zha._ieee != ieee:
+            self._zha.set_device(ieee, topic, sid=sid)
+        return ieee
+
+    def update_parameter(self, sid, param, value):
         is_valid, error_msg = validate_parameter(param, value)
         if not is_valid:
             socketio.emit('command_error', {'error': error_msg}, to=sid)
+            return
+        if not self._target_session_device(sid):
             return
         self._zha.update_parameter(param, value)
         socketio.emit('command_ack', {'param': param, 'status': 'sent'}, to=sid)
 
     def send_command(self, sid, cmd_action):
-        with session_topics_lock:
-            topic = session_topics.get(sid)
-        if not topic:
-            socketio.emit('command_error', {'error': 'No device selected'}, to=sid)
+        if not self._target_session_device(sid):
             return
         try:
             self._zha.send_control_command(int(cmd_action))
@@ -650,11 +699,12 @@ class ZHADriver:
             topic = session_topics.get(sid)
         if not topic:
             return  # No device selected yet — silent, expected on page load
-        ieee = self._topic_to_ieee(topic)
-        if not ieee:
-            socketio.emit('command_error', {'error': 'Device not found'}, to=sid)
+        if not self._target_session_device(sid):
             return
         self._zha.force_sync(sid=sid)
+
+    def ieee_for_topic(self, topic):
+        return self._topic_to_ieee(topic) if isinstance(topic, str) else None
 
     def _topic_to_ieee(self, topic: str):
         """Reverse-lookup IEEE address from a zha/<ieee> topic string."""
@@ -721,8 +771,10 @@ def _read_addon_version():
         pass
     return 'unknown'
 
+ADDON_VERSION = _read_addon_version()
+
 from zwave_capture import ZWaveCapture
-zwave_capture = ZWaveCapture(HA_URL, HA_TOKEN, socketio, addon_version=_read_addon_version())
+zwave_capture = ZWaveCapture(HA_URL, HA_TOKEN, socketio, addon_version=ADDON_VERSION)
 
 
 # ===========================================================================
@@ -753,9 +805,52 @@ def handle_request_devices():
     emit('device_list', driver.get_device_list_snapshot())
 
 
+def _layout_key(topic):
+    # By IEEE address when known, so a layout survives renaming the switch
+    return layout_key(topic, driver.ieee_for_topic(topic))
+
+
+def _get_layout(topic):
+    layout = layout_store.get(_layout_key(topic))
+    # A layout saved before Z2M told us the switch's IEEE address is under its topic
+    return layout if layout is not None else layout_store.get(topic)
+
+
 @socketio.on('change_device')
 def handle_change_device(new_topic):
     driver.set_device(request.sid, new_topic)
+    if isinstance(new_topic, str) and new_topic:
+        emit('layout', {'topic': new_topic, 'layout': _get_layout(new_topic)})
+
+
+@socketio.on('save_layout')
+def handle_save_layout(data):
+    """Save where a switch sits in its room (display only). A null layout removes it.
+
+    The return value is the socket.io acknowledgement the page waits for.
+    Other pages watching the same switch get the new layout straight away.
+    """
+    if not isinstance(data, dict):
+        return {'error': 'Bad layout message'}
+    topic = data.get('topic')
+    if not isinstance(topic, str) or not topic:
+        return {'error': 'Layout needs a switch'}
+    layout = None
+    if data.get('layout') is not None:
+        layout, error = normalize_layout(data['layout'])
+        if error:
+            return {'error': error}
+    key = _layout_key(topic)
+    error = layout_store.set(key, layout)
+    if error:
+        return {'error': error}
+    if key != topic and layout_store.get(topic) is not None:
+        layout_store.set(topic, None)   # moved to the IEEE key
+    emit_to_topic_subscribers('layout', {'topic': topic, 'layout': layout}, topic, skip_sid=request.sid)
+    ack = {'ok': True, 'layout': layout}
+    if layout_store.write_error:
+        ack['warning'] = layout_store.write_error
+    return ack
 
 
 @socketio.on('update_parameter')
@@ -798,6 +893,7 @@ def index():
         'index.html',
         ingress_path=request.headers.get('X-Ingress-Path', ''),
         zigbee_stack=ZIGBEE_STACK,
+        version=ADDON_VERSION,
     )
 
 

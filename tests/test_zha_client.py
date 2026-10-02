@@ -79,6 +79,21 @@ class TestTranslateStateEnumIntegerInput:
         assert translate("1.0", _REVERSE_TARGET_INFO) == "Enable"
 
 
+class TestTranslateStateSwitchInput:
+    """
+    The Visualizer quirk exposes target info report as a ZHA switch entity,
+    whose state is "on" / "off". Before this was handled the value was dropped,
+    so the page always showed target reporting as off and never warned when it
+    really was off.
+    """
+
+    def test_target_info_switch_on(self):
+        assert translate("on", _REVERSE_TARGET_INFO) == "Enable"
+
+    def test_target_info_switch_off(self):
+        assert translate("off", _REVERSE_TARGET_INFO) == "Disable (default)"
+
+
 class TestTranslateStateEnumDisplayStringInput:
     """
     ZHA select entities report state as the option display string directly
@@ -130,10 +145,11 @@ class TestTranslateStateEnumBadInput:
     def test_ha_unknown_state(self):
         assert translate("unknown", _REVERSE_TARGET_INFO) is None
 
-    def test_on_off_strings_rejected(self):
-        # "on"/"off" are not valid display strings for any enum param
-        assert translate("on",  _REVERSE_TARGET_INFO) is None
-        assert translate("off", _REVERSE_TARGET_INFO) is None
+    def test_on_off_strings_rejected_for_other_params(self):
+        # Only target info report is a switch entity; "on"/"off" means nothing elsewhere
+        assert translate("on",  _REVERSE_SENSITIVITY) is None
+        assert translate("off", _REVERSE_WIRED_DEVICE) is None
+        assert translate("on",  None) is None
 
     def test_empty_string_returns_none(self):
         assert translate("", _REVERSE_TARGET_INFO) is None
@@ -466,3 +482,65 @@ def test_zone_report_missing_areas_are_empty():
     client = _zone_client()
     client._on_zone_report("interference_zones", {"count": 0})
     assert client.socketio.emit.call_args[0][1]["payload"] == [None, None, None, None]
+
+
+# ===========================================================================
+# _sync_entity_states — only the selected switch's own entities
+# ===========================================================================
+
+def test_entity_sync_ignores_another_switchs_entities():
+    # Two VZM32-SN switches share every entity suffix; the selected one's values must win
+    client = ZHAClient("http://supervisor", "token", MagicMock())
+    client._topic = "zha/kitchen"
+    client.device_list = {
+        "kitchen": {"ha_device_id": "dev-k", "entity_ids": ["switch.kitchen_mmwave_target_info_report"]},
+        "office":  {"ha_device_id": "dev-o", "entity_ids": ["switch.office_mmwave_target_info_report"]},
+    }
+    client._rest_get = lambda path: [
+        {"entity_id": "switch.kitchen_mmwave_target_info_report", "state": "on"},
+        {"entity_id": "switch.office_mmwave_target_info_report",  "state": "off"},
+    ]
+    client._sync_entity_states("dev-k", None)
+    payload = client.socketio.emit.call_args[0][1]["payload"]
+    assert payload == {"mmWaveTargetInfoReport": "Enable"}
+
+
+def test_entity_sync_without_registry_falls_back_to_suffix_match():
+    client = ZHAClient("http://supervisor", "token", MagicMock())
+    client._topic = "zha/kitchen"
+    client.device_list = {"kitchen": {"ha_device_id": "dev-k"}}
+    client._rest_get = lambda path: [{"entity_id": "number.kitchen_mmwave_hold_time", "state": "45"}]
+    client._sync_entity_states("dev-k", None)
+    assert client.socketio.emit.call_args[0][1]["payload"] == {"mmWaveHoldTime": 45}
+
+
+# ===========================================================================
+# Re-reading zones after a write (ZHA never reports zone changes on its own)
+# ===========================================================================
+
+def _requery_client():
+    client = _zone_client()
+    client.REQUERY_DELAY_S = 0.05
+    client._issue_command = MagicMock()
+    client.query_areas = MagicMock()
+    return client
+
+
+def test_zone_writes_requery_once_after_a_burst():
+    import time
+    client = _requery_client()
+    for _ in range(3):
+        client.update_parameter("mmwave_detection_areas", {"area2": _area(0, 100, 0, 100, 0, 100)})
+    time.sleep(0.3)
+    assert client.query_areas.call_count == 1
+
+
+def test_clear_and_reset_commands_requery_but_the_scan_does_not():
+    import time
+    client = _requery_client()
+    client.send_control_command(1)
+    time.sleep(0.2)
+    assert client.query_areas.call_count == 0
+    client.send_control_command(3)
+    time.sleep(0.2)
+    assert client.query_areas.call_count == 1
