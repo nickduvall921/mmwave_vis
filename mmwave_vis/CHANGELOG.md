@@ -1,6 +1,42 @@
 # Changelog
 
 
+## [4.0.0] - 2026-10-07
+
+### Changed
+- New interface. The map is now drawn by the addon itself instead of Plotly, so the page no longer downloads 4.6 MB from cdn.plot.ly, and it stays smooth while people are being tracked.
+- Settings moved into three tabs: Zones, Switch settings (anything sent to the switch) and Display (anything that only changes the page).
+- Target reporting is an on/off switch at the top of Switch settings.
+- Zones are listed with their sizes. Click one on the map or in the list to edit it, and use Add area to pick a free slot.
+- The map always shows true scale. The "Lock square aspect ratio" toggle is gone because the map no longer stretches.
+- Setup problems, connection drops and command results show above the map or as short pop-up messages instead of banners, pop-ups and browser alerts.
+- The Movement recorder's "Apply to zone" is now "Use recording" inside the zone editor.
+- The Z-Wave packet capture moved into the ⋮ menu.
+- Light theme follows your system setting.
+- Built for phones as well as desktops: square map, larger drag handles, Save and Cancel on the map while editing.
+- Bumped version to 4.0.0.
+
+### Added
+- Room layout (Display tab): drag the switch to where it sits, turn it the way it faces and draw your walls. Zones, people and the field of view move with it. Layouts are saved in the addon's `/data` folder against the switch's IEEE address, so every browser sees the same one and renaming the switch keeps it. If the addon can't write that folder, the page says the layout will be lost on restart. Nothing is sent to the switch.
+- Zoom and pan on the map (scroll or pinch, drag to move), plus zoom, Fit zones and Full range buttons on the map. The buttons can be hidden in the Display tab.
+- Saving or deleting a zone shows the change on the map straight away (dashed until the switch confirms it). The page asks the switch for its zones until the change shows up, so you no longer need to press Sync. If the change hasn't shown up after 18 seconds it is sent once more, and the page tells you if the switch never confirms. If the switch flips a stay zone, a notice above the map says so, with a button that turns on "Correct mirrored stay zones" and sends the zone again where you drew it.
+- Hover coordinates on the map, in the switch's own centimetres.
+- Save map image (⋮ menu), replacing Plotly's download button.
+- Detection areas fill in on the map while someone is in them.
+- The addon remembers the last switch you looked at and opens it again, or opens the only switch there is. On ZHA with more than one switch it waits for you to pick, because the addon follows one ZHA switch at a time and opening the page elsewhere would take it over.
+
+### Fixed
+- After the addon restarted or the connection dropped, the page reconnected but stopped receiving data until you picked the switch again. It now picks the switch back up as soon as the addon finds it again.
+- Clear interference, Reset detection areas and Clear stay areas now ask before wiping zones.
+- On ZHA, target reporting always showed as off, because the quirk exposes it as an on/off switch the addon didn't read. The setting now shows its real value, and the "target reporting is off" reminder works on ZHA.
+- On ZHA the light level was never sent, so the empty Light reading is hidden there for now.
+- On ZHA with the page open in two places, a zone save, interference command or Sync could go to the switch the other page had open. They now always go to the switch shown on the page that sent them.
+- On ZHA the map updates by itself a few seconds after a zone save, Clear interference, Reset detection areas or Clear stay areas, without pressing Sync.
+- On ZHA, settings from another device's entities could show up for the selected switch.
+- The switch stores some zone edges 1 cm lower than they were sent (it keeps them as 32-bit floats in metres, so 105 comes back as 104 and 499 as 498). A backup restore reported those slots as not matching the backup, and a zone saved like that was never confirmed. Both now allow 1 cm.
+- Backup restore could end with "slots don't match" when the switch dropped or delayed one of the writes sent close together (seen on firmware 1.02 through Zigbee2MQTT). Restore now sends again whatever didn't land, up to twice, instead of only re-sending mirrored stay zones.
+- On Zigbee2MQTT, a switch whose name starts with another switch's name (say "Kitchen" and "Kitchen 2") could show the other switch's data, and the addon's own commands to a switch were read as reports from it.
+
 ## [3.2.8] - 2026-09-27
 
 ### Added

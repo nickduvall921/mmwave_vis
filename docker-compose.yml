@@ -5,7 +5,8 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      # Optional: persist any runtime data (e.g. custom CA certs) across restarts
+      # Keeps room layouts (layouts.json) and any custom CA certs across updates.
+      # Without it, layouts are lost whenever the container is recreated.
       - ./mmwave_data:/data
     environment:
       - ZIGBEE_STACK=z2m            # "z2m" or "zha"

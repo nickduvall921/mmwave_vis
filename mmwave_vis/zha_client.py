@@ -222,6 +222,10 @@ class ZHAClient:
         self.BINDING_TIMEOUT_S = 10.0
         self._binding_timer: threading.Timer | None = None
 
+        # Re-read zones after a write (see _requery_soon)
+        self.REQUERY_DELAY_S = 4.0
+        self._requery_timer: threading.Timer | None = None
+
     # -----------------------------------------------------------------------
     # Public API
     # -----------------------------------------------------------------------
@@ -264,6 +268,20 @@ class ZHAClient:
         """Send control_id=2 to make the device report all zone configs."""
         self._issue_command(CMD_CONTROL, {"control_id": 2})
 
+    def _requery_soon(self):
+        """Ask the switch for its zones again once it has applied a write.
+
+        Unlike Z2M (whose converter queries after every area write), ZHA never
+        reports a zone change on its own, so every open page would keep showing
+        the old zones until someone pressed Sync. The firmware takes a few seconds
+        to apply a write; a burst of writes (a backup restore) pushes this back.
+        """
+        if self._requery_timer is not None:
+            self._requery_timer.cancel()
+        self._requery_timer = threading.Timer(self.REQUERY_DELAY_S, self.query_areas)
+        self._requery_timer.daemon = True
+        self._requery_timer.start()
+
     def send_control_command(self, action_id: int):
         """
         Send a maintenance command by numeric ID. Mirrors app.py action_map:
@@ -275,6 +293,10 @@ class ZHAClient:
             5 = clear all stay areas
         """
         self._issue_command(CMD_CONTROL, {"control_id": action_id})
+        # Clears and resets change the zones; the interference scan (1) reports
+        # its own result when it finishes, so an early re-read would only mislead
+        if action_id in (3, 4, 5):
+            self._requery_soon()
 
     def update_parameter(self, param: str, value):
         """
@@ -287,10 +309,13 @@ class ZHAClient:
         # Zone area writes → ZHA cluster commands
         if param == "mmwave_detection_areas":
             self._write_zone_areas(CMD_SET_DETECT, value)
+            self._requery_soon()
         elif param == "mmwave_interference_areas":
             self._write_zone_areas(CMD_SET_INTERF, value)
+            self._requery_soon()
         elif param == "mmwave_stay_areas":
             self._write_zone_areas(CMD_SET_STAY, value)
+            self._requery_soon()
 
         # Enum attributes — convert display string → integer
         elif param == "mmWaveDetectSensitivity":
@@ -618,6 +643,7 @@ class ZHAClient:
                 friendly_name = base_name
 
             entities = ent_registry.get(ha_device_id) if ha_device_id else None
+            entity_ids = [e["entity_id"] for e in (entities or []) if e.get("entity_id")]
             quirk_ok = self._check_quirk_ok(dev, entities)
             if not quirk_ok:
                 if self._legacy_quirk_ok(dev):
@@ -643,6 +669,7 @@ class ZHAClient:
                 # status so the frontend banner heals after the user fixes the
                 # quirk and HA restarts (which also reconnects this socket).
                 self.device_list[ieee]["quirk_ok"] = quirk_ok
+                self.device_list[ieee]["entity_ids"] = entity_ids
 
             if ieee not in self.device_list:
                 print(f"ZHA: discovered {friendly_name} ({ieee})", flush=True)
@@ -651,6 +678,7 @@ class ZHAClient:
                     "topic":              topic,
                     "ieee":               ieee,
                     "ha_device_id":       ha_device_id,
+                    "entity_ids":         entity_ids,
                     "quirk_ok":           quirk_ok,
                     "interference_zones": [],
                     "detection_zones":    [],
@@ -836,9 +864,18 @@ class ZHAClient:
         if not isinstance(states, list):
             return
 
+        # Only this switch's own entities: with two VZM32-SN switches the suffixes
+        # match both, and the other switch's values would win half the time.
+        own = None
+        for dev in self.device_list.values():
+            if ha_device_id and dev.get("ha_device_id") == ha_device_id and dev.get("entity_ids"):
+                own = set(dev["entity_ids"])
+
         config_payload = {}
         for state in states:
             entity_id = state.get("entity_id", "")
+            if own is not None and entity_id not in own:
+                continue
             raw_state = state.get("state")
             if raw_state in (None, "unavailable", "unknown"):
                 continue
@@ -934,8 +971,11 @@ class ZHAClient:
 
         ZHA number entities return integer strings ("0", "1", ...).
         ZHA select entities return display strings ("Disable (default)", "Enable", ...).
-        Both cases are handled here.
+        ZHA switch entities (the quirk's target info report) return "on" / "off".
+        All three are handled here.
         """
+        if raw_state in ("on", "off") and reverse_map is _REVERSE_TARGET_INFO:
+            raw_state = "1" if raw_state == "on" else "0"
         if reverse_map is not None:
             # ZHA select entities: state is already the display string.
             # Check for an exact match among the known display values.
