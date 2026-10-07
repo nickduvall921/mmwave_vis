@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [Unreleased]
+## [4.0.0] - 2026-10-07
 
 ### Changed
 - New interface. The map is now drawn by the addon itself instead of Plotly, so the page no longer downloads 4.6 MB from cdn.plot.ly, and it stays smooth while people are being tracked.
@@ -14,6 +14,7 @@
 - The Z-Wave packet capture moved into the ⋮ menu.
 - Light theme follows your system setting.
 - Built for phones as well as desktops: square map, larger drag handles, Save and Cancel on the map while editing.
+- Bumped version to 4.0.0.
 
 ### Added
 - Room layout (Display tab): drag the switch to where it sits, turn it the way it faces and draw your walls. Zones, people and the field of view move with it. Layouts are saved in the addon's `/data` folder against the switch's IEEE address, so every browser sees the same one and renaming the switch keeps it. If the addon can't write that folder, the page says the layout will be lost on restart. Nothing is sent to the switch.

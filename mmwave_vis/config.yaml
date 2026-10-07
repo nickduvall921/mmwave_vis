@@ -1,6 +1,6 @@
 name: "Inovelli mmWave Visualizer"
 description: "Live 2D tracking for Inovelli mmWave switches via MQTT-Z2M or ZHA"
-version: "3.2.8"
+version: "4.0.0"
 slug: "mmwave_viz"
 init: false
 arch:
