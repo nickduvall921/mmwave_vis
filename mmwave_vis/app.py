@@ -20,9 +20,18 @@ Debug mode (debug: true in config):
 
 import json
 import os
+import signal
+import sys
 import traceback
 import time
 import threading
+from collections import deque
+
+# Keep a copy of recent console output for the diagnostics file. This has to
+# happen before SocketIO() below, whose log handler holds on to sys.stderr.
+import logtap
+logtap.install()
+
 from flask import Flask, Response, render_template, request
 from flask_socketio import SocketIO, emit
 import paho.mqtt.client as mqtt
@@ -110,11 +119,7 @@ if ZIGBEE_STACK == 'z2m':
 if ZIGBEE_STACK == 'zha':
     print(f"ZHA ha_url   : {HA_URL}", flush=True)
     if _supervisor_token:
-        if DEBUG:
-            print(f"ZHA token    : SUPERVISOR_TOKEN (len={len(_supervisor_token)}, "
-                  f"first6={_supervisor_token[:6]}, last6={_supervisor_token[-6:]})", flush=True)
-        else:
-            print(f"ZHA token    : SUPERVISOR_TOKEN (len={len(_supervisor_token)})", flush=True)
+        print(f"ZHA token    : SUPERVISOR_TOKEN (len={len(_supervisor_token)})", flush=True)
     elif _config_token:
         print(f"ZHA token    : ha_token from config (len={len(_config_token)})", flush=True)
     else:
@@ -145,11 +150,43 @@ session_topics_lock = threading.Lock()
 from utils import (
     VALID_PARAMETERS, VALID_ZONE_KEYS, ZONE_COORD_RANGE,
     validate_parameter, safe_int, decode_raw_targets, decode_raw_zones,
-    normalize_layout, layout_key,
+    normalize_layout, layout_key, normalize_zone_names, is_fresh_target_frame, target_frame_mark,
 )
 from layout_store import LayoutStore
+import device_info
+import diagnostics
+import ha_ws
+from history import History
 
 layout_store = LayoutStore(os.path.join(DATA_DIR, 'layouts.json'))
+zone_name_store = LayoutStore(os.path.join(DATA_DIR, 'zone_names.json'),
+                              normalize=normalize_zone_names, label='Zone names')
+
+HA_WS_URL = ha_ws.ws_url(HA_URL)
+registry = ha_ws.RegistryCache(HA_TOKEN, HA_WS_URL)
+
+PACKET_RING = 150   # recent messages per switch, for the diagnostics file
+
+# History key (ieee:<addr>) → the topic pages watch, so live events reach them
+_history_topics = {}
+
+
+def _on_history_event(key, event):
+    topic = _history_topics.get(key)
+    if topic:
+        emit_to_topic_subscribers('history_event', {'topic': topic, 'event': event}, topic)
+
+
+history = History(DATA_DIR, on_event=_on_history_event)
+
+
+def history_key(topic, ieee):
+    """History is only kept per IEEE address, so a renamed switch keeps its history."""
+    if not ieee:
+        return None
+    key = layout_key(topic, ieee)
+    _history_topics[key] = topic
+    return key
 
 
 # ---------------------------------------------------------------------------
@@ -181,6 +218,11 @@ class Z2MDriver:
         self.device_list_lock = threading.Lock()
         self.mqtt_connected   = False
         self._ieee_by_name    = {}   # from Z2M's retained bridge/devices list
+        self._bridge_entries  = {}   # friendly name → VZM32 entry from bridge/devices
+        self.bridge_info      = None # harmless summary of bridge/info
+        self._facts           = {}   # friendly name → latest firmware/link facts from its state
+        self._last_targets    = {}   # friendly name → mark of the last target report recorded (stale re-publish check)
+        self.packets          = {}   # friendly name → recent raw messages (diagnostics)
 
         self._client = mqtt.Client()
         if MQTT_USERNAME and MQTT_PASSWORD:
@@ -222,8 +264,46 @@ class Z2MDriver:
             if isinstance(d, dict) and isinstance(d.get('friendly_name'), str)
             and isinstance(d.get('ieee_address'), str)
         }
+        # Firmware details, kept only for the mmWave switches
+        entries = {}
+        for d in devices:
+            if not isinstance(d, dict) or not isinstance(d.get('friendly_name'), str):
+                continue
+            model = f"{d.get('model_id') or ''} {(d.get('definition') or {}).get('model') or ''}"
+            if 'VZM32' in model.upper():
+                entries[d['friendly_name']] = {k: d.get(k) for k in (
+                    'ieee_address', 'software_build_id', 'date_code', 'model_id', 'power_source')}
         with self.device_list_lock:
             self._ieee_by_name = names
+            self._bridge_entries = entries
+
+    def history_key_for(self, fname, topic):
+        with self.device_list_lock:
+            ieee = self._ieee_by_name.get(fname)
+        return history_key(topic, ieee)
+
+    def device_facts(self, topic, force=False):
+        """(ieee, bridge entry, latest state facts, last_seen) for device_info."""
+        prefix = f"{MQTT_BASE_TOPIC}/"
+        fname = topic[len(prefix):] if isinstance(topic, str) and topic.startswith(prefix) else None
+        with self.device_list_lock:
+            dev = self.device_list.get(fname) or {}
+            return (self._ieee_by_name.get(fname), dict(self._bridge_entries.get(fname) or {}),
+                    dict(self._facts.get(fname) or {}), dev.get('last_seen'))
+
+    def diagnostics_parts(self, topic):
+        prefix = f"{MQTT_BASE_TOPIC}/"
+        fname = topic[len(prefix):] if isinstance(topic, str) and topic.startswith(prefix) else None
+        with self.device_list_lock:
+            dev = json.loads(json.dumps(self.device_list.get(fname) or {}, default=str))
+            facts = dict(self._facts.get(fname) or {})
+            packets = list(self.packets.get(fname) or [])
+        return {
+            'driver': {'stack': 'z2m', 'mqtt_connected': self.mqtt_connected, 'base_topic': MQTT_BASE_TOPIC,
+                       'switches': len(self.device_list)},
+            'stack_versions': {'zigbee2mqtt': self.bridge_info},
+            'device': dev, 'settings': facts.get('state'), 'packets': packets,
+        }
 
     def ieee_for_topic(self, topic):
         prefix = f"{MQTT_BASE_TOPIC}/"
@@ -412,6 +492,10 @@ class Z2MDriver:
                 return
             if not isinstance(payload, dict):
                 return
+            if topic == f"{MQTT_BASE_TOPIC}/bridge/info":
+                # bridge/info also carries the network key; keep only the version bits
+                self.bridge_info = diagnostics.z2m_bridge_summary(payload)
+                return
 
             # --- Device discovery ---
             try:
@@ -465,6 +549,10 @@ class Z2MDriver:
                 if not fname:
                     return
                 device_topic = self.device_list[fname]['topic']
+                ring = self.packets.get(fname)
+                if ring is None:
+                    ring = self.packets[fname] = deque(maxlen=PACKET_RING)
+                ring.append((time.time(), payload_str[:800]))
 
             # --- Raw ZCL byte packets (cluster 0xFC32) ---
             # Z2M 2.9+ publishes a top-level parsed `mmwave_targets` array
@@ -537,7 +625,52 @@ class Z2MDriver:
         if targets is None:
             return
 
+        self._record_targets(fname, device_topic, targets, payload)
         self._emit_targets(targets, fname, device_topic, seq=payload.get("3"))
+
+    def _record_targets(self, fname, device_topic, targets, payload):
+        # Z2M re-publishes its cached state (old report included) on every other
+        # attribute change; only a report that differs from the last one is new
+        if not is_fresh_target_frame(payload, self._last_targets.get(fname)):
+            return
+        self._last_targets[fname] = target_frame_mark(payload)
+        try:
+            key = self.history_key_for(fname, device_topic)
+            if key:
+                history.on_targets(key, targets)
+        except Exception as e:
+            print(f"Z2M: history error: {e}", flush=True)
+
+    def _record_state(self, fname, device_topic, payload):
+        """Occupancy, area, light and target-report changes for the history timeline."""
+        state = {}
+        if 'occupancy' in payload:
+            state['occupancy'] = payload['occupancy']
+        for i in range(1, 5):
+            k = f'mmwave_area{i}_occupancy'
+            if k in payload:
+                state[f'area{i}'] = payload[k]
+        if 'state' in payload:
+            state['light'] = payload['state']
+        if 'mmWaveTargetInfoReport' in payload:
+            state['reporting'] = payload['mmWaveTargetInfoReport']
+        if not state:
+            return
+        try:
+            key = self.history_key_for(fname, device_topic)
+            if key:
+                history.on_state(key, state)
+        except Exception as e:
+            print(f"Z2M: history error: {e}", flush=True)
+
+    def _remember_facts(self, fname, payload):
+        keep = {k: payload[k] for k in ('mmWaveVersion', 'linkquality', 'update', 'last_seen') if k in payload}
+        settings = {k: v for k, v in payload.items()
+                    if (k.startswith('mmWave') or k.startswith('mmwave')) and k != 'mmwave_targets'}
+        with self.device_list_lock:
+            facts = self._facts.setdefault(fname, {})
+            facts.update(keep)
+            facts.setdefault('state', {}).update(settings)
 
     def _process_zone_report(self, payload, cmd_id, fname, device_topic):
         zones = decode_raw_zones(payload)
@@ -563,6 +696,8 @@ class Z2MDriver:
         if not config_payload:
             return
 
+        self._record_state(fname, device_topic, config_payload)
+        self._remember_facts(fname, config_payload)
         emit_to_topic_subscribers('device_config', {'topic': device_topic, 'payload': config_payload}, device_topic)
 
         # Parsed target info (Z2M 2.9.x+ — issue #27). Older Z2M publishes
@@ -573,6 +708,7 @@ class Z2MDriver:
         # don't double-emit if a Z2M version sends both formats.
         parsed_targets = config_payload.get("mmwave_targets")
         if isinstance(parsed_targets, list):
+            self._record_targets(fname, device_topic, parsed_targets, payload)
             self._emit_targets(parsed_targets, fname, device_topic, seq=None)
 
         zone_snapshot = None
@@ -636,14 +772,62 @@ class ZHADriver:
 
     def __init__(self):
         from zha_client import ZHAClient
-        self._zha = ZHAClient(HA_URL, HA_TOKEN, socketio, debug=DEBUG)
+        self._zha = ZHAClient(HA_URL, HA_TOKEN, socketio, debug=DEBUG, history=history)
+        self._attrs = {}       # ieee → attributes read from the switch (cached; they're radio reads)
+        self._attrs_lock = threading.Lock()
 
     def start(self):
         self._zha.start()
 
     def get_device_list_snapshot(self):
-        # Return copies so callers cannot mutate internal state
-        return [dict(d) for d in self._zha.device_list.values()]
+        # Return copies so callers cannot mutate internal state. list() first:
+        # the listener thread can change the dict while a page asks for it.
+        return [dict(d) for d in list(self._zha.device_list.values())]
+
+    def device_facts(self, topic, force=False):
+        """(ieee, zha/device info, attributes read from the switch) for device_info."""
+        ieee = self._topic_to_ieee(topic) if isinstance(topic, str) else None
+        if not ieee or not HA_TOKEN:
+            return ieee, {}, {}
+        zha_dev = {}
+        with self._attrs_lock:
+            attrs = None if force else self._attrs.get(ieee)
+        try:
+            with ha_ws.HAConnection(HA_TOKEN, HA_WS_URL) as ha:
+                zha_dev = ha.request('zha/device', ieee=ieee) or {}
+                if attrs is None:
+                    attrs = {}
+                    for name, cluster, attr, manufacturer in (
+                            ('mmwave_version', 0xFC32, 0x0073, 0x122F),
+                            ('sw_build_id', 0x0000, 0x4000, None)):
+                        req = {'ieee': ieee, 'endpoint_id': 1, 'cluster_id': cluster,
+                               'cluster_type': 'in', 'attribute': attr}
+                        if manufacturer:
+                            req['manufacturer'] = manufacturer
+                        try:
+                            attrs[name] = ha.request('zha/devices/clusters/attributes/value', **req)
+                        except ha_ws.HAError as e:
+                            print(f"ZHA: couldn't read {name} from {ieee}: {e}", flush=True)
+                    with self._attrs_lock:
+                        self._attrs[ieee] = attrs
+        except ha_ws.HAError as e:
+            print(f"ZHA: device info for {ieee} failed: {e}", flush=True)
+        dev = self._zha.device_list.get(ieee) or {}
+        if not zha_dev.get('sw_version') and dev.get('sw_version'):
+            zha_dev['sw_version'] = dev['sw_version']
+        return ieee, zha_dev, attrs or {}
+
+    def diagnostics_parts(self, topic):
+        ieee = self._topic_to_ieee(topic) if isinstance(topic, str) else None
+        dev = json.loads(json.dumps(self._zha.device_list.get(ieee) or {}, default=str))
+        states = {role: st for (i, role), st in list(self._zha._entity_state.items()) if i == ieee}
+        return {
+            'driver': {'stack': 'zha', 'connected': self._zha._ws is not None, 'watched': self._zha._ieee,
+                       'switches': len(self._zha.device_list),
+                       'entity_subscription': len(self._zha._entity_index)},
+            'stack_versions': None,
+            'device': dev, 'settings': states, 'packets': list(self._zha.packets.get(ieee) or []),
+        }
 
     def set_device(self, sid, new_topic):
         with session_topics_lock:
@@ -752,7 +936,23 @@ else:
         print(f"Warning: unknown zigbee_stack '{ZIGBEE_STACK}', defaulting to z2m.", flush=True)
     driver = Z2MDriver()
 
+history.start()
 driver.start()
+
+
+def _shutdown(signum, frame):
+    """Addon stop: write out the history still in memory, then exit."""
+    try:
+        history.close()
+    except Exception as e:
+        print(f"History: couldn't save on shutdown ({e})", flush=True)
+    os._exit(0)
+
+
+try:
+    signal.signal(signal.SIGTERM, _shutdown)
+except ValueError:   # not the main thread (e.g. imported by a tool)
+    pass
 
 
 # ===========================================================================
@@ -816,11 +1016,151 @@ def _get_layout(topic):
     return layout if layout is not None else layout_store.get(topic)
 
 
+def _get_zone_names(topic):
+    names = zone_name_store.get(_layout_key(topic))
+    return names if names is not None else zone_name_store.get(topic)
+
+
+_device_info_cache = {}
+
+
+def build_device_info(topic, force=False):
+    """Firmware, link quality, update and HA entities for one switch (slow: HA round trips)."""
+    if ZIGBEE_STACK == 'zha':
+        ieee, zha_dev, attrs = driver.device_facts(topic, force)
+        info = device_info.zha_info(ieee, zha_dev, attrs)
+    else:
+        ieee, entry, facts, last_seen = driver.device_facts(topic)
+        info = device_info.z2m_info(ieee, entry, facts, last_seen)
+    reg = registry.lookup(ieee, force=force) if ieee else None
+    update_entity = ((reg or {}).get('roles') or {}).get('update')
+    update_state = ha_ws.rest_state(HA_TOKEN, update_entity) if update_entity else None
+    device_info.apply_registry(info, reg, update_state)
+    info['topic'] = topic
+    info['ha_available'] = bool(HA_TOKEN)
+    info['ha_error'] = registry.error
+    _device_info_cache[topic] = info
+    return info
+
+
+def _send_device_info(sid, topic, force=False):
+    try:
+        info = build_device_info(topic, force)
+    except Exception as e:
+        print(f"Device info for {topic} failed: {e}", flush=True)
+        traceback.print_exc()
+        return
+    socketio.emit('device_info', info, to=sid)
+
+
 @socketio.on('change_device')
 def handle_change_device(new_topic):
     driver.set_device(request.sid, new_topic)
     if isinstance(new_topic, str) and new_topic:
         emit('layout', {'topic': new_topic, 'layout': _get_layout(new_topic)})
+        emit('zone_names', {'topic': new_topic, 'names': _get_zone_names(new_topic)})
+        socketio.start_background_task(_send_device_info, request.sid, new_topic)
+
+
+@socketio.on('refresh_device_info')
+def handle_refresh_device_info(topic):
+    if isinstance(topic, str) and topic:
+        socketio.start_background_task(_send_device_info, request.sid, topic, True)
+
+
+@socketio.on('save_zone_names')
+def handle_save_zone_names(data):
+    """Zone names (display only). The return value is the acknowledgement."""
+    if not isinstance(data, dict) or not isinstance(data.get('topic'), str) or not data['topic']:
+        return {'error': 'Zone names need a switch'}
+    topic = data['topic']
+    names, error = normalize_zone_names(data.get('names'))
+    if error:
+        return {'error': error}
+    key = _layout_key(topic)
+    error = zone_name_store.set(key, names)
+    if error:
+        return {'error': error}
+    if key != topic and zone_name_store.get(topic) is not None:
+        zone_name_store.set(topic, None)
+    emit_to_topic_subscribers('zone_names', {'topic': topic, 'names': names}, topic, skip_sid=request.sid)
+    ack = {'ok': True, 'names': names}
+    if zone_name_store.write_error:
+        ack['warning'] = zone_name_store.write_error
+    return ack
+
+
+# --- History (heat map + timeline) ---
+
+def _history_key_for_topic(topic):
+    if not isinstance(topic, str) or not topic:
+        return None
+    return history_key(topic, driver.ieee_for_topic(topic))
+
+
+def _number(value, default=None):
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
+        return default
+    return value
+
+
+@socketio.on('get_history_settings')
+def handle_get_history_settings(data=None):
+    return history.settings()
+
+
+@socketio.on('set_history_settings')
+def handle_set_history_settings(data):
+    if not isinstance(data, dict):
+        return {'error': 'Bad settings'}
+    enabled = data.get('enabled') if isinstance(data.get('enabled'), bool) else None
+    days = _number(data.get('days'))
+    result = history.set_settings(enabled=enabled, days=int(days) if days is not None else None)
+    socketio.emit('history_settings', result)
+    return result
+
+
+@socketio.on('history_stats')
+def handle_history_stats(topic):
+    stats = history.stats(_history_key_for_topic(topic))
+    stats['has_ieee'] = bool(isinstance(topic, str) and driver.ieee_for_topic(topic))
+    return stats
+
+
+@socketio.on('get_heatmap')
+def handle_get_heatmap(data):
+    if not isinstance(data, dict):
+        return {'error': 'Bad request'}
+    t0, t1 = _number(data.get('from')), _number(data.get('to'))
+    if t0 is None or t1 is None or t1 <= t0:
+        return {'error': 'Pick a time range'}
+    return history.heatmap(_history_key_for_topic(data.get('topic')), t0, t1)
+
+
+@socketio.on('get_events')
+def handle_get_events(data):
+    if not isinstance(data, dict):
+        return {'error': 'Bad request'}
+    t0, t1 = _number(data.get('from')), _number(data.get('to'))
+    if t0 is None or t1 is None:
+        return {'error': 'Pick a time range'}
+    return {'events': history.events(_history_key_for_topic(data.get('topic')), t0, t1)}
+
+
+@socketio.on('get_clip')
+def handle_get_clip(data):
+    if not isinstance(data, dict) or _number(data.get('t')) is None:
+        return {'error': 'Bad request'}
+    return {'clip': history.clip(_history_key_for_topic(data.get('topic')), data['t'])}
+
+
+@socketio.on('clear_history')
+def handle_clear_history(topic):
+    key = _history_key_for_topic(topic)
+    if not key:
+        return {'error': 'No switch selected'}
+    history.clear(key)
+    return {'ok': True}
 
 
 @socketio.on('save_layout')
@@ -894,6 +1234,42 @@ def index():
         ingress_path=request.headers.get('X-Ingress-Path', ''),
         zigbee_stack=ZIGBEE_STACK,
         version=ADDON_VERSION,
+    )
+
+
+@app.route('/diagnostics')
+def diagnostics_download():
+    """Everything about the selected switch and the addon for a bug report (secrets removed)."""
+    topic = request.args.get('topic') or ''
+    parts = driver.diagnostics_parts(topic) if topic else {'driver': None, 'device': None,
+                                                           'settings': None, 'packets': [], 'stack_versions': None}
+    ha_config = ha_ws.rest_get(HA_TOKEN, '/config') if HA_TOKEN else None
+    stack_versions = dict(parts.get('stack_versions') or {})
+    if isinstance(ha_config, dict):
+        stack_versions['home_assistant'] = ha_config.get('version')
+    device = parts.get('device') or {}
+    info = _device_info_cache.get(topic)
+    report = diagnostics.build_report(
+        addon={'version': ADDON_VERSION, 'stack': ZIGBEE_STACK, 'python': sys.version.split()[0],
+               'debug': DEBUG, 'home_assistant_api': bool(HA_TOKEN)},
+        options={k: v for k, v in config.items()},
+        stack_versions=stack_versions,
+        driver=parts.get('driver'),
+        device={'selected': topic, 'entry': device, 'info': info},
+        zones={k: device.get(k) for k in ('detection_zones', 'interference_zones', 'stay_zones')},
+        settings=parts.get('settings'),
+        layout=_get_layout(topic) if topic else None,
+        zone_names=_get_zone_names(topic) if topic else None,
+        history=history.stats(_history_key_for_topic(topic)) if topic else history.settings(),
+        packets=parts.get('packets'),
+        log_lines=logtap.lines(600),
+    )
+    stamp = time.strftime('%Y%m%d_%H%M%S', time.gmtime())
+    return Response(
+        json.dumps(report, indent=1, default=str),
+        mimetype='application/json',
+        headers={'Content-Disposition': f'attachment; filename="mmwave_vis_diagnostics_{stamp}.json"',
+                 'Cache-Control': 'no-store'},
     )
 
 

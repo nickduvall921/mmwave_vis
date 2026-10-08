@@ -63,9 +63,10 @@ class TestTranslateStateEnumIntegerInput:
         assert translate("2", _REVERSE_SENSITIVITY) == "High (default)"
 
     def test_trigger_all_speeds(self):
-        assert translate("0", _REVERSE_TRIGGER) == "Fast (0.2s, default)"
+        # 0 is the slowest, as in Zigbee2MQTT and ZHA's built-in quirk
+        assert translate("0", _REVERSE_TRIGGER) == "Slow (5s)"
         assert translate("1", _REVERSE_TRIGGER) == "Medium (1s)"
-        assert translate("2", _REVERSE_TRIGGER) == "Slow (5s)"
+        assert translate("2", _REVERSE_TRIGGER) == "Fast (0.2s, default)"
 
     def test_room_size_all_presets(self):
         assert translate("0", _REVERSE_ROOM_SIZE) == "Custom"
@@ -451,7 +452,7 @@ EMPTY = _area(0, 0, 0, 0, -600, 600)
 
 def test_zone_report_keeps_empty_slots_in_place():
     client = _zone_client()
-    client._on_zone_report("stay_zones", {
+    client._on_zone_report(client._ieee, "stay_zones", {
         "count": 2,
         "area1": _area(-100, 100, 0, 300, -300, 300),
         "area2": EMPTY,
@@ -471,7 +472,7 @@ def test_zone_report_keeps_empty_slots_in_place():
 def test_zone_report_reads_past_count():
     # count=1 with the populated zone in slot 2 must not drop it
     client = _zone_client()
-    client._on_zone_report("detection_zones", {
+    client._on_zone_report(client._ieee, "detection_zones", {
         "count": 1, "area1": EMPTY, "area2": _area(10, 20, 30, 40, 50, 60),
         "area3": EMPTY, "area4": EMPTY,
     })
@@ -480,7 +481,7 @@ def test_zone_report_reads_past_count():
 
 def test_zone_report_missing_areas_are_empty():
     client = _zone_client()
-    client._on_zone_report("interference_zones", {"count": 0})
+    client._on_zone_report(client._ieee, "interference_zones", {"count": 0})
     assert client.socketio.emit.call_args[0][1]["payload"] == [None, None, None, None]
 
 

@@ -1,6 +1,35 @@
 # Changelog
 
 
+## [Unreleased]
+
+### Added
+- History tab. Turn on "Record history" and the addon records, for every switch, where people were and when occupancy, each detection area and the light changed. Off by default. It's kept in the addon's `/data` folder (a small SQLite database, left out of Home Assistant backups), for 7, 30 or 90 days, and can be cleared per switch.
+  - Heat map of where people spent time over the last 10 minutes, hour, 6 hours, day, week, or any range you pick. It's drawn under the zones, can stay on the map in the other tabs, and follows the room layout.
+  - Timeline of occupancy, area and light changes ("Occupied, 3 targets", "Clear, 30 s after the last target"). Choose one to replay what the radar saw from 30 seconds before to 30 seconds after, with play, pause, a scrubber and 4× speed.
+  - Positions are only recorded while a switch has target reporting on; the tab says when it's off.
+- Undo for zone changes: a save, a delete, Clear interference, Detect automatically, Reset detection areas, Clear stay areas and a backup import. Use the Undo bar at the top of the Zones tab, the Undo button on the message, or Ctrl+Z. Undo sends the zones back and checks they landed. If the zone changed again since, it asks first.
+- Zone names. Name a zone in the editor ("Couch") and the name shows on the map, in the zone list, on the area chips, in the timeline and in backups. Names are saved in the addon for every browser and never sent to the switch.
+- Each detection area shows the Home Assistant entity that follows it, with a Copy button (Zigbee2MQTT). ZHA has no per-area entities, so it gets a Copy sensor YAML button that fills in the switch's IEEE address and the zone's name.
+- Switch details at the top of the Switch tab: firmware, mmWave module version, Zigbee signal (with a hint when it's weak), when it was last seen, whether a firmware update is available, and a link to the device in Home Assistant. The firmware also shows in the status popover.
+- Hold time and sit-still tests in the Switch tab. The hold time test times how long the switch takes to report clear once the room is empty, and compares it with the hold time. The sit-still test checks you stay detected while still and offers to add a stay area where you sat.
+- Short explanations under sensitivity, trigger speed, hold time and stay life.
+- Download diagnostics (⋮ menu): one file with the addon and stack versions, the selected switch's details, zones, settings, room layout, recent messages from the switch and the addon's recent log, for bug reports. Passwords, tokens and the Zigbee network key are removed.
+
+### Changed
+- "Switch settings" tab is now "Switch", to make room for History.
+- On ZHA the addon now follows every VZM32-SN switch, not just the one a page has open, so history covers all of them. Pages still only get live data for the switch they show.
+- On ZHA, overall occupancy now comes from the switch's own occupancy entity (which follows the hold time, like the light does) instead of "any area occupied", and the light level is shown too.
+- The ZHA quirk notice and ZHADOC.md now explain why this repo's quirk is still needed on Home Assistant 2026.8 and later (#54).
+
+### Fixed
+- On ZHA, trigger speed was backwards: choosing Fast (0.2 s) set the switch to Slow (5 s) and the other way round, and a switch on Slow showed as Fast. It now matches the switch, Zigbee2MQTT and ZHA's own quirk (0 = Slow, 2 = Fast). If you set Fast on a ZHA switch with an older version, check it again.
+- Stay life is in steps of 50 ms (300 = 15 s), not seconds. The label no longer says seconds, and the value is shown in seconds next to it.
+- On ZHA, a batch of targets that arrived just as you switched to another switch could be drawn on the new switch's map.
+- The addon now stops cleanly when Home Assistant stops it, so the last few minutes of history are saved.
+- In debug mode the addon no longer prints part of the Home Assistant token to its log.
+
+
 ## [4.0.0] - 2026-10-07
 
 ### Changed

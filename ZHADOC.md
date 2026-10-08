@@ -11,7 +11,7 @@ This guide covers how to set up the mmWave Visualizer addon when you are using *
 - Home Assistant with ZHA configured
 - At least one **Inovelli VZM32-SN** switch paired to ZHA
 - The mmWave Visualizer addon installed
-- Custom ZHA Quirk installed in HA
+- This repo's custom ZHA quirk installed in HA. **It's required on every Home Assistant version, including 2026.8 and later** (see below)
 
 ---
 
@@ -21,7 +21,21 @@ This guide covers how to set up the mmWave Visualizer addon when you are using *
 
 > **Note:** This quirk is experimental and may have bugs. If you find one, please open an issue on GitHub with the `ZHA` label.
 
-> **Home Assistant 2026.8 and later:** ZHA now supports the VZM32-SN natively, and the advice is to remove Inovelli's custom quirk. **The Visualizer still needs this repo's quirk.** The native quirk doesn't pass the switch's live target, area-occupancy or zone reports on to Home Assistant, so without this quirk the Visualizer gets no data. A quirk in `custom_quirks_path` still takes priority over the built-in one. Details in [#54](https://github.com/nickduvall921/mmwave_vis/issues/54).
+#### Why the custom quirk is still needed
+
+Home Assistant 2026.8 added built-in ZHA support for the VZM32-SN, and the general advice since then is to remove Inovelli's custom quirk. **That doesn't apply to the Visualizer: keep this repo's quirk.** With only the built-in support, the Visualizer gets no live targets, no area occupancy and no zones, for four reasons:
+
+1. **The radar reports never reach Home Assistant.** The built-in quirk can decode the switch's target, area-occupancy and zone reports, but it never forwards them. Since zigpy/zha#657 (May 2026), a cluster command only becomes a `zha_event` when the quirk itself sends it on, and the built-in one doesn't. The Visualizer reads everything from those events, and so do the per-area sensors below.
+2. **The switch has nowhere to send them.** ZHA only binds the mmWave cluster (0xFC32) to the coordinator when one of that cluster's entities asks for reports. In this quirk the "mmWave target info report" switch does; none of the built-in entities do. Without the bind, a Reconfigure doesn't set it up and the switch keeps its reports to itself.
+3. **Some controls are missing.** The built-in quirk has no entity to turn target reporting on (upstream noted this too in zigpy/zha-device-handlers#5218) and no stay life setting.
+4. **The names and shapes differ.** Even if the built-in quirk forwarded events, they'd be `anyone_in_reporting_area` with `area_1`… and a `targets` list, not the `mmwave_anyone_in_area` / `mmwave_target_info` events the Visualizer and the sensors below read.
+
+A quirk in `custom_quirks_path` takes priority over the built-in one, so you don't need to turn anything off: install this one as below and it wins. Details in [#54](https://github.com/nickduvall921/mmwave_vis/issues/54).
+
+Things to know when you switch quirks (either way):
+
+- **Some entity IDs change.** The two quirks register entities differently, so after switching you'll see leftovers marked `restored: true` / unavailable and new entities with `_2` on the end. Delete the leftovers once nothing uses them, and check automations that used the old IDs.
+- **A few built-in entities go away.** These exist only with the built-in quirk: remote dimming speeds and ramp rates, remote and power-on default level, internal temperature, overheat, and switch type. Sensitivity, trigger speed and room preset are numbers here instead of selects.
 
 On Home Assistant 2026.7 or earlier, first install and test the official Inovelli quirk:
 https://help.inovelli.com/en/articles/13019007-blue-series-mmwave-presence-dimmer-switch-zha-custom-quirk-install
@@ -59,15 +73,15 @@ zha:
 Then:
 
 1. Delete the `__pycache__` folder inside `inovelli/` if one exists — stale compiled copies of the official quirk can otherwise keep loading.
-2. Restart Home Assistant.
+2. Restart Home Assistant (reloading the ZHA integration also works).
 3. **Reconfigure** the device in ZHA (device page → ⋮ menu → *Reconfigure*) so the 0xFC32 binding is created. Without this step the switch has nowhere to send mmWave reports.
 
 #### Verify the quirk is active
 
-After the restart, the VZM32-SN device page in HA should show a new **"mmWave target info report"** switch entity. That entity is created only by this repo's quirk, so it's the definitive check:
+After the restart, the VZM32-SN device page in HA should show a new **"mmWave target info report"** switch entity (and a "mmWave stay life" number). Those are created only by this repo's quirk, so they're the definitive check:
 
 - **Entity missing, and the other mmWave entities are unavailable** (showing `restored: true` in Developer Tools → States) → no quirk loaded at all this boot. Check that `custom_quirks_path` points at the right directory and look for import errors in the HA log.
-- **Entity missing, but mmWave entities work** → the *official* quirk is still active. Make sure you overwrote the files in the directory `custom_quirks_path` actually points to.
+- **Entity missing, but mmWave entities work** → the *official* Inovelli quirk or, on 2026.8 and later, ZHA's *built-in* support is active instead. Make sure you overwrote the files in the directory `custom_quirks_path` actually points to.
 - **Entity present** → the Visualizer quirk is loaded. If the visualizer still shows no data, Reconfigure the device (step 3 above).
 
 ### 2. Configure the Addon
@@ -84,7 +98,7 @@ Install the addon using the links in the README, then open the **Configuration**
 
 ### Per-Area Presence Sensors 
 
-The VZM32-SN supports up to 4 independently configured detection zones. To expose per-area occupancy as binary sensors in HA, add the following to your `configuration.yaml`:
+The VZM32-SN supports up to 4 independently configured detection zones. ZHA doesn't create an entity for each area, so to expose per-area occupancy as binary sensors in HA, add the following to your `configuration.yaml`. (In the Visualizer, each detection area in the Zones tab has a **Copy sensor YAML** button that fills in your switch's IEEE address and the zone's name for you.)
 
 ```yaml
 template:
@@ -137,7 +151,7 @@ Device names come from your HA device registry. To rename a device, go to **Sett
 
 The addon checks for the **"mmWave target info report"** switch entity, which only this repo's quirk creates.
 
-- `... has a quirk applied, but it is not the Visualizer quirk` — the official Inovelli quirk (or another quirk) is loading instead of this repo's files. Overwrite the official `__init__.py` and `VZM32SN.py` in the directory your `custom_quirks_path` points to, delete `__pycache__`, restart HA.
+- `... has a quirk applied, but it is not the Visualizer quirk` — the official Inovelli quirk, ZHA's built-in support (HA 2026.8 and later) or another quirk is loading instead of this repo's files. Put this repo's `__init__.py` and `VZM32SN.py` in the directory your `custom_quirks_path` points to (overwriting the official ones if they're there), delete `__pycache__`, restart HA.
 - `no custom mmWave quirk detected` — no quirk loaded at all. Verify `custom_quirks_path` in `configuration.yaml` matches where the files are, and check the HA log for quirk import errors.
 
 After fixing, restart HA and **Reconfigure** the device in ZHA (see *Verify the quirk is active* above).
@@ -154,9 +168,10 @@ This is the most common ZHA issue. The device only sends mmWave reports
 report attribute to be enabled. Work through these in order:
 
 1. **Make sure the custom quirk is actually loaded.** After copying the quirk
-   files, fully restart Home Assistant. On the device page in ZHA, the cluster
-   list should show `InovelliVZM32SNMMWaveCluster (0xFC32)`. If it doesn't, the
-   quirk path or file location is wrong.
+   files, fully restart Home Assistant. The device should have the
+   **mmWave target info report** switch entity (see *Verify the quirk is active*).
+   Don't go by the cluster list: on 2026.8 and later ZHA's built-in support shows
+   `InovelliVZM32SNMMWaveCluster (0xFC32)` too.
 2. **Reconfigure the device.** Open the device in ZHA → ⋮ menu → **Reconfigure**.
    The quirk establishes the `0xFC32` bind during this step. Check the HA log
    (`Settings → System → Logs`) for a line like

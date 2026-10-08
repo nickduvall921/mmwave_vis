@@ -18,7 +18,25 @@ const PAD = 16;                    // px kept clear around the requested range
 const MIN_SPAN = 60;               // cm, closest zoom
 const MAX_SPAN = 8000;             // cm, furthest zoom
 const REC_CHUNK = 500;             // recorded points per <path>
-const LAYERS = ['grid', 'room', 'zones', 'recording', 'trails', 'targets', 'edit', 'sensor'];
+const LAYERS = ['grid', 'room', 'heat', 'zones', 'recording', 'trails', 'targets', 'edit', 'sensor'];
+const HEAT_PAD = 2;                // empty cells around the heat map so its blur fades out
+const MAX_LABEL = 18;              // characters of a zone name shown on the map
+
+// Heat map colours: transparent → blue → teal → amber → red, as rgba 0..255
+const HEAT_STOPS = [[0, 56, 142, 255, 0], [0.12, 56, 142, 255, 60], [0.35, 0, 190, 200, 140],
+    [0.6, 120, 210, 90, 170], [0.8, 255, 196, 50, 200], [1, 240, 70, 50, 225]];
+const HEAT_RAMP = (() => {
+    const lut = new Uint8ClampedArray(256 * 4);
+    for (let i = 0; i < 256; i++) {
+        const t = i / 255;
+        let j = 1;
+        while (j < HEAT_STOPS.length - 1 && t > HEAT_STOPS[j][0]) j++;
+        const a = HEAT_STOPS[j - 1], b = HEAT_STOPS[j];
+        const f = (t - a[0]) / (b[0] - a[0] || 1);
+        for (let c = 0; c < 4; c++) lut[i * 4 + c] = a[c + 1] + (b[c + 1] - a[c + 1]) * Math.min(1, Math.max(0, f));
+    }
+    return lut;
+})();
 const WALL_SNAP_PX = 12;
 const sensorHit = () => coarse.matches ? 24 : 16;   // px radius for grabbing the switch
 
@@ -56,6 +74,24 @@ function normalizeRect(r) {
     if (r.y_min > r.y_max) [r.y_min, r.y_max] = [r.y_max, r.y_min];
 }
 
+// [1 2 1] blur across then down (in JS: Safari's canvas filter isn't reliable)
+function blur(src, w, h) {
+    const tmp = new Float32Array(src.length), out = new Float32Array(src.length);
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const i = y * w + x;
+            tmp[i] = (2 * src[i] + (x > 0 ? src[i - 1] : 0) + (x < w - 1 ? src[i + 1] : 0)) / 4;
+        }
+    }
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const i = y * w + x;
+            out[i] = (2 * tmp[i] + (y > 0 ? tmp[i - w] : 0) + (y < h - 1 ? tmp[i + w] : 0)) / 4;
+        }
+    }
+    return out;
+}
+
 export class Radar {
     constructor(svg, callbacks) {
         this.svg = svg;
@@ -74,6 +110,10 @@ export class Radar {
         this.recNodes = [];
         this.edit = null;
         this.arranging = false;
+        this.names = {};
+        this.heat = null;
+        this.heatOpacity = 0.85;
+        this.heatNode = null;
 
         this.dirty = new Set();
         this.frame = 0;
@@ -140,6 +180,16 @@ export class Radar {
         this.targets = targets;
         this.history = history;
         this.invalidate('targets', 'trails');
+    }
+
+    // Zone names ("category:area" → name), shown instead of "Area 2"
+    setNames(names) { this.names = names || {}; this.invalidate('zones', 'edit'); }
+
+    // Heat map: { cell (cm), cells: [[ix, iy, seconds], ...] } in the sensor frame, or null
+    setHeat(heat) { this.heat = heat; this.invalidate('heatData'); }
+    setHeatOpacity(v) {
+        this.heatOpacity = v;
+        if (this.heatNode) this.heatNode.setAttribute('opacity', v);
     }
 
     setRecording(slots, pad) { this.rec = { slots, pad }; this.invalidate('recData'); }
@@ -286,6 +336,8 @@ export class Radar {
         this.dirty = new Set();
         if (d.has('grid')) this._renderGrid();
         if (d.has('room')) this._renderRoom();
+        if (d.has('heatData')) this._renderHeat();
+        if (d.has('heatData') || d.has('heat')) this._placeHeat();
         if (d.has('zones')) this._renderZones();
         if (d.has('recData')) this._renderRecording();
         else if (d.has('recAppend')) this._appendRecording();
@@ -375,6 +427,71 @@ export class Radar {
         el('text', { class: 'dim-label', x: r1(right[0] + 10), y: r1(right[1]), 'dominant-baseline': 'middle' }, g).textContent = metres(room.y_max - room.y_min);
     }
 
+    // The heat map is a small image, one pixel per cell, drawn in sensor centimetres inside
+    // a transformed group like the recording, so panning or zooming only moves it. The
+    // browser's smoothing when it scales the image up softens the cells into a heat map.
+    _renderHeat() {
+        const g = this.layers.heat;
+        g.replaceChildren();
+        this.heatNode = null;
+        const heat = this.heat;
+        if (!heat || !heat.cells || !heat.cells.length) return;
+        const cell = heat.cell || 10;
+        let ix0 = Infinity, ix1 = -Infinity, iy0 = Infinity, iy1 = -Infinity;
+        for (const [ix, iy] of heat.cells) {
+            if (ix < ix0) ix0 = ix;
+            if (ix > ix1) ix1 = ix;
+            if (iy < iy0) iy0 = iy;
+            if (iy > iy1) iy1 = iy;
+        }
+        const w = ix1 - ix0 + 1 + 2 * HEAT_PAD, h = iy1 - iy0 + 1 + 2 * HEAT_PAD;
+        if (w * h > 1_000_000) return;   // can't happen with the addon's ±6 m cells; guard anyway
+        let grid = new Float32Array(w * h);
+        for (const [ix, iy, s] of heat.cells) grid[(iy - iy0 + HEAT_PAD) * w + (ix - ix0 + HEAT_PAD)] += s;
+        grid = blur(blur(grid, w, h), w, h);   // twice: soft edges without hiding single paths
+        let max = 0;
+        for (const v of grid) if (v > max) max = v;
+        if (!(max > 0)) return;
+        // Log scale, so a doorway walked through once still shows next to the sofa
+        const scale = 255 / Math.log1p(max * 4);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        const img = ctx.createImageData(w, h);
+        // Row 0 of the image is the depth nearest the switch: the sensor matrix flips y
+        for (let i = 0; i < grid.length; i++) {
+            const t = Math.min(255, Math.round(Math.log1p(grid[i] * 4) * scale));
+            img.data.set(HEAT_RAMP.subarray(t * 4, t * 4 + 4), i * 4);
+        }
+        ctx.putImageData(img, 0, 0);
+        const group = el('g', { class: 'heat', opacity: this.heatOpacity }, g);
+        el('image', {
+            href: canvas.toDataURL('image/png'),
+            x: (ix0 - HEAT_PAD) * cell, y: (iy0 - HEAT_PAD) * cell, width: w * cell, height: h * cell,
+            preserveAspectRatio: 'none',
+        }, group);
+        this.heatNode = group;
+    }
+
+    _placeHeat() {
+        if (this.heatNode) this.heatNode.setAttribute('transform', this._sensorMatrix());
+    }
+
+    // sensor (x, y) → screen: the same maths as s2p, as an SVG transform
+    _sensorMatrix() {
+        const { k, cs, sn, W, H, cx, cy } = this;
+        const { x, y } = this.layout;
+        const m = [k * cs, -k * sn, -k * sn, -k * cs, W / 2 + (x - cx) * k, H / 2 + (cy - y) * k];
+        return `matrix(${m.map(v => +v.toFixed(5)).join(' ')})`;
+    }
+
+    _zoneText(type, area) {
+        const custom = this.names[`${type.category}:${area}`];
+        if (!custom) return type.name(area.slice(4));
+        return custom.length > MAX_LABEL ? custom.slice(0, MAX_LABEL - 1) + '…' : custom;
+    }
+
     _zoneVisible(type, i) {
         if (type.group === 'detection') return this.vis.detection && this.vis.det[i];
         return type.group === 'stay' ? this.vis.stay : this.vis.interference;
@@ -416,7 +533,7 @@ export class Radar {
                 fill: type.cls === 'intf' ? 'url(#hatch-intf)' : null,
                 'data-zone': busy ? null : `${type.category}:${area}`,
             }, g);
-            this._zoneLabel(g, z, type.name(i + 1), type.cls + (busy ? ' dim' : ''));
+            this._zoneLabel(g, z, this._zoneText(type, area), type.cls + (busy ? ' dim' : ''));
         }
     }
 
@@ -468,11 +585,7 @@ export class Radar {
 
     // Follow the view and the switch's pose, and redraw the padded outlines (cheap: 4 points each)
     _placeRecording() {
-        const { k, cs, sn, W, H, cx, cy } = this;
-        const { x, y } = this.layout;
-        // sensor (x, y) → screen: the same maths as s2p, as an SVG matrix
-        const m = [k * cs, -k * sn, -k * sn, -k * cs, W / 2 + (x - cx) * k, H / 2 + (cy - y) * k];
-        const transform = `matrix(${m.map(v => +v.toFixed(5)).join(' ')})`;
+        const transform = this._sensorMatrix();
         const pad = this.rec.pad;
         this.rec.slots.forEach((slot, i) => {
             const node = this.recNodes[i];
@@ -566,7 +679,7 @@ export class Radar {
                 fill: type.cls === 'intf' ? 'url(#hatch-intf)' : null,
                 'data-drag': 'body', 'data-owner': 'draft',
             }, g);
-            this._zoneLabel(g, d, type.name(this.edit.area.slice(4)), type.cls);
+            this._zoneLabel(g, d, this._zoneText(type, this.edit.area), type.cls);
             this._handles(g, d, (x, y) => this.s2p(x, y), 'draft');
         }
         if (this.arranging && this.layout.room) {
