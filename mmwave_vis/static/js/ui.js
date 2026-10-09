@@ -39,15 +39,59 @@ export function plural(n, word) {
 
 // --- Toasts ---------------------------------------------------------------
 
-export function toast(message, type = 'info', duration = 4000) {
+// `action` ({ label, onClick }) adds a button, e.g. Undo; clicking it closes the toast
+export function toast(message, type = 'info', duration = 4000, action = null) {
     const root = $('#toasts');
     const node = h('div', { class: `toast ${type}`, role: type === 'error' ? 'alert' : 'status' }, message);
-    root.append(node);
-    while (root.children.length > 4) root.firstElementChild.remove();
-    setTimeout(() => {
+    const close = () => {
         node.classList.add('leaving');
         setTimeout(() => node.remove(), 250);
-    }, duration);
+    };
+    if (action) {
+        node.append(h('button', { class: 'toast-action', type: 'button', onclick: () => { close(); action.onClick(); } }, action.label));
+    }
+    root.append(node);
+    while (root.children.length > 4) root.firstElementChild.remove();
+    setTimeout(close, duration);
+}
+
+// --- Clipboard ---------------------------------------------------------------
+
+// The page runs in Home Assistant's ingress frame, where navigator.clipboard can be
+// blocked, so fall back to a hidden text box and execCommand
+export async function copyText(text) {
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch (e) { /* fall through */ }
+    const box = h('textarea', { style: 'position:fixed;left:-9999px;top:0', readonly: true });
+    box.value = text;
+    document.body.append(box);
+    box.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    box.remove();
+    return ok;
+}
+
+// --- Time ----------------------------------------------------------------------
+
+const timeFmt = new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+const dayFmt = new Intl.DateTimeFormat([], { weekday: 'short', month: 'short', day: 'numeric' });
+const shortFmt = new Intl.DateTimeFormat([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+export const clockTime = ms => timeFmt.format(new Date(ms));
+export const dayLabel = ms => dayFmt.format(new Date(ms));
+export const shortDateTime = ms => shortFmt.format(new Date(ms));
+
+// 75 → "1 min 15 s", 3700 → "1 h 2 min"
+export function duration(seconds) {
+    const s = Math.max(0, Math.round(seconds));
+    if (s < 60) return `${s} s`;
+    if (s < 3600) return `${Math.floor(s / 60)} min${s % 60 ? ` ${s % 60} s` : ''}`;
+    const m = Math.round(s / 60);
+    return `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`;
 }
 
 // --- Notices: persistent messages above the map, one per key ---------------

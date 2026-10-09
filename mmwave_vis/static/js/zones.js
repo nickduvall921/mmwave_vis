@@ -1,7 +1,8 @@
 // Zones: reading them from switch reports, the zone list, and the editor.
 
-import { state, emit, ZONE_TYPES, AREAS, ZONE_KEYS, zoneName } from './state.js';
-import { $, h, toast, setNotice, clearNotice, confirmAction, span, plural } from './ui.js';
+import { state, on, emit, ZONE_TYPES, AREAS, ZONE_KEYS, zoneName, slotName, customName } from './state.js';
+import { $, h, toast, setNotice, clearNotice, confirmAction, span, plural, copyText } from './ui.js';
+import { setName, setNames } from './names.js';
 
 // Device payload that clears an area slot
 export const EMPTY_AREA = { width_min: 0, width_max: 0, depth_min: 0, depth_max: 0, height_min: 0, height_max: 0 };
@@ -14,12 +15,13 @@ const COMMAND_REPLY_MIN_MS = 1500;
 const groupsRoot = $('#zoneGroups');
 const editor = $('#zoneEditor');
 const inputs = Object.fromEntries(ZONE_KEYS.map(k => [k, $('#edit' + k[0].toUpperCase() + k.slice(2, 3).toUpperCase() + k.slice(3))]));
+const nameInput = $('#editName');
 let activeDims = null;      // the dims line of the row being edited, updated live
 
 // The switch keeps zone edges as 32-bit floats in metres and reports them truncated to
 // whole centimetres, so about one value in sixteen comes back 1 cm lower than it was sent
-// (105 → 104, 499 → 498; seen on firmware 1.03). Compare what the switch reports with
-// what was sent using this much slack.
+// (105 → 104, 499 → 498; seen on firmware 0x01030102). Compare what the switch reports
+// with what was sent using this much slack.
 export const SWITCH_ROUNDING_CM = 1;
 
 const near = (a, b, tol) => Math.abs(Number(a) - Number(b)) <= tol;
@@ -37,7 +39,7 @@ export function isMirroredX(stored, expected, tol = 0) {
 }
 
 // Whole numbers with each min below its max: the form the switch stores and reports
-function sorted(zone) {
+export function sorted(zone) {
     const pair = (a, b) => [parseInt(a, 10), parseInt(b, 10)].sort((p, q) => p - q);
     const [x0, x1] = pair(zone.x_min, zone.x_max);
     const [y0, y1] = pair(zone.y_min, zone.y_max);
@@ -79,9 +81,26 @@ function store(category, area, zone) {
 // list under the pointer swallows clicks on its buttons.
 function afterReport(categories, zonesChanged) {
     const settled = settlePending(categories);
+    pruneNames(categories);
     if (!zonesChanged && !settled) return;
     if (!state.edit) renderZoneList();     // while editing, endEdit() redraws the list
     emit('zones');
+}
+
+// A name belongs to a zone: when the switch reports a slot empty (cleared by a tool,
+// another browser or a restore) and nothing is on its way to it, forget the name so it
+// doesn't reappear on the next zone created there
+function pruneNames(categories) {
+    if (state.restoring) return;      // slots are empty for a moment while a restore writes them
+    const drop = {};
+    for (const key of Object.keys(state.zoneNames || {})) {
+        const [category, area] = key.split(':');
+        if (!categories.includes(category) || !state.zoneReportAt[category]) continue;
+        if (state.zones[category] && state.zones[category][area]) continue;
+        if (key in state.pending || (state.edit && state.edit.category === category && state.edit.area === area)) continue;
+        drop[key] = '';
+    }
+    if (Object.keys(drop).length) setNames(drop);
 }
 
 function interferenceResult(active) {
@@ -145,12 +164,12 @@ export function applyConfig(c) {
 // asks the switch for its zones now and then. Early reports don't count:
 // Zigbee2MQTT publishes the written zone back once the switch acknowledges the
 // write (sometimes 9 s later, after the switch has already reported the real
-// value) and repeats it until the switch's next report, and firmware 1.02 briefly
-// reports a stay zone as written before reporting it mirrored. So a write counts
-// as confirmed once reports agree for STEADY_MS (with the switch asked again
-// every POLL_RECHECK_MS meanwhile), and fails after CONFIRM_TIMEOUT_MS.
+// value) and repeats it until the switch's next report, and through Zigbee2MQTT
+// a stay zone is briefly reported as written before it's reported mirrored. So a
+// write counts as confirmed once reports agree for STEADY_MS (with the switch
+// asked again every POLL_RECHECK_MS meanwhile), and fails after CONFIRM_TIMEOUT_MS.
 // The switch acknowledges every write but now and then drops one that arrives
-// close behind another (seen on firmware 1.02), so a write that still hasn't
+// close behind another (seen through Zigbee2MQTT), so a write that still hasn't
 // shown up after RESEND_MS is sent once more.
 
 const QUIET_MS = { zha: 2000, z2m: 6500 };   // ignore reports this soon after a write
@@ -315,6 +334,65 @@ function dims(z) {
     return `W ${span(z.x_min, z.x_max)} · D ${span(z.y_min, z.y_max)} · H ${span(z.z_min, z.z_max)}`;
 }
 
+// The row's title: the user's name with the slot underneath it, or just the slot
+function nameNodes(category, area) {
+    const custom = customName(category, area);
+    return custom
+        ? [h('span', { class: 'name' }, custom, h('span', { class: 'slot' }, slotName(category, area)))]
+        : [h('span', { class: 'name' }, slotName(category, area))];
+}
+
+// ZHA has no per-area entities; this template sensor (as in ZHADOC.md) gives one
+export function zhaAreaSensorYaml(ieee, n, name) {
+    const label = (name || `mmWave area ${n}`).replace(/"/g, '\'');
+    const digits = String(ieee).toLowerCase().replace(/^0x/, '').replace(/:/g, '');
+    return [
+        'template:',
+        '  - trigger:',
+        '      - platform: event',
+        '        event_type: zha_event',
+        '        event_data:',
+        `          device_ieee: "${ieee}"`,
+        '          command: mmwave_anyone_in_area',
+        '    binary_sensor:',
+        `      - name: "${label} occupied"`,
+        `        unique_id: mmwave_${digits}_area${n}`,
+        `        state: "{{ trigger.event.data.args.area${n} == 1 }}"`,
+        '        device_class: occupancy',
+        '',
+    ].join('\n');
+}
+
+async function copyAndSay(text, what) {
+    if (await copyText(text)) toast(`Copied ${what}.`, 'success', 2500);
+    else toast('Couldn\'t copy. Select the text and copy it yourself.', 'error');
+}
+
+// Under a detection area: the Home Assistant entity that follows it, or on ZHA the
+// YAML for a sensor that does (ZHA only sends area occupancy as an event)
+function entityLine(category, area) {
+    if (category !== 'mmwave_detection_areas') return null;
+    const info = state.deviceInfo;
+    if (!info || info.topic !== state.device) return null;
+    const n = area.slice(4);
+    if (state.stack === 'z2m') {
+        const id = info.entities && info.entities[area];
+        if (!id) return null;
+        return h('div', { class: 'zone-entity' },
+            h('code', { title: 'Home Assistant entity for this area' }, id),
+            h('button', { class: 'btn link', type: 'button', onclick: () => copyAndSay(id, id) }, 'Copy'));
+    }
+    if (state.stack === 'zha' && info.ieee) {
+        return h('div', { class: 'zone-entity' },
+            h('span', null, 'No entity in ZHA for this area.'),
+            h('button', {
+                class: 'btn link', type: 'button', title: 'A template sensor for configuration.yaml that follows this area',
+                onclick: () => copyAndSay(zhaAreaSensorYaml(info.ieee, n, customName(category, area) || `${state.deviceName} area ${n}`), 'the sensor YAML'),
+            }, 'Copy sensor YAML'));
+    }
+    return null;
+}
+
 export function renderZoneList() {
     activeDims = null;
     const edit = state.edit;
@@ -343,15 +421,17 @@ export function renderZoneList() {
                 onclick: () => active ? null : switchTo(type.category, area),
             },
                 h('i', { class: `swatch ${type.cls}` }),
-                h('span', null, h('span', { class: 'name' }, zoneName(type.category, area)), dimsNode),
+                h('span', null, ...nameNodes(type.category, area), dimsNode),
                 h('span', { class: 'go' + (saving ? ' saving' : '') }, active ? 'Editing' : saving ? 'Saving…' : 'Edit')));
+            const entity = active ? null : entityLine(type.category, area);
             if (active) section.append(editor);
+            else if (entity) section.append(entity);
         }
         if (isNewHere) {
             activeDims = h('span', { class: 'dims' }, dims(edit.draft));
             section.append(h('div', { class: 'zone-row active' },
                 h('i', { class: `swatch ${type.cls}` }),
-                h('span', null, h('span', { class: 'name', id: 'newZoneName' }, `New ${zoneName(edit.category, edit.area).toLowerCase()}`), activeDims),
+                h('span', null, h('span', { class: 'name', id: 'newZoneName' }, `New ${slotName(edit.category, edit.area).toLowerCase()}`), activeDims),
                 h('span', { class: 'go' }, 'Adding')));
             section.append(editor);
         }
@@ -389,7 +469,8 @@ function renderSlotPicker() {
             edit.area = area;
             renderSlotPicker();
             const name = $('#newZoneName');
-            if (name) name.textContent = `New ${zoneName(edit.category, area).toLowerCase()}`;
+            if (name) name.textContent = `New ${slotName(edit.category, area).toLowerCase()}`;
+            nameInput.placeholder = slotName(edit.category, area);
             emit('edit');
         },
     }, area.slice(4))));
@@ -401,16 +482,33 @@ function needDevice() {
     return true;
 }
 
-export function startEdit(category, area) {
+export function startEdit(category, area, draft = null) {
     if (state.arranging) emit('arrange', false);
     const current = displayZones()[category][area];
-    state.edit = { category, area, draft: { ...(current || NEW_ZONE) }, original: current ? { ...current } : null, isNew: !current };
+    state.edit = { category, area, draft: { ...(draft || current || NEW_ZONE) }, original: current ? { ...current } : null, isNew: !current };
     renderZoneList();
     editor.hidden = false;
     fillInputs();
+    // A new zone starts unnamed, even if the slot once held a named one
+    nameInput.value = current ? customName(category, area) : '';
+    nameInput.placeholder = slotName(category, area);
     renderSlotPicker();
     $('#btnDeleteZone').hidden = !current;
     emit('edit');
+}
+
+// A new zone of this type in the first free slot, starting from `draft` (e.g. around
+// where someone sat). False when every slot is taken.
+export function startNewZone(category, draft) {
+    if (needDevice()) return false;
+    const area = AREAS.find(a => !displayZones()[category][a]);
+    if (!area) {
+        toast(`All four ${ZONE_TYPES.find(t => t.category === category).group} areas are in use.`, 'error');
+        return false;
+    }
+    startEdit(category, area, sorted(draft));
+    emit('show-editor');
+    return true;
 }
 
 function startAdd(category) {
@@ -422,7 +520,7 @@ function startAdd(category) {
 
 function hasChanges() {
     const e = state.edit;
-    return !!e && !sameZone(e.draft, e.original);
+    return !!e && (!sameZone(e.draft, e.original) || nameInput.value.trim() !== customName(e.category, e.area));
 }
 
 async function switchTo(category, area) {
@@ -477,16 +575,36 @@ export function saveEdit() {
         toast('A zone needs some width and depth.', 'error');
         return;
     }
-    writeZone(e.category, e.area, d);
+    const key = `${e.category}:${e.area}`;
+    const oldName = customName(e.category, e.area);
+    const moved = e.isNew || !sameZone(d, e.original);
+    setName(e.category, e.area, nameInput.value);
+    if (!moved) {
+        // Only the name changed: nothing to send to the switch
+        endEdit();
+        if (oldName !== customName(e.category, e.area)) toast('Name saved.', 'success', 2500);
+        return;
+    }
+    const undoEntry = {
+        label: `${e.isNew ? 'Added' : 'Changed'} ${zoneName(e.category, e.area)}`,
+        writes: [{ category: e.category, area: e.area, zone: e.original, after: sorted(d) }],
+        names: { [key]: oldName },
+    };
+    emit('undoable', undoEntry);
+    writeZone(e.category, e.area, d, { undo: undoEntry });
     endEdit();
 }
 
-function writeZone(category, area, zone) {
-    const payload = zoneToDevicePayload(category, zone);
+// Send one zone to the switch (null clears the slot) and wait for it to show up in reports.
+// `undo` is the undo entry for this change: its toast then offers to take it back.
+export function writeZone(category, area, zone, { message = null, undo = null } = {}) {
+    const payload = zone ? zoneToDevicePayload(category, zone) : EMPTY_AREA;
     state.socket.emit('update_parameter', { param: category, value: { [area]: payload } });
     expectWrite(category, area, zone, payload);
     emit('zones');
-    toast(`Saving ${zoneName(category, area)}…`);
+    if (!state.edit) renderZoneList();
+    toast(message || `${zone ? 'Saving' : 'Deleting'} ${zoneName(category, area)}…`, 'info', undo ? 6000 : 4000,
+        undo ? { label: 'Undo', onClick: () => emit('undo', undo) } : null);
 }
 
 async function deleteEdit() {
@@ -495,11 +613,17 @@ async function deleteEdit() {
     const name = zoneName(e.category, e.area);
     const ok = await confirmAction(`Delete ${name} from the switch?`, { confirm: 'Delete', danger: true });
     if (!ok || state.edit !== e) return;
-    state.socket.emit('update_parameter', { param: e.category, value: { [e.area]: EMPTY_AREA } });
-    expectWrite(e.category, e.area, null, EMPTY_AREA);
+    const key = `${e.category}:${e.area}`;
+    const oldName = customName(e.category, e.area);
     endEdit();
-    emit('zones');
-    toast(`Deleting ${name}…`);
+    const undoEntry = {
+        label: `Deleted ${name}`,
+        writes: [{ category: e.category, area: e.area, zone: e.original, after: null }],
+        names: { [key]: oldName },
+    };
+    emit('undoable', undoEntry);
+    writeZone(e.category, e.area, null, { message: `Deleting ${name}…`, undo: undoEntry });
+    setName(e.category, e.area, '');
 }
 
 export function resetZones(emptyZones) {
@@ -519,5 +643,13 @@ export function initZones() {
     $('#btnSaveZone').addEventListener('click', saveEdit);
     $('#btnCancelEdit').addEventListener('click', cancelEdit);
     $('#btnDeleteZone').addEventListener('click', deleteEdit);
+    nameInput.addEventListener('keydown', e => { if (e.key === 'Enter') saveEdit(); });
+    // A name or the switch's HA entities changed: redraw the list (not mid-edit) and the map labels
+    const refresh = () => {
+        if (!state.edit) renderZoneList();
+        emit('zones');
+    };
+    on('names', refresh);
+    on('device-info', refresh);
     renderZoneList();
 }

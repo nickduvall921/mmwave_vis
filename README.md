@@ -19,6 +19,8 @@ Decodes Zigbee2MQTT payloads to visualize real-time MQTT data and configure dete
 ZHA support has just been added experimentally. Requires a custom Quark that I have built to be installed in ZHA.
 [ZHA DOC HERE](ZHADOC.md)
 
+> **ZHA on Home Assistant 2026.8 or later:** keep (or install) this repo's quirk even though ZHA now supports the VZM32-SN on its own. The built-in support doesn't pass the switch's radar reports on to Home Assistant, so without this quirk the Visualizer shows nothing. [Why](ZHADOC.md#why-the-custom-quirk-is-still-needed)
+
 ## Features
 
 - Live map of everyone the switch is tracking, with short trails and the sensor's field of view.
@@ -27,6 +29,12 @@ ZHA support has just been added experimentally. Requires a custom Quark that I h
 - Movement recorder: walk an area, then fit a zone around where you walked.
 - Auto-detect and clear interference zones (fans, vents, curtains).
 - Back up a switch's zones to a file and restore them after a reset or re-pair (Zone tools, then Backup).
+- Undo: take back a zone save or delete, a clear, a reset, an auto-detect or a backup import (Undo bar in the Zones tab, or Ctrl+Z).
+- Name zones ("Couch", "Desk"); the names show on the map, in the zone list and in backups. Each detection area shows its Home Assistant entity, or on ZHA a ready-made sensor to copy.
+- History (off until you turn it on): a heat map of where people spent time over the last 10 minutes, hour, 6 hours, day, week or any range, and a timeline of when occupancy and the light changed, each with a replay of what the radar saw.
+- Hold time and sit-still tests that time how the switch behaves and suggest what to change.
+- Switch details: firmware, mmWave module version, Zigbee signal and firmware updates.
+- Download diagnostics from the ⋮ menu to attach to a bug report (passwords and tokens are removed).
 - Occupancy, per-area occupancy and light level as they change.
 - Works on phones, follows your light or dark system theme, and saves the map as an image from the ⋮ menu.
 

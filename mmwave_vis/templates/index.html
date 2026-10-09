@@ -18,6 +18,11 @@
     <link rel="modulepreload" href="{{ ingress_path }}/static/js/backup.js">
     <link rel="modulepreload" href="{{ ingress_path }}/static/js/display.js">
     <link rel="modulepreload" href="{{ ingress_path }}/static/js/zwave.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/static/js/names.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/static/js/undo.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/static/js/history.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/static/js/tester.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/static/js/switchinfo.js">
 </head>
 <body class="stack-{{ zigbee_stack }}" data-ingress="{{ ingress_path }}">
 
@@ -40,12 +45,14 @@
             <dt id="popBackendLabel">MQTT broker</dt><dd><span class="dot" id="popBackendDot"></span><span id="popBackend">Unknown</span></dd>
             <dt>Zigbee</dt><dd id="popStack">Unknown</dd>
             <dt>Last update</dt><dd class="num" id="popPacket">None yet</dd>
+            <dt>Switch firmware</dt><dd class="num" id="popFirmware">–</dd>
             <dt>Version</dt><dd>{{ version }}</dd>
         </dl>
     </div>
 
     <div class="popover menu" id="moreMenu" role="menu" hidden>
         <button type="button" role="menuitem" id="menuSaveImage">Save map image</button>
+        <button type="button" role="menuitem" id="menuDiagnostics">Download diagnostics<span class="menu-note">For bug reports. Includes switch names and recent positions.</span></button>
         <button type="button" role="menuitem" id="menuZwave">Z-Wave packet capture</button>
         <div class="meta">mmWave Visualizer {{ version }}</div>
     </div>
@@ -83,7 +90,7 @@
             <span class="chips" id="areaChips">
                 <span class="chip">Area 1</span><span class="chip">Area 2</span><span class="chip">Area 3</span><span class="chip">Area 4</span>
             </span>
-            <span class="z2m-only">Light <strong class="num" id="illuminance">–</strong></span>
+            <span>Light <strong class="num" id="illuminance">–</strong></span>
             <span>Targets <strong class="num" id="targetCount">0</strong></span>
         </div>
 
@@ -112,6 +119,19 @@
                 <span class="grow">Drag the switch to where it is in the room and turn it with the round handle. Drag the corners to fit your walls.</span>
                 <button class="btn small primary" type="button" id="arrangeDone">Done</button>
             </div>
+            <div class="map-bar replay-bar" id="replayBar" hidden>
+                <button class="btn small icon" type="button" id="replayPlay" aria-label="Play">
+                    <svg class="i-play" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5 3.5v9l7-4.5z"/></svg>
+                    <svg class="i-pause" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.5 3.5h2.5v9H4.5zM9 3.5h2.5v9H9z"/></svg>
+                </button>
+                <div class="replay-main">
+                    <div class="replay-text"><strong id="replayWhat"></strong> <span class="num" id="replayTime"></span><span class="replay-note"> · zones shown are today's</span></div>
+                    <input type="range" id="replaySlider" min="0" max="1000" value="0" step="50" aria-label="Replay position">
+                </div>
+                <button class="btn small ghost" type="button" id="replaySpeed" title="Playback speed">1×</button>
+                <button class="btn small primary" type="button" id="replayLive">Back to live</button>
+            </div>
+            <div class="map-overlay tester-overlay" id="testerOverlay" aria-live="polite" hidden></div>
         </div>
 
         <div class="targets">
@@ -125,20 +145,29 @@
     <aside class="panel">
         <div class="tabs" role="tablist" aria-label="Settings">
             <button class="tab" type="button" role="tab" id="tab-zones" aria-controls="panel-zones" aria-selected="true">Zones</button>
-            <button class="tab" type="button" role="tab" id="tab-switch" aria-controls="panel-switch" aria-selected="false">Switch settings</button>
+            <button class="tab" type="button" role="tab" id="tab-switch" aria-controls="panel-switch" aria-selected="false">Switch</button>
+            <button class="tab" type="button" role="tab" id="tab-history" aria-controls="panel-history" aria-selected="false">History</button>
             <button class="tab" type="button" role="tab" id="tab-display" aria-controls="panel-display" aria-selected="false">Display</button>
         </div>
 
         <!-- Zones -->
         <div class="tab-panel" role="tabpanel" id="panel-zones" aria-labelledby="tab-zones">
+            <div class="undo-bar" id="undoBar" hidden>
+                <span class="grow">Last change: <span id="undoLabel"></span></span>
+                <button class="btn small" type="button" id="btnUndo" title="Undo (Ctrl+Z)">Undo</button>
+            </div>
             <div id="zoneGroups"></div>
 
             <div class="editor" id="zoneEditor" hidden>
                 <div class="slot-pick" id="slotPick" hidden><span>Slot</span><span class="seg" id="slotSeg"></span></div>
+                <div class="range-row name-row"><span>Name</span><input type="text" id="editName" maxlength="40" autocomplete="off" spellcheck="false" aria-label="Zone name (optional)"><button class="info-btn" type="button" aria-label="About editing zones" aria-expanded="false" aria-controls="editorInfo" data-info="editorInfo"></button></div>
+                <div class="info-panel" id="editorInfo" hidden>
+                    <p>Drag the zone or its handles on the map, or type exact values.</p>
+                    <p>The name is optional. It's only shown here and on the map; the switch doesn't store it.</p>
+                </div>
                 <div class="range-row"><span>Width</span><input type="number" step="1" id="editXMin" aria-label="Width from"><span class="to">to</span><input type="number" step="1" id="editXMax" aria-label="Width to"><span class="unit">cm</span></div>
                 <div class="range-row"><span>Depth</span><input type="number" step="1" id="editYMin" aria-label="Depth from"><span class="to">to</span><input type="number" step="1" id="editYMax" aria-label="Depth to"><span class="unit">cm</span></div>
                 <div class="range-row"><span>Height</span><input type="number" step="1" id="editZMin" aria-label="Height from"><span class="to">to</span><input type="number" step="1" id="editZMax" aria-label="Height to"><span class="unit">cm</span></div>
-                <p class="hint">Drag the zone or its handles on the map, or type exact values.</p>
                 <div class="editor-actions">
                     <button class="btn small" type="button" id="btnUseRecording">Use recording</button>
                     <button class="btn small ghost danger-text" type="button" id="btnDeleteZone">Delete</button>
@@ -150,32 +179,50 @@
 
             <details class="section" id="recorderSection">
                 <summary>Movement recorder</summary>
-                <p class="hint" style="margin-top:0">Record while you walk the area you want covered. While editing a zone, press Use recording to fit the zone around it.</p>
                 <div class="tool-row"><span>Slot</span><span class="seg" id="recSlots"></span></div>
                 <div class="tool-row">
-                    <button class="btn small" type="button" id="btnRecord">Record</button>
+                    <span class="label-info">
+                        <button class="btn small" type="button" id="btnRecord">Record</button>
+                        <button class="info-btn" type="button" aria-label="About the movement recorder" aria-expanded="false" aria-controls="recorderInfo" data-info="recorderInfo"></button>
+                    </span>
                     <span class="num" id="recStatus"></span>
+                </div>
+                <div class="info-panel" id="recorderInfo" hidden>
+                    <p>Record while you walk the area you want covered. While editing a zone, press Use recording to fit the zone around it.</p>
                 </div>
                 <div class="tool-row"><span>Padding</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="recordingPadding" value="20" min="0" max="200" style="width:76px"> cm</span></div>
                 <div class="tool-row"><span id="recSummary">No recordings yet.</span><button class="btn link danger-text" type="button" id="btnClearSlot">Clear slot</button></div>
             </details>
 
             <section class="section">
-                <div class="section-head"><h2>Zone tools</h2></div>
+                <div class="section-head"><span class="label-info"><h2>Zone tools</h2><button class="info-btn" type="button" aria-label="About the zone tools" aria-expanded="false" aria-controls="zoneToolsInfo" data-info="zoneToolsInfo"></button></span></div>
+                <div class="info-panel info-under-head" id="zoneToolsInfo" hidden>
+                    <p>Detect automatically asks the switch to find fans, vents and curtains and add interference areas around them.</p>
+                    <p>A backup holds this switch's detection, interference and stay zones and their names. Importing writes every slot, clearing any that are empty in the file.</p>
+                    <p>Clearing, resetting, detecting and importing can all be undone with the Undo bar at the top of this tab.</p>
+                    <p class="zha-only">On ZHA, press Sync after saving or running a tool to see what the switch stored.</p>
+                </div>
                 <div class="tool-row"><span>Interference</span><span class="actions"><button class="btn link" type="button" data-command="1">Detect automatically</button><button class="btn link" type="button" data-command="3">Clear</button></span></div>
                 <div class="tool-row"><span>Reset</span><span class="actions"><button class="btn link" type="button" data-command="4">Detection areas</button><button class="btn link" type="button" data-command="5">Stay areas</button></span></div>
                 <div class="tool-row"><span>Backup</span><span class="actions"><button class="btn link" type="button" id="btnExportZones">Export</button><button class="btn link" type="button" id="btnImportZones">Import</button></span></div>
                 <input type="file" id="importZonesFile" accept=".json,application/json" hidden>
                 <p class="status-line" id="zoneBackupStatus"></p>
-                <p class="hint">A backup holds this switch's detection, interference and stay zones. Importing writes every slot, clearing any that are empty in the file.</p>
-                <label class="check" style="margin-top:8px"><input type="checkbox" id="toggleStayInvert"><span>Correct mirrored stay zones</span></label>
-                <p class="hint" style="margin-top:0">Current firmware flips stay zones left to right when saving them. With this on, stay zones are flipped before sending so they land where you drew them.</p>
-                <p class="hint zha-only">On ZHA, press Sync after saving or running a tool to see what the switch stored.</p>
+                <div class="check-row">
+                    <label class="check"><input type="checkbox" id="toggleStayInvert"><span>Correct mirrored stay zones</span></label>
+                    <button class="info-btn" type="button" aria-label="About correcting mirrored stay zones" aria-expanded="false" aria-controls="stayInvertInfo" data-info="stayInvertInfo"></button>
+                </div>
+                <div class="info-panel" id="stayInvertInfo" hidden>
+                    <p>Current firmware flips stay zones left to right when saving them. With this on, stay zones are flipped before sending so they land where you drew them.</p>
+                </div>
             </section>
         </div>
 
         <!-- Switch settings -->
         <div class="tab-panel" role="tabpanel" id="panel-switch" aria-labelledby="tab-switch" hidden>
+            <section class="section">
+                <div class="section-head"><h2>This switch</h2></div>
+                <div id="switchInfo"></div>
+            </section>
             <section class="section">
                 <div class="toggle-row">
                     <label class="toggle-title" for="mmWaveTargetInfoReport">Target reporting</label>
@@ -193,25 +240,64 @@
             </section>
             <section class="section">
                 <div class="section-head"><h2>Detection</h2></div>
-                <label class="field"><span>Sensitivity</span>
+                <div class="field">
+                    <span class="label-info"><label for="mmWaveDetectSensitivity">Sensitivity</label><button class="info-btn" type="button" aria-label="About sensitivity" aria-expanded="false" aria-controls="sensitivityInfo" data-info="sensitivityInfo"></button></span>
                     <select id="mmWaveDetectSensitivity" data-param="mmWaveDetectSensitivity">
                         <option value="Low">Low</option>
                         <option value="Medium">Medium</option>
                         <option value="High (default)">High</option>
                     </select>
-                </label>
-                <label class="field"><span>Trigger speed</span>
+                </div>
+                <div class="info-panel" id="sensitivityInfo" hidden>
+                    <p>How small a movement counts. Lower it if fans, curtains or pets keep the room occupied; raise it if someone sitting still gets missed.</p>
+                </div>
+                <div class="field">
+                    <span class="label-info"><label for="mmWaveDetectTrigger">Trigger speed</label><button class="info-btn" type="button" aria-label="About trigger speed" aria-expanded="false" aria-controls="triggerInfo" data-info="triggerInfo"></button></span>
                     <select id="mmWaveDetectTrigger" data-param="mmWaveDetectTrigger">
                         <option value="Fast (0.2s, default)">Fast (0.2 s)</option>
                         <option value="Medium (1s)">Medium (1 s)</option>
                         <option value="Slow (5s)">Slow (5 s)</option>
                     </select>
-                </label>
-                <label class="field"><span>Hold time (s)</span><input type="number" id="mmWaveHoldTime" data-param="mmWaveHoldTime" min="0" max="28800"></label>
-                <label class="field"><span>Stay life (s)</span><input type="number" id="mmWaveStayLife" data-param="mmWaveStayLife" min="0" max="28800"></label>
+                </div>
+                <div class="info-panel" id="triggerInfo" hidden>
+                    <p>How long movement has to last before the room counts as occupied. Slower ignores brief blips, at the cost of the light coming on later.</p>
+                </div>
+                <div class="field">
+                    <span class="label-info"><label for="mmWaveHoldTime">Hold time (s)</label><button class="info-btn" type="button" aria-label="About hold time" aria-expanded="false" aria-controls="holdInfo" data-info="holdInfo"></button></span>
+                    <input type="number" id="mmWaveHoldTime" data-param="mmWaveHoldTime" min="0" max="28800">
+                </div>
+                <div class="info-panel" id="holdInfo" hidden>
+                    <p>How long the room stays occupied after nobody is detected. Short saves energy; long avoids the light going off on someone reading.</p>
+                </div>
+                <div class="field">
+                    <span class="label-info"><label for="mmWaveStayLife">Stay life <span class="unit-note" id="stayLifeSecs"></span></label><button class="info-btn" type="button" aria-label="About stay life" aria-expanded="false" aria-controls="stayLifeInfo" data-info="stayLifeInfo"></button></span>
+                    <input type="number" id="mmWaveStayLife" data-param="mmWaveStayLife" min="0" max="28800">
+                </div>
+                <div class="info-panel" id="stayLifeInfo" hidden>
+                    <p>How long the switch keeps counting someone in a stay area after they stop moving. It's in steps of 50 ms: 20 is 1 second and 300 (the default) is 15 seconds.</p>
+                </div>
+
+                <div class="tester">
+                    <div class="button-row">
+                        <button class="btn small" type="button" id="btnTestHold">Test hold time</button>
+                        <button class="btn small" type="button" id="btnTestStill">Sit still test</button>
+                        <button class="info-btn" type="button" aria-label="About the tests" aria-expanded="false" aria-controls="testerInfo" data-info="testerInfo"></button>
+                    </div>
+                    <div class="info-panel" id="testerInfo" hidden>
+                        <p>Test hold time times how long the switch takes to report clear after you leave, and compares it with the hold time.</p>
+                        <p>Sit still test checks you stay detected while sitting still, and offers a stay area where you sat if you don't.</p>
+                        <p>Both follow the map, so keep the page open.</p>
+                    </div>
+                    <p class="status-line tester-status" id="testerStatus"></p>
+                    <div class="button-row" id="testerActions"></div>
+                </div>
             </section>
             <section class="section">
-                <div class="section-head"><h2>System</h2></div>
+                <div class="section-head"><span class="label-info"><h2>System</h2><button class="info-btn" type="button" aria-label="About these settings" aria-expanded="false" aria-controls="systemInfo" data-info="systemInfo"></button></span></div>
+                <div class="info-panel info-under-head" id="systemInfo" hidden>
+                    <p>Changes are sent to the switch as soon as you make them.</p>
+                    <p class="zha-only">If settings look out of date, open the device in ZHA and choose Reconfigure to restore the cluster binding.</p>
+                </div>
                 <label class="field"><span>Room preset</span>
                     <select id="mmWaveRoomSizePreset" data-param="mmWaveRoomSizePreset">
                         <option value="Custom">Custom</option>
@@ -231,8 +317,67 @@
                         <option value="Mirrored Wasteful Occupancy">Mirrored wasteful occupancy</option>
                     </select>
                 </label>
-                <p class="hint zha-only">If settings look out of date, open the device in ZHA and choose Reconfigure to restore the cluster binding.</p>
-                <p class="hint">Changes are sent to the switch as soon as you make them.</p>
+            </section>
+        </div>
+
+        <!-- History -->
+        <div class="tab-panel" role="tabpanel" id="panel-history" aria-labelledby="tab-history" hidden>
+            <section class="section">
+                <div class="toggle-row">
+                    <label class="toggle-title" for="historyEnabled">Record history</label>
+                    <button class="info-btn" type="button" aria-label="About recording history" aria-expanded="false" aria-controls="historyInfo" data-info="historyInfo"></button>
+                    <span class="grow"></span>
+                    <input type="checkbox" role="switch" class="switch" id="historyEnabled">
+                </div>
+                <div class="info-panel" id="historyInfo" hidden>
+                    <p>Records where people were and when each switch's occupancy and light changed, for every switch, so you can see a heat map and a timeline here.</p>
+                    <p>It's kept in the addon's data folder on this Home Assistant and never sent anywhere.</p>
+                    <p>Positions are only recorded while a switch has target reporting on.</p>
+                </div>
+                <div class="tool-row" id="historyKeepRow" hidden>
+                    <span>Keep for</span>
+                    <select id="historyDays" aria-label="Keep history for">
+                        <option value="7">7 days</option>
+                        <option value="30">30 days</option>
+                        <option value="90">90 days</option>
+                    </select>
+                </div>
+                <p class="status-line" id="historyStatus"></p>
+            </section>
+
+            <section class="section" id="historyView">
+                <div class="section-head"><h2>Heat map</h2></div>
+                <div class="seg range-seg" id="heatRanges" role="group" aria-label="Time range">
+                    <button type="button" data-range="10m">10 min</button>
+                    <button type="button" data-range="1h">1 h</button>
+                    <button type="button" data-range="6h">6 h</button>
+                    <button type="button" data-range="24h">24 h</button>
+                    <button type="button" data-range="7d">Week</button>
+                    <button type="button" data-range="custom">Custom</button>
+                </div>
+                <div class="grid-2" id="heatCustom" style="margin-top:10px" hidden>
+                    <label class="mini">From<input type="datetime-local" id="heatFrom"></label>
+                    <label class="mini">To<input type="datetime-local" id="heatTo"></label>
+                </div>
+                <div class="heat-legend" aria-hidden="true"><span>Less time</span><i class="heat-ramp"></i><span>More</span></div>
+                <div class="tool-row"><span>Opacity</span><input type="range" id="heatOpacity" min="20" max="100" step="5" aria-label="Heat map opacity"></div>
+                <p class="status-line" id="heatSummary"></p>
+            </section>
+
+            <section class="section">
+                <div class="section-head">
+                    <span class="label-info"><h2>Timeline</h2><button class="info-btn" type="button" aria-label="About the timeline" aria-expanded="false" aria-controls="timelineInfo" data-info="timelineInfo"></button></span>
+                    <span class="seg small-seg" id="eventFilter" role="group" aria-label="Show">
+                        <button type="button" data-filter="on">Turned on</button>
+                        <button type="button" data-filter="all">All</button>
+                    </span>
+                </div>
+                <div class="info-panel info-under-head" id="timelineInfo" hidden>
+                    <p>When the occupancy, each detection area and the light changed. Choose a moment to replay what the radar saw from 30 seconds before to 30 seconds after.</p>
+                    <p>Turned on shows only when the room became occupied or the light came on; All shows every change.</p>
+                </div>
+                <div class="event-list" id="eventList"></div>
+                <div class="button-row"><button class="btn small ghost danger-text" type="button" id="btnClearHistory">Clear this switch's history</button></div>
             </section>
         </div>
 
@@ -252,11 +397,15 @@
                 </div>
                 <label class="check"><input type="checkbox" id="vizToggleInterference"><span>Interference areas</span></label>
                 <label class="check"><input type="checkbox" id="vizToggleStay"><span>Stay areas</span></label>
+                <label class="check"><input type="checkbox" id="vizToggleHeat"><span>Heat map</span></label>
                 <label class="check"><input type="checkbox" id="vizToggleZoom"><span>Zoom buttons</span></label>
             </section>
 
             <section class="section">
-                <div class="section-head"><h2>Map range <span class="count">cm</span></h2></div>
+                <div class="section-head"><span class="label-info"><h2>Map range <span class="count">cm</span></h2><button class="info-btn" type="button" aria-label="About the map range" aria-expanded="false" aria-controls="rangeInfo" data-info="rangeInfo"></button></span></div>
+                <div class="info-panel info-under-head" id="rangeInfo" hidden>
+                    <p>The whole range always fits at true scale. Scroll or pinch on the map to zoom and drag to move around, or use the zoom buttons.</p>
+                </div>
                 <div class="grid-2">
                     <label class="mini">Width from<input type="number" id="vizXMin"></label>
                     <label class="mini">Width to<input type="number" id="vizXMax"></label>
@@ -268,12 +417,13 @@
                     <button class="btn small ghost" type="button" id="rangeFit">Fit zones</button>
                     <button class="btn small ghost" type="button" id="rangeFull">Full range</button>
                 </div>
-                <p class="hint">The whole range always fits at true scale. Scroll or pinch on the map to zoom and drag to move around, or use the zoom buttons.</p>
             </section>
 
             <section class="section">
-                <div class="section-head"><h2>Room layout</h2><button class="btn small" type="button" id="btnArrange">Arrange on map</button></div>
-                <p class="hint" style="margin-top:0">Place the switch in your room so the map matches the space. This only changes the picture, never the switch, and is saved for everyone who opens the addon.</p>
+                <div class="section-head"><span class="label-info"><h2>Room layout</h2><button class="info-btn" type="button" aria-label="About the room layout" aria-expanded="false" aria-controls="layoutInfo" data-info="layoutInfo"></button></span><button class="btn small" type="button" id="btnArrange">Arrange on map</button></div>
+                <div class="info-panel info-under-head" id="layoutInfo" hidden>
+                    <p>Place the switch in your room so the map matches the space. This only changes the picture, never the switch, and is saved for everyone who opens the addon.</p>
+                </div>
                 <div class="grid-3" style="margin-top:10px">
                     <label class="mini">Switch X<input type="number" id="layoutX" step="1"></label>
                     <label class="mini">Switch Y<input type="number" id="layoutY" step="1"></label>

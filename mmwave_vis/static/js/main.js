@@ -2,15 +2,20 @@
 // the targets table and tabs. The map, zones, recorder, backup, display
 // settings and Z-Wave capture live in their own modules.
 
-import { state, on, emptyZones, freshReportTimes, zoneName, ZONE_TYPES } from './state.js';
+import { state, on, emit, emptyZones, freshReportTimes, zoneName, customName, ZONE_TYPES } from './state.js';
 import * as prefs from './prefs.js';
-import { $, $$, h, setText, num, toast, setNotice, clearNotice, bindPopover, closePopover, confirmAction, downloadBlob, fileSafe } from './ui.js';
+import { $, $$, h, setText, num, toast, setNotice, clearNotice, bindPopover, closePopover, confirmAction, downloadBlob, fileSafe, duration } from './ui.js';
 import { Radar } from './radar.js';
 import * as zones from './zones.js';
 import * as recorder from './recorder.js';
 import { initBackup } from './backup.js';
 import * as display from './display.js';
 import { initZwave, openZwave } from './zwave.js';
+import { namesFromServer } from './names.js';
+import { initUndo, pushSnapshot, undoActionFor, drop as dropUndo } from './undo.js';
+import * as history from './history.js';
+import { initTester, stopTests, STAY_LIFE_STEP_S } from './tester.js';
+import { initSwitchInfo, deviceInfoFromServer, clearDeviceInfo } from './switchinfo.js';
 
 const ingress = document.body.dataset.ingress || '';
 const socket = io({ path: ingress + '/socket.io' });
@@ -35,7 +40,16 @@ const radar = new Radar($('#radar'), {
 });
 
 on('zones', () => radar.setZones(zones.displayZones(), zones.pendingKeys()));
+on('names', () => { radar.setNames(state.zoneNames); renderAreaChips(); });
 on('draft', () => radar.draftChanged());
+on('replay-targets', list => {
+    setText($('#targetCount'), String(list.length));
+    renderTable(list);
+});
+on('replay-end', () => {
+    targetHistory = {};
+    emptyRow('Waiting for live data');
+});
 on('recording', () => radar.setRecording(recorder.slots, recorder.padding()));
 on('recording-grew', () => radar.recordingGrew());
 on('recording-padding', () => radar.setRecordingPad(recorder.padding()));
@@ -160,12 +174,20 @@ function setOccupancy(value) {
     const el = $('#occupancy');
     el.dataset.state = value === null ? 'unknown' : value ? 'on' : 'off';
     setText($('#occupancyText'), value === null ? 'Waiting for data' : value ? 'Occupied' : 'Clear');
+    if (value !== state.occupied) {
+        state.occupied = value;
+        state.occupiedAt = Date.now();
+        emit('occupancy', value);
+    }
 }
 
 function renderAreaChips() {
     $$('#areaChips .chip').forEach((chip, i) => {
+        const area = `area${i + 1}`;
+        const custom = customName('mmwave_detection_areas', area);
+        setText(chip, custom ? (custom.length > 14 ? custom.slice(0, 13) + '…' : custom) : `Area ${i + 1}`);
         chip.classList.toggle('on', state.areaOccupied[i]);
-        chip.title = `Area ${i + 1} ${state.areaOccupied[i] ? 'occupied' : 'clear'}`;
+        chip.title = `${zoneName('mmwave_detection_areas', area)} ${state.areaOccupied[i] ? 'occupied' : 'clear'}`;
     });
     radar.setOccupied(state.areaOccupied);
 }
@@ -216,9 +238,15 @@ function resetDeviceView() {
     state.zoneReportAt = freshReportTimes();
     state.areaOccupied = [false, false, false, false];
     state.lastCommandId = null;
+    state.settings = {};
+    state.targetCount = 0;
     setOccupancy(null);
     setText($('#illuminance'), '–');
     setText($('#targetCount'), '0');
+    stopTests();
+    history.deviceChanged();
+    namesFromServer(null);              // the addon sends this switch's names right after change_device
+    clearDeviceInfo();
     renderAreaChips();
     recorder.stopRecording();
     if (state.arranging) setArranging(false);
@@ -228,6 +256,7 @@ function resetDeviceView() {
     for (const key of ['targetReport', 'quirk', 'binding', 'stayFlip']) clearNotice(key);
     fitAfterLayout = true;
     display.layoutFromServer(null);     // the addon sends this switch's layout right after change_device
+    emit('device');
     renderStatus();
 }
 
@@ -263,6 +292,20 @@ paramInputs.forEach(input => {
     });
 });
 
+// Stay life is in 50 ms steps; show what the number means
+function renderStayLife() {
+    const input = $('#mmWaveStayLife');
+    const steps = Number(input.value);
+    let text = '';
+    if (input.value !== '' && Number.isFinite(steps) && steps >= 0) {
+        const s = steps * STAY_LIFE_STEP_S;
+        text = s < 60 ? `(${+s.toFixed(2)} s)` : `(${duration(s)})`;
+    }
+    setText($('#stayLifeSecs'), text);
+}
+$('#mmWaveStayLife').addEventListener('input', renderStayLife);
+on('device-settings', renderStayLife);
+
 function enableTargetReporting() {
     $('#mmWaveTargetInfoReport').checked = true;
     socket.emit('update_parameter', { param: 'mmWaveTargetInfoReport', value: 'Enable' });
@@ -277,11 +320,12 @@ function targetReportNotice(value) {
     });
 }
 
+// `category` is the zone type the command changes, so it can be undone
 const COMMANDS = {
-    1: { done: 'Scanning for interference…' },
-    3: { ask: 'Clear every interference zone on the switch?', label: 'Clear', done: 'Clearing interference zones…' },
-    4: { ask: 'Reset the detection areas to the switch defaults? Your detection zones will be replaced.', label: 'Reset', done: 'Resetting detection areas…' },
-    5: { ask: 'Clear every stay area on the switch?', label: 'Clear', done: 'Clearing stay areas…' },
+    1: { done: 'Scanning for interference…', undo: 'Detected interference automatically', category: 'mmwave_interference_areas' },
+    3: { ask: 'Clear every interference zone on the switch?', label: 'Clear', done: 'Clearing interference zones…', undo: 'Cleared interference zones', category: 'mmwave_interference_areas' },
+    4: { ask: 'Reset the detection areas to the switch defaults? Your detection zones will be replaced.', label: 'Reset', done: 'Resetting detection areas…', undo: 'Reset detection areas', category: 'mmwave_detection_areas' },
+    5: { ask: 'Clear every stay area on the switch?', label: 'Clear', done: 'Clearing stay areas…', undo: 'Cleared stay areas', category: 'mmwave_stay_areas' },
 };
 
 $$('[data-command]').forEach(btn => btn.addEventListener('click', async () => {
@@ -289,12 +333,20 @@ $$('[data-command]').forEach(btn => btn.addEventListener('click', async () => {
     const cmd = COMMANDS[id];
     if (!state.device) { toast('Choose a switch first.', 'error'); return; }
     if (cmd.ask && !await confirmAction(cmd.ask, { confirm: cmd.label, danger: true })) return;
+    const entry = pushSnapshot(cmd.undo, [cmd.category]);
+    if (entry) {
+        // The addon refuses a command straight away (no switch, broker offline); then
+        // there's nothing to undo
+        const refused = () => dropUndo(entry);
+        socket.once('command_error', refused);
+        setTimeout(() => socket.off('command_error', refused), 4000);
+    }
     socket.emit('send_command', id);
     if (id === 1 || id === 3) {
         state.lastCommandId = id;
         state.lastCommandAt = Date.now();
     }
-    toast(cmd.done);
+    toast(cmd.done, 'info', entry ? 6000 : 4000, entry ? undoActionFor(entry) : null);
 }));
 
 // --- Tabs ------------------------------------------------------------------------
@@ -309,7 +361,9 @@ function selectTab(id) {
         $('#' + tab.getAttribute('aria-controls')).hidden = !selected;
     }
     prefs.set('activeTab', id);
+    if (historyReady) history.tabShown(id === 'tab-history');
 }
+let historyReady = false;
 
 tabs.forEach((tab, i) => {
     tab.addEventListener('click', () => selectTab(tab.id));
@@ -322,12 +376,18 @@ tabs.forEach((tab, i) => {
 });
 selectTab(tabs.some(t => t.id === prefs.get('activeTab')) ? prefs.get('activeTab') : 'tab-zones');
 
-// ⓘ buttons open a short explanation underneath (tooltips don't work on touch screens)
-$$('[data-info]').forEach(btn => btn.addEventListener('click', () => {
-    const panel = $('#' + btn.dataset.info);
-    panel.hidden = !panel.hidden;
-    btn.setAttribute('aria-expanded', String(!panel.hidden));
-}));
+// ⓘ buttons open a short explanation underneath (tooltips don't work on touch screens).
+// The markup leaves them empty; they all get the same icon here.
+const INFO_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
+    '<path d="M8 7.2v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.85" fill="currentColor"/></svg>';
+$$('[data-info]').forEach(btn => {
+    if (!btn.firstElementChild) btn.innerHTML = INFO_ICON;
+    btn.addEventListener('click', () => {
+        const panel = $('#' + btn.dataset.info);
+        panel.hidden = !panel.hidden;
+        btn.setAttribute('aria-expanded', String(!panel.hidden));
+    });
+});
 
 // --- Header menus ----------------------------------------------------------------
 
@@ -337,6 +397,43 @@ bindPopover($('#menuBtn'), $('#moreMenu'));
 $('#menuZwave').addEventListener('click', e => {
     e.stopPropagation();
     openZwave();
+});
+
+// Everything the addon knows about the selected switch, plus what this page has, in one file
+// for a bug report. Secrets are removed by the addon.
+const consoleErrors = [];
+window.addEventListener('error', e => { consoleErrors.push(`${new Date().toISOString()} ${e.message} (${e.filename}:${e.lineno})`); consoleErrors.splice(0, consoleErrors.length - 50); });
+window.addEventListener('unhandledrejection', e => { consoleErrors.push(`${new Date().toISOString()} ${e.reason}`); consoleErrors.splice(0, consoleErrors.length - 50); });
+
+$('#menuDiagnostics').addEventListener('click', async e => {
+    e.stopPropagation();
+    closePopover();
+    try {
+        const res = await fetch(`${ingress}/diagnostics?topic=${encodeURIComponent(state.device || '')}`, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const report = await res.json();
+        report.client = {
+            user_agent: navigator.userAgent,
+            screen: `${window.innerWidth}×${window.innerHeight} @${window.devicePixelRatio}`,
+            stack: state.stack,
+            device: state.deviceName,
+            zones_shown: zones.displayZones(),
+            pending_writes: Object.values(state.pending).map(p => ({ category: p.category, area: p.area, zone: p.zone, waited_s: Math.round((Date.now() - p.since) / 1000), resent: p.resent })),
+            stay_invert: state.stayInvert,
+            settings: state.settings,
+            occupied: state.occupied,
+            area_occupied: state.areaOccupied,
+            notices: $$('#notices .notice').map(n => n.textContent.trim()),
+            last_packet_ms_ago: lastPacket ? Date.now() - lastPacket : null,
+            errors: consoleErrors,
+        };
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        downloadBlob(new Blob([JSON.stringify(report, null, 1)], { type: 'application/json' }),
+            `mmwave-diagnostics-${fileSafe(state.deviceName, 'addon')}-${stamp}.json`);
+        toast('Diagnostics saved. It includes switch names and recent positions, so look it over before posting it.', 'success', 7000);
+    } catch (err) {
+        toast(`Couldn't get the diagnostics from the addon (${err.message}).`, 'error');
+    }
 });
 
 $('#menuSaveImage').addEventListener('click', async e => {
@@ -392,9 +489,9 @@ socket.on('zha_device_info', data => {
     if (state.stack === 'zha' && data.quirk_ok === false) {
         setNotice('quirk', {
             tone: 'danger',
-            title: 'The custom ZHA quirk isn\'t loaded.',
-            text: 'Live targets and zone commands need the Inovelli VZM32-SN quirk. After installing it, reconfigure the device in ZHA and press Sync.',
-            link: { href: 'https://github.com/nickduvall921/mmwave_vis/blob/main/ZHADOC.md', label: 'Setup guide' },
+            title: 'The Visualizer\'s ZHA quirk isn\'t loaded.',
+            text: 'Live targets, area occupancy and zones need it, even on Home Assistant 2026.8 and later: ZHA\'s built-in VZM32-SN support doesn\'t pass the radar reports on. After installing it, reconfigure the device in ZHA and press Sync.',
+            link: { href: 'https://github.com/nickduvall921/mmwave_vis/blob/main/ZHADOC.md#why-the-custom-quirk-is-still-needed', label: 'Why and how' },
         });
     } else {
         clearNotice('quirk');
@@ -468,17 +565,27 @@ socket.on('device_config', msg => {
     for (let i = 0; i < 4; i++) {
         const key = `mmwave_area${i + 1}_occupancy`;
         if (key in c) {
-            state.areaOccupied[i] = c[key] === true || c[key] === 'ON';
-            areas = true;
+            const on = c[key] === true || c[key] === 'ON';
+            if (on !== state.areaOccupied[i]) areas = true;
+            state.areaOccupied[i] = on;
         }
     }
-    if (areas) renderAreaChips();
+    if (areas) {
+        renderAreaChips();
+        emit('areas');
+    }
 
     if ('mmWaveTargetInfoReport' in c) targetReportNotice(c.mmWaveTargetInfoReport);
 
+    let settingsChanged = false;
     for (const input of paramInputs) {
-        if (input.dataset.param in c) showParam(input, c[input.dataset.param]);
+        const param = input.dataset.param;
+        if (!(param in c)) continue;
+        showParam(input, c[param]);
+        if (state.settings[param] !== c[param]) settingsChanged = true;
+        state.settings[param] = c[param];
     }
+    if (settingsChanged) emit('device-settings');
 });
 
 // detection_zones / interference_zones / stay_zones
@@ -497,6 +604,10 @@ socket.on('new_data', msg => {
 
     // Targets with missing coordinates can't be drawn
     const targets = all.filter(t => !Number.isNaN(Number(t.x)) && !Number.isNaN(Number(t.y)) && !Number.isNaN(Number(t.z)));
+    state.targetCount = targets.length;
+    emit('targets', targets);
+    // A replay is on the map; live positions wait until it ends
+    if (state.replay) return;
     const ids = new Set(targets.map(t => String(t.id)));
     for (const id of Object.keys(targetHistory)) if (!ids.has(id)) delete targetHistory[id];
     for (const t of targets) {
@@ -509,6 +620,13 @@ socket.on('new_data', msg => {
     setText($('#targetCount'), String(all.length));
     renderTable(all);
 });
+
+socket.on('zone_names', msg => {
+    if (!msg || msg.topic !== state.device) return;
+    namesFromServer(msg.names);
+});
+
+socket.on('device_info', info => deviceInfoFromServer(info));
 
 socket.on('layout', msg => {
     if (!msg || msg.topic !== state.device) return;
@@ -536,6 +654,12 @@ recorder.initRecorder();
 initBackup();
 display.initDisplay(radar);
 initZwave(ingress);
+initUndo();
+initTester();
+initSwitchInfo();
+history.initHistory(radar);
+historyReady = true;
+history.tabShown(prefs.get('activeTab') === 'tab-history');
 radar.setZones(zones.displayZones(), zones.pendingKeys());
 radar.setRecording(recorder.slots, recorder.padding());
 renderStatus();

@@ -1,6 +1,6 @@
 name: "Inovelli mmWave Visualizer"
 description: "Live 2D tracking for Inovelli mmWave switches via MQTT-Z2M or ZHA"
-version: "4.0.0"
+version: "4.1.0"
 slug: "mmwave_viz"
 init: false
 arch:
@@ -11,6 +11,10 @@ map:
 hassio_api: true
 hassio_role: default
 homeassistant_api: true
+# The optional history database can be tens of MB and is rebuilt as it records;
+# layouts, zone names and settings in /data are still backed up.
+backup_exclude:
+  - "history.db*"
 options:
   zigbee_stack: "z2m"
   debug: false

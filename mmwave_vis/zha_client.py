@@ -26,12 +26,16 @@ import json
 import time
 import threading
 import logging
-import urllib.request
-import urllib.error
+from collections import deque
 
 from websockets.sync.client import connect as ws_connect
 
+from ha_ws import entity_roles, rest_json
+from utils import layout_key
+
 log = logging.getLogger(__name__)
+
+PACKET_RING = 150   # recent zha_events per switch, for the diagnostics file
 
 # ---------------------------------------------------------------------------
 # Cluster / Manufacturer Constants
@@ -75,10 +79,13 @@ SENSITIVITY_MAP = {
     "High (default)": 2,
 }
 
+# 0 is the slowest: matches Zigbee2MQTT's converter and ZHA's built-in quirk
+# (InovelliMmwaveTargetSpeed: Low = 0, Medium = 1, Fast = 2). Before 4.1 this
+# table was reversed, so choosing Fast on ZHA set the switch to 5 s.
 TRIGGER_MAP = {
-    "Fast (0.2s, default)": 0,
+    "Slow (5s)":            0,
     "Medium (1s)":          1,
-    "Slow (5s)":            2,
+    "Fast (0.2s, default)": 2,
 }
 
 ROOM_SIZE_MAP = {
@@ -139,13 +146,21 @@ class _TargetAccumulator:
         self._timer    = None
         self._lock     = threading.Lock()
 
-    def add(self, target: dict):
+    def add(self, target: dict, last: bool = False):
+        """Buffer one target. `last` flushes straight away: the quirk numbers the
+        targets of a frame (target_index of target_num), so the final one ends it."""
         with self._lock:
             self._targets[target["id"]] = target
-            if self._timer is None:
+            if last:
+                if self._timer:
+                    self._timer.cancel()
+                    self._timer = None
+            elif self._timer is None:
                 self._timer = threading.Timer(self.WINDOW_S, self._flush)
                 self._timer.daemon = True
                 self._timer.start()
+        if last:
+            self._flush()
 
     def _flush(self):
         with self._lock:
@@ -183,7 +198,8 @@ class ZHAClient:
     RECONNECT_DELAY_S     = 5
     RECONNECT_DELAY_MAX_S = 60   # exponential backoff ceiling
 
-    def __init__(self, ha_url: str, ha_token: str, socketio, debug: bool = False):
+    def __init__(self, ha_url: str, ha_token: str, socketio, debug: bool = False, history=None,
+                 history_key=None):
         """
         ha_url   : HA base URL, e.g. "http://supervisor". The WebSocket
                    proxy URL (ws://supervisor/core/websocket) is always used
@@ -191,11 +207,17 @@ class ZHAClient:
         ha_token : SUPERVISOR_TOKEN or long-lived access token.
         socketio : Flask-SocketIO instance.
         debug    : If True, log incoming ZHA events and outgoing emits.
+        history  : history.History, fed with every switch's targets and
+                   occupancy (whether or not a page is watching it), or None.
+        history_key : callable(topic, ieee) → history key; app.py's version also
+                   remembers the topic so live timeline events reach its pages.
         """
         self.ha_url   = ha_url.rstrip("/")
         self.ha_token = ha_token
         self.socketio = socketio
         self.debug    = debug
+        self.history  = history
+        self._history_key_fn = history_key or layout_key
 
         # Currently monitored device
         self._ieee  = None   # IEEE address string
@@ -207,8 +229,20 @@ class ZHAClient:
         self._msg_id      = 1
         self._msg_id_lock = threading.Lock()
 
-        # Target batch accumulator
-        self._accum = _TargetAccumulator(self._on_targets_ready)
+        # Target batch accumulators, one per switch
+        self._accums: dict = {}
+        self._accums_lock = threading.Lock()
+
+        # Subscriptions on the listener socket (ids of the current connection)
+        self._sub_zha = None
+        self._sub_ent = None
+        # entity_id → (ieee, role) for the entities watched with subscribe_entities,
+        # and their latest state: (ieee, role) → state string
+        self._entity_index: dict = {}
+        self._entity_state: dict = {}
+
+        # Recent raw zha_events per switch (diagnostics)
+        self.packets: dict = {}
 
         # Device cache:  ieee → { friendly_name, topic, ieee, ha_device_id,
         #                         interference_zones, detection_zones,
@@ -240,7 +274,6 @@ class ZHAClient:
 
     def set_device(self, ieee: str, topic: str, sid: str = None):
         """Switch the actively monitored device. Re-emits cached zones."""
-        self._accum.clear()
         self._ieee  = ieee
         self._topic = topic
         print(f"ZHA: monitoring {ieee}", flush=True)
@@ -257,6 +290,7 @@ class ZHAClient:
             "ieee":     ieee,
             "quirk_ok": dev.get("quirk_ok", True),
         }, **emit_kwargs)
+        self._emit_entity_states(ieee, sid)
 
         self.query_areas()
 
@@ -531,14 +565,31 @@ class ZHAClient:
             # Discover devices before subscribing to events (no race window)
             self._discover_devices(ws)
 
-            # Subscribe to zha_event
-            sub_id = self._next_id()
+            # Subscribe to zha_event. Results and events are routed by id in
+            # _handle_message, so nothing here waits for a particular reply.
+            self._sub_zha = self._next_id()
             ws.send(json.dumps({
-                "id":         sub_id,
+                "id":         self._sub_zha,
                 "type":       "subscribe_events",
                 "event_type": "zha_event",
             }))
-            ws.recv()  # consume subscription result
+
+            # The switches' own occupancy, light, illuminance and target-report
+            # entities: the real (held) occupancy the light follows, which the
+            # area events don't give, and the light level ZHA never sends as an event.
+            self._entity_index = {}
+            for ieee, dev in list(self.device_list.items()):
+                for role, entity_id in (dev.get("roles") or {}).items():
+                    if role in ("occupancy", "light", "illuminance", "target_report"):
+                        self._entity_index[entity_id] = (ieee, role)
+            self._sub_ent = None
+            if self._entity_index:
+                self._sub_ent = self._next_id()
+                ws.send(json.dumps({
+                    "id":         self._sub_ent,
+                    "type":       "subscribe_entities",
+                    "entity_ids": sorted(self._entity_index),
+                }))
 
             # Receive loop
             while not self._stop_event.is_set():
@@ -644,6 +695,14 @@ class ZHAClient:
 
             entities = ent_registry.get(ha_device_id) if ha_device_id else None
             entity_ids = [e["entity_id"] for e in (entities or []) if e.get("entity_id")]
+            roles = entity_roles(entities)
+            facts = {
+                "roles":       roles,
+                "sw_version":  reg_entry.get("sw_version") or dev.get("sw_version"),
+                "lqi":         dev.get("lqi"),
+                "rssi":        dev.get("rssi"),
+                "quirk_class": dev.get("quirk_class"),
+            }
             quirk_ok = self._check_quirk_ok(dev, entities)
             if not quirk_ok:
                 if self._legacy_quirk_ok(dev):
@@ -670,6 +729,7 @@ class ZHAClient:
                 # quirk and HA restarts (which also reconnects this socket).
                 self.device_list[ieee]["quirk_ok"] = quirk_ok
                 self.device_list[ieee]["entity_ids"] = entity_ids
+                self.device_list[ieee].update(facts)
 
             if ieee not in self.device_list:
                 print(f"ZHA: discovered {friendly_name} ({ieee})", flush=True)
@@ -684,6 +744,7 @@ class ZHAClient:
                     "detection_zones":    [],
                     "stay_zones":         [],
                     "last_seen":          time.time(),
+                    **facts,
                 }
                 found.append(self.device_list[ieee])
 
@@ -707,89 +768,217 @@ class ZHAClient:
                 preview = str(msg)[:400]
             print(f"[DEBUG] ZHA WS event: {preview}", flush=True)
 
+        if msg_type == "result":
+            if msg.get("id") in (self._sub_zha, self._sub_ent) and not msg.get("success"):
+                err = msg.get("error") or {}
+                print(f"ZHA: subscription failed: {err.get('message') or err}", flush=True)
+            return
         if msg_type != "event":
+            return
+
+        if self._sub_ent is not None and msg.get("id") == self._sub_ent:
+            self._on_entities_event(msg.get("event") or {})
             return
 
         data = msg.get("event", {}).get("data", {})
         ieee = data.get("device_ieee")
-
-        if ieee and ieee in self.device_list:
-            self.device_list[ieee]["last_seen"] = time.time()
-
-        if ieee != self._ieee or not self._topic:
+        dev  = self.device_list.get(ieee) if ieee else None
+        if dev is None:
             return
+        dev["last_seen"] = time.time()
+        self._remember_packet(ieee, data)
 
         # Data arrived from the monitored device — binding is working.
-        self._clear_binding_warning()
+        if self._is_watched(ieee):
+            self._clear_binding_warning()
 
         command = data.get("command")
         args    = data.get("args", {})
 
         if command == "mmwave_target_info":
-            self._on_target_info(args)
+            self._on_target_info(ieee, args)
         elif command == "mmwave_anyone_in_area":
-            self._on_anyone_in_area(args)
+            self._on_anyone_in_area(ieee, args)
         elif command == "mmwave_report_interference_area":
-            self._on_zone_report("interference_zones", args)
+            self._on_zone_report(ieee, "interference_zones", args)
         elif command == "mmwave_report_detection_area":
-            self._on_zone_report("detection_zones", args)
+            self._on_zone_report(ieee, "detection_zones", args)
         elif command == "mmwave_report_stay_area":
-            self._on_zone_report("stay_zones", args)
+            self._on_zone_report(ieee, "stay_zones", args)
+
+    def _is_watched(self, ieee) -> bool:
+        return bool(ieee) and ieee == self._ieee and bool(self._topic)
+
+    def _topic_of(self, ieee):
+        return (self.device_list.get(ieee) or {}).get("topic") or f"zha/{ieee}"
+
+    def _history_key(self, ieee):
+        return self._history_key_fn(self._topic_of(ieee), ieee)
+
+    def _remember_packet(self, ieee, data):
+        try:
+            text = json.dumps(data, default=str)
+        except Exception:
+            text = str(data)
+        ring = self.packets.get(ieee)
+        if ring is None:
+            ring = self.packets[ieee] = deque(maxlen=PACKET_RING)
+        ring.append((time.time(), text[:600]))
+
+    def _record(self, method, ieee, *args):
+        """Feed the history recorder; a recorder problem must never stop the listener."""
+        if self.history is None:
+            return
+        try:
+            getattr(self.history, method)(self._history_key(ieee), *args)
+        except Exception as e:
+            log.warning(f"ZHA: history {method} failed: {e}")
 
     # -----------------------------------------------------------------------
     # Internal: ZHA event → socket.io emit handlers
     # -----------------------------------------------------------------------
 
-    def _on_target_info(self, args: dict):
+    def _accum_for(self, ieee):
+        with self._accums_lock:
+            acc = self._accums.get(ieee)
+            if acc is None:
+                acc = self._accums[ieee] = _TargetAccumulator(
+                    lambda targets, ieee=ieee: self._on_targets_ready(ieee, targets))
+            return acc
+
+    def _on_target_info(self, ieee, args: dict):
         """
         mmwave_target_info fires once per target per ~1 Hz.
         Accumulate and flush as a batch to match Z2M's bundled format.
         """
-        self._accum.add({
+        try:
+            last = int(args.get("target_index")) >= int(args.get("target_num")) - 1
+        except (TypeError, ValueError):
+            last = False
+        self._accum_for(ieee).add({
             "id" : args.get("id",  0),
             "x"  : args.get("x",  0),
             "y"  : args.get("y",  0),
             "z"  : args.get("z",  0),
             "dop": args.get("dop", 0),
-        })
+        }, last=last)
 
-    def _on_targets_ready(self, targets: list):
-        """Called by _TargetAccumulator after the batch window closes."""
+    def _on_targets_ready(self, ieee, targets: list):
+        """Called by a switch's _TargetAccumulator when its batch is complete."""
+        self._record("on_targets", ieee, targets)
+        if not self._is_watched(ieee):
+            return
         if self.debug:
             print(f"[DEBUG] emit new_data: {len(targets)} target(s) → {targets}", flush=True)
         self.socketio.emit("new_data", {
-            "topic":   self._topic,
+            "topic":   self._topic_of(ieee),
             "payload": {
                 "seq":     0,   # ZHA doesn't provide sequence numbers
                 "targets": targets,
             }
         })
 
-    def _on_anyone_in_area(self, args: dict):
+    def _on_anyone_in_area(self, ieee, args: dict):
         """
         Translate mmwave_anyone_in_area → device_config emit so the frontend's
-        occupancy badge and zone status indicators update correctly.
-        Clears the target accumulator when the room is fully empty to prevent
+        area chips (and, without an occupancy entity, the occupancy badge) update.
+        Clears the switch's target batch when the room is fully empty to prevent
         stale positions from persisting after an all-clear.
         """
         config_payload = {}
+        state = {}
         for i in range(1, 5):
             key = f"area{i}"
             if key in args:
                 config_payload[f"mmwave_area{i}_occupancy"] = bool(args[key])
+                state[key] = bool(args[key])
 
-        any_occupied = any(config_payload.values()) if config_payload else False
-        config_payload["occupancy"] = any_occupied
-
+        any_occupied = any(state.values())
         if not any_occupied:
-            self._accum.clear()
+            with self._accums_lock:
+                acc = self._accums.get(ieee)
+            if acc:
+                acc.clear()
 
-        self.socketio.emit("device_config", {
-            "topic":   self._topic,
-            "payload": config_payload,
-        })
+        # The switch's own occupancy entity (subscribed above) is the held value
+        # the light follows; "any area occupied" is only a stand-in without it.
+        if not self._has_entity(ieee, "occupancy"):
+            config_payload["occupancy"] = any_occupied
+            state["occupancy"] = any_occupied
+        self._record("on_state", ieee, state)
 
-    def _on_zone_report(self, zone_key: str, args: dict):
+        if self._is_watched(ieee):
+            self.socketio.emit("device_config", {
+                "topic":   self._topic_of(ieee),
+                "payload": config_payload,
+            })
+
+    # -----------------------------------------------------------------------
+    # Internal: the switches' own entities (subscribe_entities)
+    # -----------------------------------------------------------------------
+
+    def _has_entity(self, ieee, role):
+        return any(v == (ieee, role) for v in self._entity_index.values())
+
+    def _on_entities_event(self, event: dict):
+        """HA's compressed state stream: {"a": added}, {"c": changed}, {"r": removed}.
+
+        Added: {entity_id: {"s": state, "a": attrs, "lc": last_changed, "lu"?}}.
+        Changed: {entity_id: {"+": {"s"?, "lc"?, "lu"?, ...}, "-": {...}}}; a change
+        without "s" is an attribute-only update and is ignored.
+        """
+        for entity_id, st in (event.get("a") or {}).items():
+            if isinstance(st, dict) and "s" in st:
+                self._apply_entity(entity_id, st["s"], st.get("lc") or st.get("lu"))
+        for entity_id, diff in (event.get("c") or {}).items():
+            plus = (diff or {}).get("+") or {}
+            if "s" in plus:
+                self._apply_entity(entity_id, plus["s"], plus.get("lc") or plus.get("lu"))
+
+    def _apply_entity(self, entity_id, state, changed_at=None):
+        ieee, role = self._entity_index.get(entity_id, (None, None))
+        if not ieee or state in (None, "unavailable", "unknown"):
+            return
+        self._entity_state[(ieee, role)] = state
+        t_ms = int(changed_at * 1000) if isinstance(changed_at, (int, float)) else None
+        if role == "occupancy":
+            self._record("on_state", ieee, {"occupancy": state}, t_ms)
+        elif role == "light":
+            self._record("on_state", ieee, {"light": state}, t_ms)
+        elif role == "target_report":
+            self._record("on_state", ieee, {"reporting": state}, t_ms)
+        if self._is_watched(ieee):
+            payload = self._entity_payload(role, state)
+            if payload:
+                self.socketio.emit("device_config", {"topic": self._topic_of(ieee), "payload": payload})
+
+    @staticmethod
+    def _entity_payload(role, state):
+        """What the page's device_config handler expects for an entity's state."""
+        if role == "occupancy":
+            return {"occupancy": state == "on"}
+        if role == "illuminance":
+            try:
+                return {"illuminance": round(float(state))}
+            except (TypeError, ValueError):
+                return None
+        if role == "target_report":
+            return {"mmWaveTargetInfoReport": "Enable" if state == "on" else "Disable (default)"}
+        if role == "light":
+            return {"state": "ON" if state == "on" else "OFF"}
+        return None
+
+    def _emit_entity_states(self, ieee, sid=None):
+        """Send a newly selected switch's latest entity states to the page."""
+        payload = {}
+        for (dev, role), state in list(self._entity_state.items()):
+            if dev == ieee:
+                payload.update(self._entity_payload(role, state) or {})
+        if payload:
+            kwargs = {"to": sid} if sid else {}
+            self.socketio.emit("device_config", {"topic": self._topic_of(ieee), "payload": payload}, **kwargs)
+
+    def _on_zone_report(self, ieee, zone_key: str, args: dict):
         """
         Translate mmwave_report_*_area → zone list emit.
 
@@ -831,14 +1020,16 @@ class ZHAClient:
                 "z_min": z_min, "z_max": z_max,
             })
 
-        if self._ieee in self.device_list:
-            self.device_list[self._ieee][zone_key] = zones
+        if ieee in self.device_list:
+            self.device_list[ieee][zone_key] = zones
 
+        if not self._is_watched(ieee):
+            return
         if self.debug:
             active = sum(1 for z in zones if z)
             print(f"[DEBUG] emit {zone_key}: {active} active zones → {zones}", flush=True)
 
-        self.socketio.emit(zone_key, {"topic": self._topic, "payload": zones})
+        self.socketio.emit(zone_key, {"topic": self._topic_of(ieee), "payload": zones})
 
     # -----------------------------------------------------------------------
     # Internal: force_sync entity state read
@@ -1085,14 +1276,4 @@ class ZHAClient:
         path must start with / and must NOT include the /api prefix,
         e.g. "/states" → http://supervisor/core/api/states
         """
-        url = "http://supervisor/core/api" + path
-        req = urllib.request.Request(
-            url,
-            headers={
-                "Authorization": f"Bearer {self.ha_token}",
-                "Content-Type":  "application/json",
-            },
-            method="GET",
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode())
+        return rest_json(self.ha_token, path)

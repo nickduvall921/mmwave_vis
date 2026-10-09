@@ -1,7 +1,9 @@
-"""Room layouts (where each switch sits in its room), kept in the addon's data folder.
+"""Per-switch display settings kept in the addon's data folder: room layouts
+(where each switch sits in its room) and zone names.
 
-Layouts only change how the map is drawn; nothing here is sent to a switch.
-They're keyed by device topic and shared by every browser that opens the addon.
+None of this is sent to a switch; it only changes how the page draws things.
+Entries are keyed by switch (see utils.layout_key) and shared by every browser
+that opens the addon.
 """
 import json
 import os
@@ -16,8 +18,10 @@ MAX_TOPIC_LENGTH = 256
 
 class LayoutStore:
 
-    def __init__(self, path):
+    def __init__(self, path, normalize=normalize_layout, label='Layouts'):
         self.path = path
+        self._normalize = normalize
+        self._label = label
         self._lock = threading.Lock()
         self._layouts = {}
         # Why the last write didn't reach disk (layouts are then kept in memory
@@ -32,12 +36,12 @@ class LayoutStore:
         except FileNotFoundError:
             return
         except (OSError, ValueError) as e:
-            print(f"Layouts: couldn't read {self.path} ({e}), starting with none.", flush=True)
+            print(f"{self._label}: couldn't read {self.path} ({e}), starting with none.", flush=True)
             return
         if not isinstance(data, dict):
             return
         for topic, layout in data.items():
-            clean, _ = normalize_layout(layout)
+            clean, _ = self._normalize(layout)
             if isinstance(topic, str) and clean:
                 self._layouts[topic] = clean
 
@@ -71,7 +75,8 @@ class LayoutStore:
         tmp = None
         try:
             os.makedirs(folder, exist_ok=True)
-            fd, tmp = tempfile.mkstemp(dir=folder, prefix='.layouts-', suffix='.tmp')
+            stem = os.path.splitext(os.path.basename(self.path))[0]
+            fd, tmp = tempfile.mkstemp(dir=folder, prefix=f'.{stem}-', suffix='.tmp')
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
                 json.dump(self._layouts, f, indent=1, sort_keys=True)
                 f.flush()
@@ -81,7 +86,7 @@ class LayoutStore:
             self.write_error = None
         except OSError as e:
             if not self.write_error:
-                print(f"Layouts: couldn't save to {self.path} ({e}), keeping them in memory only.", flush=True)
+                print(f"{self._label}: couldn't save to {self.path} ({e}), keeping them in memory only.", flush=True)
             self.write_error = (f"Couldn't write it to {self.path} ({e.strerror or e}), "
                                 "so it will be lost when the addon restarts.")
         finally:

@@ -4,6 +4,7 @@ Pure utility functions shared across the mmWave Visualizer backend.
 These functions have no side effects and no dependencies on Flask, MQTT, or
 configuration — making them straightforward to unit test in isolation.
 """
+import re
 
 # ---------------------------------------------------------------------------
 # Parameter validation whitelist
@@ -145,6 +146,64 @@ def normalize_layout(layout):
     if clean['rot'] == 360:   # 359.96 rounds up
         clean['rot'] = 0
     return clean, None
+
+
+ZONE_NAME_CATEGORIES = ('mmwave_detection_areas', 'mmwave_interference_areas', 'mmwave_stay_areas')
+MAX_ZONE_NAME = 40
+_CONTROL_CHARS = re.compile(r'[\x00-\x1f\x7f]')
+
+
+def normalize_zone_names(names):
+    """Check zone names from the page: {"mmwave_detection_areas:area2": "Couch", ...}.
+
+    Names are display only (never sent to the switch). Unknown keys and empty
+    names are dropped, control characters stripped and each name cut to 40
+    characters. Returns (names, None), with None for "no names", or (None, error).
+    """
+    if names is None:
+        return None, None
+    if not isinstance(names, dict):
+        return None, "Zone names must be an object"
+    clean = {}
+    for key, value in names.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            continue
+        category, _, area = key.partition(':')
+        if category not in ZONE_NAME_CATEGORIES or area not in ('area1', 'area2', 'area3', 'area4'):
+            continue
+        name = ' '.join(_CONTROL_CHARS.sub(' ', value).split())[:MAX_ZONE_NAME].strip()
+        if name:
+            clean[key] = name
+    return (clean or None), None
+
+
+def target_frame_mark(payload):
+    """What identifies one target report in a Zigbee2MQTT message, or None if it has none.
+
+    A raw FC32 report-target frame (numbered byte keys, command 1) carries the ZCL
+    sequence number in byte 3, which changes with every report; otherwise the
+    parsed `mmwave_targets` list itself is the mark.
+    """
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("0") == 29 and payload.get("1") == 47 and payload.get("2") == 18 and payload.get("4") == 1:
+        return ("seq", payload.get("3"))
+    targets = payload.get("mmwave_targets")
+    if isinstance(targets, list):
+        return ("targets", targets)
+    return None
+
+
+def is_fresh_target_frame(payload, previous_mark):
+    """Whether a Zigbee2MQTT message carries a new target report.
+
+    Zigbee2MQTT caches the switch's state (the raw report bytes and the parsed
+    `mmwave_targets` included) and re-publishes all of it whenever any attribute
+    changes, so a message whose report matches the last one is the old report
+    again. `previous_mark` is target_frame_mark() of the last report recorded.
+    """
+    mark = target_frame_mark(payload)
+    return mark is not None and mark != previous_mark
 
 
 def safe_int(value, default=0):
