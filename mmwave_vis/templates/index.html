@@ -5,24 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="color-scheme" content="dark light">
     <title>mmWave Visualizer</title>
-    <link rel="stylesheet" href="{{ ingress_path }}/static/app.css?v={{ version }}">
+    <link rel="stylesheet" href="{{ ingress_path }}/assets/app.css?v={{ version }}">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    <script type="module" src="{{ ingress_path }}/static/js/main.js?v={{ version }}"></script>
+    <script type="module" src="{{ ingress_path }}/assets/js/main.js?v={{ version }}"></script>
     {#- Fetch the rest of the modules alongside main.js instead of one import level at a time #}
-    <link rel="modulepreload" href="{{ ingress_path }}/static/js/state.js">
-    <link rel="modulepreload" href="{{ ingress_path }}/static/js/prefs.js">
-    <link rel="modulepreload" href="{{ ingress_path }}/static/js/ui.js">
-    <link rel="modulepreload" href="{{ ingress_path }}/static/js/radar.js">
-    <link rel="modulepreload" href="{{ ingress_path }}/static/js/zones.js">
-    <link rel="modulepreload" href="{{ ingress_path }}/static/js/recorder.js">
-    <link rel="modulepreload" href="{{ ingress_path }}/static/js/backup.js">
-    <link rel="modulepreload" href="{{ ingress_path }}/static/js/display.js">
-    <link rel="modulepreload" href="{{ ingress_path }}/static/js/zwave.js">
-    <link rel="modulepreload" href="{{ ingress_path }}/static/js/names.js">
-    <link rel="modulepreload" href="{{ ingress_path }}/static/js/undo.js">
-    <link rel="modulepreload" href="{{ ingress_path }}/static/js/history.js">
-    <link rel="modulepreload" href="{{ ingress_path }}/static/js/tester.js">
-    <link rel="modulepreload" href="{{ ingress_path }}/static/js/switchinfo.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/assets/js/state.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/assets/js/prefs.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/assets/js/ui.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/assets/js/radar.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/assets/js/zones.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/assets/js/recorder.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/assets/js/backup.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/assets/js/display.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/assets/js/zwave.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/assets/js/names.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/assets/js/undo.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/assets/js/history.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/assets/js/tester.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/assets/js/switchinfo.js">
 </head>
 <body class="stack-{{ zigbee_stack }}" data-ingress="{{ ingress_path }}">
 
