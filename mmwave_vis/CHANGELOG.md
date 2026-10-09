@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [Unreleased]
+## [4.1.0] - 2026-10-08
 
 ### Added
 - History tab. Turn on "Record history" and the addon records, for every switch, where people were and when occupancy, each detection area and the light changed. Off by default. It's kept in the addon's `/data` folder (a small SQLite database, left out of Home Assistant backups), for 7, 30 or 90 days, and can be cleared per switch.
@@ -22,6 +22,7 @@
 - On ZHA the addon now follows every VZM32-SN switch, not just the one a page has open, so history covers all of them. Pages still only get live data for the switch they show.
 - On ZHA, overall occupancy now comes from the switch's own occupancy entity (which follows the hold time, like the light does) instead of "any area occupied", and the light level is shown too.
 - The ZHA quirk notice and ZHADOC.md now explain why this repo's quirk is still needed on Home Assistant 2026.8 and later (#54).
+- Bumped version to 4.1.0.
 
 ### Fixed
 - On ZHA, trigger speed was backwards: choosing Fast (0.2 s) set the switch to Slow (5 s) and the other way round, and a switch on Slow showed as Fast. It now matches the switch, Zigbee2MQTT and ZHA's own quirk (0 = Slow, 2 = Fast). If you set Fast on a ZHA switch with an older version, check it again.
