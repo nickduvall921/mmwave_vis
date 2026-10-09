@@ -78,12 +78,14 @@ function holdStep() {
             stop('Home Assistant has no occupancy entity for this switch, so the time it clears can\'t be measured.', 'bad');
             return;
         }
-        t.phase = state.occupied ? 'present' : 'waiting';
+        // Time only from a room the test has seen someone leave: started while the room
+        // is already empty (but still held occupied), it would time from the click
+        t.phase = state.occupied && someoneSeen() ? 'present' : 'waiting';
     }
     if (t.phase === 'waiting') {
-        say('Walk in front of the switch until it shows Occupied.');
-        showOverlay('Walk in', 'waiting for Occupied');
-        if (state.occupied) t.phase = 'present';
+        say('Walk in front of the switch until it shows Occupied and sees you.');
+        showOverlay('Walk in', 'waiting to see you');
+        if (state.occupied && someoneSeen()) t.phase = 'present';
         return;
     }
     if (t.phase === 'present') {

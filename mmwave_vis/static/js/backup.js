@@ -154,8 +154,10 @@ async function onFileChosen() {
     const before = {};
     for (const w of writes) before[`${w.category}:${w.area}`] = (state.zoneNames || {})[`${w.category}:${w.area}`] || '';
     emit('undo-snapshot', { label: `Imported zones from ${source}`, categories, names: before });
-    if (Object.keys(names).length) setNames(names);
-    restoreZones(writes);
+    const topic = state.device;
+    const ok = await restoreZones(writes);
+    // Names only once the zones they belong to are on the switch
+    if (ok && state.device === topic && Object.keys(names).length) setNames(names);
 }
 
 // Write a list of slots and check every one landed (re-sending what didn't). Also used to
@@ -167,6 +169,7 @@ export async function restoreZones(writes, { label = null, status = null } = {})
         return false;
     }
     restoring = true;
+    state.restoring = true;
     endEdit();
     // Every slot is about to be rewritten; earlier unconfirmed saves would only fight the restore
     clearPending();
@@ -263,6 +266,7 @@ export async function restoreZones(writes, { label = null, status = null } = {})
         state.socket.off('command_error', onError);
         setBusy(false);
         restoring = false;
+        state.restoring = false;
     }
 }
 

@@ -177,8 +177,11 @@ class ClipRecorder:
                 return
             self._close(key)
         t0 = t_ms - CLIP_PRE_MS
-        frames = [f for f in self._ring.get(key, ()) if f[0] >= t0]
-        self._open[key] = {'t0': t0, 'end': t_ms + CLIP_POST_MS, 'frames': frames}
+        end = t_ms + CLIP_POST_MS
+        # Only frames inside the window: an event dated in the past must not pick up
+        # frames recorded since
+        frames = [f for f in self._ring.get(key, ()) if t0 <= f[0] <= end]
+        self._open[key] = {'t0': t0, 'end': end, 'frames': frames}
 
     def tick(self, now_ms):
         for key in [k for k, c in self._open.items() if now_ms > c['end']]:
@@ -372,7 +375,9 @@ class HistoryDB:
         c.execute('PRAGMA cache_size=-1024')
         c.execute('PRAGMA busy_timeout=5000')
         c.execute('PRAGMA journal_size_limit=4194304')
-        c.execute('PRAGMA quick_check(1)').fetchone()
+        # A file that isn't a database fails above or on the first table read below;
+        # no full integrity scan here, it would read the whole file on every start
+        c.execute('SELECT name FROM sqlite_master LIMIT 1').fetchall()
         c.executescript('''
             CREATE TABLE IF NOT EXISTS devices(id INTEGER PRIMARY KEY, key TEXT UNIQUE NOT NULL);
             CREATE TABLE IF NOT EXISTS heat(
@@ -447,6 +452,9 @@ class History:
         self._wall = wall
         self._start_thread = start_thread
         self._lock = threading.Lock()
+        # Held for a whole flush (take + write) and a whole clear, so a clear can't
+        # run between a flush taking a switch's data and writing it back
+        self._flush_lock = threading.Lock()
         self.grid = HeatGrid()
         self.clips = ClipRecorder()
         self.tracker = EventTracker()
@@ -579,7 +587,8 @@ class History:
                         'last_detect_ms': None if value else self._last_detect.get(key),
                     }
                     self._pending_events.append((key, event))
-                    if kind != 'reporting':
+                    # A change that happened while the addon was off has nothing to replay
+                    if kind != 'reporting' and not offline:
                         self.clips.trigger(key, event['t_ms'])
                     new_events.append(event)
             if self.on_event:
@@ -607,6 +616,10 @@ class History:
                 print(f"History: writer error ({e})", flush=True)
 
     def flush_now(self):
+        with self._flush_lock:
+            self._flush()
+
+    def _flush(self):
         if not self._opened:
             return
         with self._lock:
@@ -771,6 +784,10 @@ class History:
     def clear(self, key):
         if not key:
             return
+        with self._flush_lock:
+            self._clear(key)
+
+    def _clear(self, key):
         with self._lock:
             self.grid.forget(key)
             self.clips.forget(key)

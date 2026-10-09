@@ -5,7 +5,7 @@
 
 ### Added
 - History tab. Turn on "Record history" and the addon records, for every switch, where people were and when occupancy, each detection area and the light changed. Off by default. It's kept in the addon's `/data` folder (a small SQLite database, left out of Home Assistant backups), for 7, 30 or 90 days, and can be cleared per switch.
-  - Heat map of where people spent time over the last 10 minutes, hour, 6 hours, day, week, or any range you pick. It's drawn under the zones, can stay on the map in the other tabs, and follows the room layout.
+  - Heat map of where people spent time over the last 10 minutes, hour, 6 hours, day, week, or any range you pick. It's drawn under the zones on every tab (hide it with Heat map in the Display tab) and follows the room layout.
   - Timeline of occupancy, area and light changes ("Occupied, 3 targets", "Clear, 30 s after the last target"). Choose one to replay what the radar saw from 30 seconds before to 30 seconds after, with play, pause, a scrubber and 4× speed.
   - Positions are only recorded while a switch has target reporting on; the tab says when it's off.
 - Undo for zone changes: a save, a delete, Clear interference, Detect automatically, Reset detection areas, Clear stay areas and a backup import. Use the Undo bar at the top of the Zones tab, the Undo button on the message, or Ctrl+Z. Undo sends the zones back and checks they landed. If the zone changed again since, it asks first.

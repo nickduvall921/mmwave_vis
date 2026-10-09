@@ -26,13 +26,11 @@ import json
 import time
 import threading
 import logging
-import urllib.request
-import urllib.error
 from collections import deque
 
 from websockets.sync.client import connect as ws_connect
 
-from ha_ws import entity_roles
+from ha_ws import entity_roles, rest_json
 from utils import layout_key
 
 log = logging.getLogger(__name__)
@@ -200,7 +198,8 @@ class ZHAClient:
     RECONNECT_DELAY_S     = 5
     RECONNECT_DELAY_MAX_S = 60   # exponential backoff ceiling
 
-    def __init__(self, ha_url: str, ha_token: str, socketio, debug: bool = False, history=None):
+    def __init__(self, ha_url: str, ha_token: str, socketio, debug: bool = False, history=None,
+                 history_key=None):
         """
         ha_url   : HA base URL, e.g. "http://supervisor". The WebSocket
                    proxy URL (ws://supervisor/core/websocket) is always used
@@ -210,12 +209,15 @@ class ZHAClient:
         debug    : If True, log incoming ZHA events and outgoing emits.
         history  : history.History, fed with every switch's targets and
                    occupancy (whether or not a page is watching it), or None.
+        history_key : callable(topic, ieee) → history key; app.py's version also
+                   remembers the topic so live timeline events reach its pages.
         """
         self.ha_url   = ha_url.rstrip("/")
         self.ha_token = ha_token
         self.socketio = socketio
         self.debug    = debug
         self.history  = history
+        self._history_key_fn = history_key or layout_key
 
         # Currently monitored device
         self._ieee  = None   # IEEE address string
@@ -811,7 +813,7 @@ class ZHAClient:
         return (self.device_list.get(ieee) or {}).get("topic") or f"zha/{ieee}"
 
     def _history_key(self, ieee):
-        return layout_key(self._topic_of(ieee), ieee)
+        return self._history_key_fn(self._topic_of(ieee), ieee)
 
     def _remember_packet(self, ieee, data):
         try:
@@ -1274,14 +1276,4 @@ class ZHAClient:
         path must start with / and must NOT include the /api prefix,
         e.g. "/states" → http://supervisor/core/api/states
         """
-        url = "http://supervisor/core/api" + path
-        req = urllib.request.Request(
-            url,
-            headers={
-                "Authorization": f"Bearer {self.ha_token}",
-                "Content-Type":  "application/json",
-            },
-            method="GET",
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode())
+        return rest_json(self.ha_token, path)

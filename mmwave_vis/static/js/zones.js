@@ -2,7 +2,7 @@
 
 import { state, on, emit, ZONE_TYPES, AREAS, ZONE_KEYS, zoneName, slotName, customName } from './state.js';
 import { $, h, toast, setNotice, clearNotice, confirmAction, span, plural, copyText } from './ui.js';
-import { setName } from './names.js';
+import { setName, setNames } from './names.js';
 
 // Device payload that clears an area slot
 export const EMPTY_AREA = { width_min: 0, width_max: 0, depth_min: 0, depth_max: 0, height_min: 0, height_max: 0 };
@@ -81,9 +81,26 @@ function store(category, area, zone) {
 // list under the pointer swallows clicks on its buttons.
 function afterReport(categories, zonesChanged) {
     const settled = settlePending(categories);
+    pruneNames(categories);
     if (!zonesChanged && !settled) return;
     if (!state.edit) renderZoneList();     // while editing, endEdit() redraws the list
     emit('zones');
+}
+
+// A name belongs to a zone: when the switch reports a slot empty (cleared by a tool,
+// another browser or a restore) and nothing is on its way to it, forget the name so it
+// doesn't reappear on the next zone created there
+function pruneNames(categories) {
+    if (state.restoring) return;      // slots are empty for a moment while a restore writes them
+    const drop = {};
+    for (const key of Object.keys(state.zoneNames || {})) {
+        const [category, area] = key.split(':');
+        if (!categories.includes(category) || !state.zoneReportAt[category]) continue;
+        if (state.zones[category] && state.zones[category][area]) continue;
+        if (key in state.pending || (state.edit && state.edit.category === category && state.edit.area === area)) continue;
+        drop[key] = '';
+    }
+    if (Object.keys(drop).length) setNames(drop);
 }
 
 function interferenceResult(active) {
@@ -472,7 +489,8 @@ export function startEdit(category, area, draft = null) {
     renderZoneList();
     editor.hidden = false;
     fillInputs();
-    nameInput.value = customName(category, area);
+    // A new zone starts unnamed, even if the slot once held a named one
+    nameInput.value = current ? customName(category, area) : '';
     nameInput.placeholder = slotName(category, area);
     renderSlotPicker();
     $('#btnDeleteZone').hidden = !current;
@@ -567,26 +585,26 @@ export function saveEdit() {
         if (oldName !== customName(e.category, e.area)) toast('Name saved.', 'success', 2500);
         return;
     }
-    emit('undoable', {
+    const undoEntry = {
         label: `${e.isNew ? 'Added' : 'Changed'} ${zoneName(e.category, e.area)}`,
         writes: [{ category: e.category, area: e.area, zone: e.original, after: sorted(d) }],
         names: { [key]: oldName },
-    });
-    writeZone(e.category, e.area, d, { undoable: true });
+    };
+    emit('undoable', undoEntry);
+    writeZone(e.category, e.area, d, { undo: undoEntry });
     endEdit();
 }
 
-const UNDO = { label: 'Undo', onClick: () => emit('undo') };
-
-// Send one zone to the switch (null clears the slot) and wait for it to show up in reports
-export function writeZone(category, area, zone, { message = null, undoable = false } = {}) {
+// Send one zone to the switch (null clears the slot) and wait for it to show up in reports.
+// `undo` is the undo entry for this change: its toast then offers to take it back.
+export function writeZone(category, area, zone, { message = null, undo = null } = {}) {
     const payload = zone ? zoneToDevicePayload(category, zone) : EMPTY_AREA;
     state.socket.emit('update_parameter', { param: category, value: { [area]: payload } });
     expectWrite(category, area, zone, payload);
     emit('zones');
     if (!state.edit) renderZoneList();
-    toast(message || `${zone ? 'Saving' : 'Deleting'} ${zoneName(category, area)}…`, 'info', undoable ? 6000 : 4000,
-        undoable ? UNDO : null);
+    toast(message || `${zone ? 'Saving' : 'Deleting'} ${zoneName(category, area)}…`, 'info', undo ? 6000 : 4000,
+        undo ? { label: 'Undo', onClick: () => emit('undo', undo) } : null);
 }
 
 async function deleteEdit() {
@@ -598,12 +616,13 @@ async function deleteEdit() {
     const key = `${e.category}:${e.area}`;
     const oldName = customName(e.category, e.area);
     endEdit();
-    emit('undoable', {
+    const undoEntry = {
         label: `Deleted ${name}`,
         writes: [{ category: e.category, area: e.area, zone: e.original, after: null }],
         names: { [key]: oldName },
-    });
-    writeZone(e.category, e.area, null, { message: `Deleting ${name}…`, undoable: true });
+    };
+    emit('undoable', undoEntry);
+    writeZone(e.category, e.area, null, { message: `Deleting ${name}…`, undo: undoEntry });
     setName(e.category, e.area, '');
 }
 

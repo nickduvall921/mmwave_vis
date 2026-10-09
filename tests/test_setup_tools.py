@@ -118,17 +118,11 @@ def test_timeout_and_missing_token(monkeypatch):
             pass
 
 
-def test_ieee_forms_and_find_device():
+def test_ieee_forms():
     for value in (IEEE_ZHA, "0x0c2a6ffffeaa392b", "zigbee2mqtt_0x0c2a6ffffeaa392b", "0C2A6FFFFEAA392B"):
         assert ha_ws.ieee_digits(value) == "0c2a6ffffeaa392b"
-    devices = [
-        {"id": "other", "connections": [["zigbee", "00:00:00:00:00:00:00:01"]]},
-        {"id": "zha", "connections": [["zigbee", IEEE_ZHA]], "identifiers": [["zha", IEEE_ZHA]]},
-        {"id": "z2m", "connections": [], "identifiers": [["mqtt", f"zigbee2mqtt_{IEEE_Z2M}"]]},
-    ]
-    assert ha_ws.find_device(devices, "0x0c2a6ffffeaa392b")["id"] == "zha"
-    assert ha_ws.find_device(devices, "0c:2a:6f:ff:fe:f6:f6:a7")["id"] == "z2m"
-    assert ha_ws.find_device(devices, "nope") is None
+    assert ha_ws.ieee_digits("nope") is None
+    assert ha_ws.ieee_digits(None) is None
 
 
 def test_entity_roles_zha_and_z2m():
@@ -153,15 +147,6 @@ def test_entity_roles_zha_and_z2m():
     assert z2m["occupancy"] == "binary_sensor.wash_occupancy"
     assert z2m["target_report"] == "select.wash_mmwavetargetinforeport"
     assert z2m["linkquality"] == "sensor.wash_linkquality"
-
-
-def test_zha_area_sensor_yaml():
-    text = ha_ws.zha_area_sensor_yaml(IEEE_ZHA, 2, 'Couch "corner"')
-    assert f'device_ieee: "{IEEE_ZHA}"' in text
-    assert "command: mmwave_anyone_in_area" in text
-    assert "trigger.event.data.args.area2 == 1" in text
-    assert "unique_id: mmwave_0c2a6ffffeaa392b_area2" in text
-    assert '"Couch \'corner\' occupied"' in text
 
 
 def test_registry_cache_keeps_only_inovelli_and_caches(monkeypatch):

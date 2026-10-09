@@ -772,7 +772,8 @@ class ZHADriver:
 
     def __init__(self):
         from zha_client import ZHAClient
-        self._zha = ZHAClient(HA_URL, HA_TOKEN, socketio, debug=DEBUG, history=history)
+        self._zha = ZHAClient(HA_URL, HA_TOKEN, socketio, debug=DEBUG, history=history,
+                              history_key=history_key)
         self._attrs = {}       # ieee → attributes read from the switch (cached; they're radio reads)
         self._attrs_lock = threading.Lock()
 
@@ -797,6 +798,7 @@ class ZHADriver:
                 zha_dev = ha.request('zha/device', ieee=ieee) or {}
                 if attrs is None:
                     attrs = {}
+                    complete = True
                     for name, cluster, attr, manufacturer in (
                             ('mmwave_version', 0xFC32, 0x0073, 0x122F),
                             ('sw_build_id', 0x0000, 0x4000, None)):
@@ -808,8 +810,13 @@ class ZHADriver:
                             attrs[name] = ha.request('zha/devices/clusters/attributes/value', **req)
                         except ha_ws.HAError as e:
                             print(f"ZHA: couldn't read {name} from {ieee}: {e}", flush=True)
-                    with self._attrs_lock:
-                        self._attrs[ieee] = attrs
+                            complete = False
+                        if attrs.get(name) in (None, '', 'None'):   # the switch didn't answer
+                            complete = False
+                    # Only keep a full answer; a missed read is tried again next time
+                    if complete:
+                        with self._attrs_lock:
+                            self._attrs[ieee] = attrs
         except ha_ws.HAError as e:
             print(f"ZHA: device info for {ieee} failed: {e}", flush=True)
         dev = self._zha.device_list.get(ieee) or {}

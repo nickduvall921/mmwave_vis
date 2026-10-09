@@ -56,6 +56,19 @@ def test_other_switch_targets_are_recorded_but_not_sent():
     assert sent["topic"] == f"zha/{A}" and sent["payload"]["targets"][0]["id"] == 2
 
 
+def test_history_key_callback_is_used():
+    # app.py passes its own history_key, which also remembers the topic for live timeline events
+    seen = []
+    c = ZHAClient("http://supervisor", "token", MagicMock(), history=MagicMock(),
+                  history_key=lambda topic, ieee: seen.append((topic, ieee)) or f"key:{ieee}")
+    c.device_list = {A: {"topic": f"zha/{A}", "ieee": A}}
+    c._ieee, c._topic = A, f"zha/{A}"
+    c._clear_binding_warning = MagicMock()
+    c._handle_message(zha_event(A, "mmwave_target_info", target_args(1, 10)))
+    assert c.history.on_targets.call_args.args[0] == f"key:{A}"
+    assert seen == [(f"zha/{A}", A)]
+
+
 def test_frame_flushes_on_its_last_target():
     c = client_with_two()
     c._handle_message(zha_event(A, "mmwave_target_info", target_args(1, 10, index=0, num=2)))

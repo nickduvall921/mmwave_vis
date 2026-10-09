@@ -2,7 +2,7 @@
 // auto-detect) or a backup import. Each switch keeps its own short list, in this
 // page only. Undoing sends the zones back as they were before the change.
 
-import { state, on, ZONE_TYPES, AREAS, zoneName } from './state.js';
+import { state, on, AREAS, zoneName } from './state.js';
 import { $, toast, confirmAction } from './ui.js';
 import { writeZone, sameZone, isMirroredX, displayZones, SWITCH_ROUNDING_CM } from './zones.js';
 import { restoreZones, isRestoring } from './backup.js';
@@ -21,12 +21,26 @@ function stack() {
 
 // entry: { label, writes: [{ category, area, zone (before), after? }], names?: {key: name} }
 // `after` is what the change left in the slot, when known; undo checks it's still there.
+// The entry object itself is kept, so a toast can later ask to undo exactly that change.
 function push(entry) {
-    if (!state.device || !entry || !entry.writes || !entry.writes.length) return;
+    if (!state.device || !entry || !entry.writes || !entry.writes.length) return null;
     const list = stack();
-    list.push({ ...entry, topic: state.device, at: Date.now() });
+    entry.topic = state.device;
+    entry.at = Date.now();
+    list.push(entry);
     while (list.length > MAX) list.shift();
     render();
+    return entry;
+}
+
+// Take an entry back off the list without undoing it (the change never happened)
+export function drop(entry) {
+    const list = stacks.get(entry && entry.topic) || [];
+    const i = list.indexOf(entry);
+    if (i >= 0) {
+        list.splice(i, 1);
+        render();
+    }
 }
 
 // The zone types a maintenance command or import is about to change, as they are now.
@@ -48,11 +62,18 @@ export function snapshot(categories) {
     return { writes, skipped };
 }
 
-// True when there was something to snapshot
+// The names of the snapshotted slots, so undo brings them back with their zones (a name
+// is dropped when the switch reports its slot empty)
+function namesOf(writes) {
+    const names = {};
+    for (const w of writes) names[`${w.category}:${w.area}`] = (state.zoneNames || {})[`${w.category}:${w.area}`] || '';
+    return names;
+}
+
+// The pushed entry, or null when there was nothing to snapshot
 export function pushSnapshot(labelText, categories) {
     const { writes } = snapshot(categories);
-    if (writes.length) push({ label: labelText, writes });
-    return writes.length > 0;
+    return writes.length ? push({ label: labelText, writes, names: namesOf(writes) }) : null;
 }
 
 function render() {
@@ -71,9 +92,17 @@ function changedSince(w) {
     return !(w.category === 'mmwave_stay_areas' && isMirroredX(now, w.after, SWITCH_ROUNDING_CM));
 }
 
-export async function undo() {
+// Undo the newest change, or `target` (from a toast) only while it still is the newest:
+// undoing an older change under a newer one would leave the zones in a mix of both
+export async function undo(target = null) {
     const list = stacks.get(state.device) || [];
     const entry = list[list.length - 1];
+    if (target && entry !== target) {
+        toast(list.includes(target)
+            ? 'You\'ve changed zones since then. Use the Undo bar to take back the newest change first.'
+            : 'That change can\'t be undone any more.', 'error', 6000);
+        return;
+    }
     if (!entry) { toast('Nothing to undo.', 'info', 2500); return; }
     if (isRestoring()) { toast('Wait for the zones being sent now to finish.', 'error'); return; }
     if (state.edit) { toast('Save or cancel the zone you\'re editing first.', 'error'); return; }
@@ -95,8 +124,8 @@ export async function undo() {
         { label: `Undo of "${entry.label}"` });
 }
 
-// For toasts that offer to take the change back
-export const undoAction = { label: 'Undo', onClick: () => undo() };
+// For a toast that offers to take back one particular change
+export const undoActionFor = entry => ({ label: 'Undo', onClick: () => undo(entry) });
 
 export function initUndo() {
     on('undoable', push);
@@ -104,9 +133,9 @@ export function initUndo() {
         const { writes } = snapshot(categories);
         if (writes.length) push({ label: text, writes, names });
     });
-    on('undo', () => undo());
+    on('undo', target => undo(target || null));
     on('device', render);
-    $('#btnUndo').addEventListener('click', undo);
+    $('#btnUndo').addEventListener('click', () => undo());
     document.addEventListener('keydown', e => {
         if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 'z') return;
         const t = e.target;
@@ -117,5 +146,3 @@ export function initUndo() {
     });
     render();
 }
-
-export const CATEGORIES = Object.fromEntries(ZONE_TYPES.map(t => [t.group, t.category]));

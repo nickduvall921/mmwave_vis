@@ -12,7 +12,7 @@ import { initBackup } from './backup.js';
 import * as display from './display.js';
 import { initZwave, openZwave } from './zwave.js';
 import { namesFromServer } from './names.js';
-import { initUndo, pushSnapshot, undoAction } from './undo.js';
+import { initUndo, pushSnapshot, undoActionFor, drop as dropUndo } from './undo.js';
 import * as history from './history.js';
 import { initTester, stopTests, STAY_LIFE_STEP_S } from './tester.js';
 import { initSwitchInfo, deviceInfoFromServer, clearDeviceInfo } from './switchinfo.js';
@@ -333,13 +333,20 @@ $$('[data-command]').forEach(btn => btn.addEventListener('click', async () => {
     const cmd = COMMANDS[id];
     if (!state.device) { toast('Choose a switch first.', 'error'); return; }
     if (cmd.ask && !await confirmAction(cmd.ask, { confirm: cmd.label, danger: true })) return;
-    const undoable = pushSnapshot(cmd.undo, [cmd.category]);
+    const entry = pushSnapshot(cmd.undo, [cmd.category]);
+    if (entry) {
+        // The addon refuses a command straight away (no switch, broker offline); then
+        // there's nothing to undo
+        const refused = () => dropUndo(entry);
+        socket.once('command_error', refused);
+        setTimeout(() => socket.off('command_error', refused), 4000);
+    }
     socket.emit('send_command', id);
     if (id === 1 || id === 3) {
         state.lastCommandId = id;
         state.lastCommandAt = Date.now();
     }
-    toast(cmd.done, 'info', undoable ? 6000 : 4000, undoable ? undoAction : null);
+    toast(cmd.done, 'info', entry ? 6000 : 4000, entry ? undoActionFor(entry) : null);
 }));
 
 // --- Tabs ------------------------------------------------------------------------

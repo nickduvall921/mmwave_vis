@@ -47,21 +47,26 @@ function renderRangeButtons() {
     $('#heatCustom').hidden = range !== 'custom';
 }
 
+// The custom From/To: what was picked last time, else the last 24 hours
+function fillCustom() {
+    if ($('#heatFrom').value && $('#heatTo').value) return;
+    const now = Date.now();
+    $('#heatFrom').value = prefs.get('historyFrom') || toLocalInput(now - 86400000);
+    $('#heatTo').value = prefs.get('historyTo') || toLocalInput(now);
+}
+
 function setRange(next) {
     range = next;
     prefs.set('historyRange', next);
-    if (next === 'custom' && !$('#heatFrom').value) {
-        const now = Date.now();
-        $('#heatFrom').value = toLocalInput(now - 86400000);
-        $('#heatTo').value = toLocalInput(now);
-    }
+    if (next === 'custom') fillCustom();
     renderRangeButtons();
     load();
 }
 
 // --- Loading ---------------------------------------------------------------------
 
-const heatWanted = () => (tabOpen || prefs.getBool('heatAlways', false)) && !!state.device;
+// On every tab unless turned off in the Display tab; always while History is open
+const heatWanted = () => (tabOpen || prefs.getBool('heatShow', true)) && !!state.device;
 
 function load() {
     clearTimeout(heatTimer);
@@ -85,7 +90,8 @@ function load() {
         if (heatWanted()) loadHeat(topic, times, seq);
         else radar.setHeat(null);
         if (tabOpen) loadEvents(topic, times, seq);
-        if (range === '10m' || range === '1h') heatTimer = setTimeout(load, LIVE_REFRESH_MS);
+        // Recent ranges keep filling in; nothing to refresh when the heat map isn't shown
+        if (heatWanted() && (range === '10m' || range === '1h')) heatTimer = setTimeout(load, LIVE_REFRESH_MS);
     });
 }
 
@@ -345,7 +351,13 @@ export function initHistory(radarInstance) {
     $('#historyEnabled').addEventListener('change', e => saveSettings({ enabled: e.target.checked }));
     $('#historyDays').addEventListener('change', e => saveSettings({ days: parseInt(e.target.value, 10) }));
     $$('#heatRanges button').forEach(b => b.addEventListener('click', () => setRange(b.dataset.range)));
-    for (const id of ['heatFrom', 'heatTo']) $('#' + id).addEventListener('change', () => { if (range === 'custom') load(); });
+    for (const [id, key] of [['heatFrom', 'historyFrom'], ['heatTo', 'historyTo']]) {
+        $('#' + id).addEventListener('change', e => {
+            prefs.set(key, e.target.value);
+            if (range === 'custom') load();
+        });
+    }
+    if (range === 'custom') fillCustom();
     $$('#eventFilter button').forEach(b => b.addEventListener('click', () => { filter = b.dataset.filter; renderEvents(); }));
 
     const opacity = $('#heatOpacity');
@@ -355,16 +367,13 @@ export function initHistory(radarInstance) {
         prefs.set('heatOpacity', Number(opacity.value));
     });
 
-    // The same setting in two places: here and in the Display tab
-    const always = [$('#heatAlways'), $('#vizToggleHeat')];
-    for (const box of always) {
-        box.checked = prefs.getBool('heatAlways', false);
-        box.addEventListener('change', () => {
-            prefs.set('heatAlways', box.checked);
-            for (const other of always) other.checked = box.checked;
-            load();
-        });
-    }
+    // Display tab: hide the heat map outside the History tab (e.g. while drawing zones)
+    const show = $('#vizToggleHeat');
+    show.checked = prefs.getBool('heatShow', true);
+    show.addEventListener('change', () => {
+        prefs.set('heatShow', show.checked);
+        load();
+    });
 
     $('#btnClearHistory').addEventListener('click', async () => {
         if (!state.device) { toast('Choose a switch first.', 'error'); return; }

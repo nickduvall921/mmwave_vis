@@ -55,6 +55,7 @@ export const state = {
     edit: null,               // { category, area, draft, isNew } while a zone is being edited
     arranging: false,         // room layout mode
     replay: null,             // a recorded clip being played back instead of live data
+    restoring: false,         // a backup restore or multi-zone undo is writing slots
     layout: { x: 0, y: 0, rot: 0, room: null },
     stayInvert: false,
     lastCommandId: null,      // 1 = auto-detect interference, 3 = clear interference

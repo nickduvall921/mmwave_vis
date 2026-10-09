@@ -356,6 +356,29 @@ def test_overlapping_events_extend_one_clip_up_to_the_cap():
     assert c._open['k']['end'] - c._open['k']['t0'] <= history.CLIP_MAX_MS
 
 
+def test_clip_for_a_past_moment_takes_no_newer_frames():
+    c = ClipRecorder()
+    for t in range(100_000, 130_000, 1000):
+        c.add('k', [target(1, 2)], t)
+    c.trigger('k', 10_000)          # an event dated long before the frames in the buffer
+    c.tick(200_000)
+    assert c.done == []             # nothing in its window, so no clip
+
+
+def test_offline_change_records_no_clip(tmp_path, clock):
+    key = 'ieee:a'
+    h = make(tmp_path, clock)
+    h.on_state(key, {'light': 'OFF'})
+    h.on_state(key, {'light': 'ON'})          # stored: light on
+    h.close()
+    clock.advance(3600)
+    h2 = make(tmp_path, clock)
+    h2.on_targets(key, [target(0, 100)])
+    h2.on_state(key, {'light': 'OFF'}, t_ms=int((clock.t - 1800) * 1000))
+    assert h2.events(key, 0, 10**15)[0]['offline'] is True
+    assert key not in h2.clips._open
+
+
 def test_pack_round_trip():
     frames = [(1000, [(1, 10, -20, 30, -5), (2, -32768, 32767, 0, 7)]), (1250, []), (1500, [(3, 1, 2, 3, 4)])]
     data = pack_frames(1000, frames)

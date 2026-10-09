@@ -103,30 +103,34 @@ class HAConnection:
             return msg.get("result")
 
 
-def rest_state(token, entity_id, timeout=10):
-    """One entity's state from HA's REST API through the Supervisor proxy, or None."""
-    if not token or not entity_id:
-        return None
-    url = "http://supervisor/core/api/states/" + urllib.parse.quote(entity_id, safe="._")
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"}, method="GET")
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode())
-    except Exception:
-        return None
+def rest_json(token, path, timeout=10):
+    """GET http://supervisor/core/api<path> (the Supervisor's proxy to HA's REST API).
+
+    `path` starts with / and leaves out /api, e.g. "/states". Raises on any failure.
+    """
+    req = urllib.request.Request("http://supervisor/core/api" + path,
+                                 headers={"Authorization": f"Bearer {token}",
+                                          "Content-Type": "application/json"},
+                                 method="GET")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode())
 
 
 def rest_get(token, path, timeout=5):
-    """GET http://supervisor/core/api<path>, or None."""
+    """rest_json(), or None if there's no token or the request fails."""
     if not token:
         return None
-    req = urllib.request.Request("http://supervisor/core/api" + path,
-                                 headers={"Authorization": f"Bearer {token}"}, method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode())
+        return rest_json(token, path, timeout)
     except Exception:
         return None
+
+
+def rest_state(token, entity_id, timeout=10):
+    """One entity's state, or None."""
+    if not entity_id:
+        return None
+    return rest_get(token, "/states/" + urllib.parse.quote(entity_id, safe="._"), timeout)
 
 
 # ---------------------------------------------------------------------------
@@ -139,19 +143,6 @@ def ieee_digits(value):
         return None
     m = re.search(r'(?:0x)?((?:[0-9a-f]{2}:){7}[0-9a-f]{2}|[0-9a-f]{16})$', value.lower())
     return m.group(1).replace(':', '') if m else None
-
-
-def find_device(devices, ieee):
-    """The device registry entry for a Zigbee IEEE address, on ZHA or Zigbee2MQTT."""
-    want = ieee_digits(ieee)
-    if not want:
-        return None
-    for dev in devices or []:
-        pairs = list(dev.get("connections") or []) + list(dev.get("identifiers") or [])
-        for pair in pairs:
-            if len(pair) >= 2 and pair[0] in ("zigbee", "zha", "mqtt") and ieee_digits(str(pair[1])) == want:
-                return dev
-    return None
 
 
 _AREA_RE = re.compile(r'area([1-4])occupancy')
@@ -192,26 +183,6 @@ def entity_roles(entries):
         if role and role not in roles:
             roles[role] = eid
     return roles
-
-
-def zha_area_sensor_yaml(ieee, area, name=None):
-    """A template binary sensor for one ZHA detection area (ZHA has no area entities)."""
-    label = (name or f"mmWave area {area}").replace('"', "'")
-    digits = ieee_digits(ieee) or "switch"
-    return (
-        "template:\n"
-        "  - trigger:\n"
-        "      - platform: event\n"
-        "        event_type: zha_event\n"
-        "        event_data:\n"
-        f"          device_ieee: \"{ieee}\"\n"
-        "          command: mmwave_anyone_in_area\n"
-        "    binary_sensor:\n"
-        f"      - name: \"{label} occupied\"\n"
-        f"        unique_id: mmwave_{digits}_area{area}\n"
-        f"        state: \"{{{{ trigger.event.data.args.area{area} == 1 }}}}\"\n"
-        "        device_class: occupancy\n"
-    )
 
 
 class RegistryCache:
