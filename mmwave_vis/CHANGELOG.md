@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [4.1.1] - 2026-10-09
+
+### Fixed
+- Zigbee2MQTT: the heat map stayed empty and replays had no targets. Zigbee2MQTT keeps an old raw radar report in a switch's saved state and re-sends it with every update, and history took that frozen report as the only real one, so it skipped every new position. History now goes by the parsed target list.
+
 ## [4.1.0] - 2026-10-08
 
 ### Added

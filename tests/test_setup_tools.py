@@ -263,9 +263,12 @@ def test_fresh_target_frames():
     assert not is_fresh_target_frame({"mmwave_targets": list(t), "illuminance": 5}, target_frame_mark({"mmwave_targets": t}))
     assert is_fresh_target_frame({"mmwave_targets": []}, target_frame_mark({"mmwave_targets": t}))
     assert not is_fresh_target_frame({"illuminance": 5}, None)
-    # Z2M 2.9 sends both; the sequence number decides
+    # Z2M 2.9+ keeps re-publishing raw bytes cached from before the upgrade, frozen at one
+    # sequence number, next to the live parsed list; the list decides
     both = dict(raw, mmwave_targets=t)
-    assert not is_fresh_target_frame(dict(both, mmwave_targets=[]), target_frame_mark(both))
+    moved = [{"id": 1, "x": 20, "y": 140, "z": 0, "dop": 5}]
+    assert is_fresh_target_frame(dict(both, mmwave_targets=moved), target_frame_mark(both))
+    assert not is_fresh_target_frame(dict(both, illuminance=5), target_frame_mark(both))
 
 
 # ---------------------------------------------------------------------------
