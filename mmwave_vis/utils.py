@@ -180,17 +180,19 @@ def normalize_zone_names(names):
 def target_frame_mark(payload):
     """What identifies one target report in a Zigbee2MQTT message, or None if it has none.
 
-    A raw FC32 report-target frame (numbered byte keys, command 1) carries the ZCL
-    sequence number in byte 3, which changes with every report; otherwise the
-    parsed `mmwave_targets` list itself is the mark.
+    Zigbee2MQTT 2.9+ parses reports into `mmwave_targets`, and that list is the mark.
+    Its cached state can still hold raw bytes from before the upgrade, which it
+    re-publishes unchanged forever, so they only count when there is no parsed list:
+    then a raw FC32 report-target frame (numbered byte keys, command 1) is the live
+    one, and its ZCL sequence number in byte 3 changes with every report.
     """
     if not isinstance(payload, dict):
         return None
-    if payload.get("0") == 29 and payload.get("1") == 47 and payload.get("2") == 18 and payload.get("4") == 1:
-        return ("seq", payload.get("3"))
     targets = payload.get("mmwave_targets")
     if isinstance(targets, list):
         return ("targets", targets)
+    if payload.get("0") == 29 and payload.get("1") == 47 and payload.get("2") == 18 and payload.get("4") == 1:
+        return ("seq", payload.get("3"))
     return None
 
 
