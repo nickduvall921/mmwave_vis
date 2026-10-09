@@ -33,8 +33,10 @@ function signalText(info) {
     return parts.join(' · ');
 }
 
-function row(label, value, extra = null) {
-    return [h('dt', null, label), h('dd', null, value, extra)];
+// `wide` puts the value on its own line under the label (long entity IDs)
+function row(label, value, extra = null, wide = false) {
+    const cls = wide ? 'wide' : null;
+    return [h('dt', { class: cls }, label), h('dd', { class: cls }, value, extra)];
 }
 
 function render() {
@@ -65,7 +67,7 @@ function render() {
         items.push(...row('Occupancy entity', h('code', null, occ),
             h('button', { class: 'btn link', type: 'button', onclick: async () => {
                 if (await copyText(occ)) toast(`Copied ${occ}.`, 'success', 2500);
-            } }, 'Copy')));
+            } }, 'Copy'), true));
     }
 
     const notes = [];
