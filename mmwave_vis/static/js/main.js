@@ -369,12 +369,18 @@ tabs.forEach((tab, i) => {
 });
 selectTab(tabs.some(t => t.id === prefs.get('activeTab')) ? prefs.get('activeTab') : 'tab-zones');
 
-// ⓘ buttons open a short explanation underneath (tooltips don't work on touch screens)
-$$('[data-info]').forEach(btn => btn.addEventListener('click', () => {
-    const panel = $('#' + btn.dataset.info);
-    panel.hidden = !panel.hidden;
-    btn.setAttribute('aria-expanded', String(!panel.hidden));
-}));
+// ⓘ buttons open a short explanation underneath (tooltips don't work on touch screens).
+// The markup leaves them empty; they all get the same icon here.
+const INFO_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
+    '<path d="M8 7.2v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.85" fill="currentColor"/></svg>';
+$$('[data-info]').forEach(btn => {
+    if (!btn.firstElementChild) btn.innerHTML = INFO_ICON;
+    btn.addEventListener('click', () => {
+        const panel = $('#' + btn.dataset.info);
+        panel.hidden = !panel.hidden;
+        btn.setAttribute('aria-expanded', String(!panel.hidden));
+    });
+});
 
 // --- Header menus ----------------------------------------------------------------
 

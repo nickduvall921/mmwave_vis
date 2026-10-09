@@ -13,10 +13,11 @@
 - Each detection area shows the Home Assistant entity that follows it, with a Copy button (Zigbee2MQTT). ZHA has no per-area entities, so it gets a Copy sensor YAML button that fills in the switch's IEEE address and the zone's name.
 - Switch details at the top of the Switch tab: firmware, mmWave module version, Zigbee signal (with a hint when it's weak), when it was last seen, whether a firmware update is available, and a link to the device in Home Assistant. The firmware also shows in the status popover.
 - Hold time and sit-still tests in the Switch tab. The hold time test times how long the switch takes to report clear once the room is empty, and compares it with the hold time. The sit-still test checks you stay detected while still and offers to add a stay area where you sat.
-- Short explanations under sensitivity, trigger speed, hold time and stay life.
+- Explanations for sensitivity, trigger speed, hold time and stay life, behind ⓘ buttons.
 - Download diagnostics (⋮ menu): one file with the addon and stack versions, the selected switch's details, zones, settings, room layout, recent messages from the switch and the addon's recent log, for bug reports. Passwords, tokens and the Zigbee network key are removed.
 
 ### Changed
+- Explanations throughout the tabs (zone editor, movement recorder, zone tools, mirrored stay zones, tests, history, map range, room layout) are now behind ⓘ buttons, like target reporting, so the panels are shorter.
 - "Switch settings" tab is now "Switch", to make room for History.
 - On ZHA the addon now follows every VZM32-SN switch, not just the one a page has open, so history covers all of them. Pages still only get live data for the switch they show.
 - On ZHA, overall occupancy now comes from the switch's own occupancy entity (which follows the hold time, like the light does) instead of "any area occupied", and the light level is shown too.
