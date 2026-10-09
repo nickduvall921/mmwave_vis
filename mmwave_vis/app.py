@@ -135,7 +135,10 @@ if ZIGBEE_STACK == 'zha':
 # ---------------------------------------------------------------------------
 # Flask + Socket.IO
 # ---------------------------------------------------------------------------
-app = Flask(__name__)
+# Not /static: before 2026.10, Home Assistant's service worker caches any URL with
+# /static/ in it (ingress included) on first load, ignoring ?v=, and never refreshes
+# it, so phones kept running the version they first opened (home-assistant/frontend#54707)
+app = Flask(__name__, static_url_path='/assets')
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', manage_session=False)
 
 # ---------------------------------------------------------------------------

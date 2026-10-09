@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [4.1.2] - 2026-10-09
+
+### Fixed
+- Phones and tablets kept running the version of the page they first opened: History controls showed off, the heat map legend and ⓘ buttons were missing, and other new features didn't work. Before 2026.10, Home Assistant's own service worker caches any file with `/static/` in its address, add-on pages included, the first time it's loaded and never refreshes it ([home-assistant/frontend#54707](https://github.com/home-assistant/frontend/pull/54707)). That cache is only active when Home Assistant is opened over https (Home Assistant Cloud included), so a browser on a plain `http://` address isn't affected. The page's files now come from `/assets/`, which that cache leaves alone, so every device gets the current version.
+
 ## [4.1.1] - 2026-10-09
 
 ### Fixed
