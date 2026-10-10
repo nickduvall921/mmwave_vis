@@ -34,7 +34,7 @@ ZHA support has just been added experimentally. Requires a custom Quark that I h
 - History (off until you turn it on): a heat map of where people spent time over the last 10 minutes, hour, 6 hours, day, week or any range, and a timeline of when occupancy and the light changed, each with a replay of what the radar saw.
 - Hold time and sit-still tests that time how the switch behaves and suggest what to change.
 - Config tab: every setting on the switch in one place (presence, brightness, fade speeds, paddle and buttons, the LED bar and each LED, wiring, bindings and power reporting), each with an ⓘ explaining what it does, its default and a reset button. Search them, or show only the ones you've changed. Settings that could stop the light working ask before changing.
-- Switch details: firmware, mmWave module version, Zigbee signal and firmware updates.
+- Switch details at the top of the Config tab: firmware, mmWave module version, Zigbee signal and firmware updates.
 - Download diagnostics from the ⋮ menu to attach to a bug report (passwords and tokens are removed).
 - Occupancy, per-area occupancy and light level as they change.
 - Works on phones, follows your light or dark system theme, and saves the map as an image from the ⋮ menu.
@@ -183,7 +183,7 @@ Before starting the add-on, go to the **Configuration** tab and connect it to yo
 
 5. To auto-detect interference, clear the room, turn on whatever moves (fan, vent and so on) and press Detect automatically under Zone tools. Any interference zones the switch finds show up hatched in red.
 
-Settings that change the switch itself are in the Switch settings tab, and they're sent as soon as you change them.
+How the radar detects people (sensitivity, trigger speed, hold time, stay life) is in the Detection tab, with tests that time how the switch behaves. Every other setting, and the switch's firmware and signal, is in the Config tab. Changes are sent as soon as you make them.
 
 ## Understanding the Zones
 

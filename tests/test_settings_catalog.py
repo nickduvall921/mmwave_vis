@@ -82,14 +82,17 @@ def test_the_quirk_defines_every_attribute_zha_uses():
             assert f"id=0x{s['attr']:04X}" in vzm32[:vzm32.index('class InovelliVZM32SNMMWaveCluster')], key
 
 
-def test_the_switch_tab_and_the_catalogue_agree():
-    """The Switch tab's mmWave controls send the same values the catalogue accepts."""
+def test_the_detection_tab_and_the_catalogue_agree():
+    """The Detection tab's mmWave controls send values the catalogue accepts, under the
+    same labels the Config tab shows for them."""
     html = open(os.path.join(os.path.dirname(__file__), '..', 'mmwave_vis', 'templates', 'index.html'), encoding='utf-8').read()
     import re
     for key in ('mmWaveDetectSensitivity', 'mmWaveDetectTrigger', 'mmWaveRoomSizePreset', 'mmwaveControlWiredDevice'):
         block = re.search(rf'<select id="{key}" data-param="{key}">(.*?)</select>', html, re.S).group(1)
-        for value in re.findall(r'<option value="([^"]+)"', block):
+        labels = {o['value']: o.get('label', o['value']) for o in SETTINGS[key]['options']}
+        for value, label in re.findall(r'<option value="([^"]+)">([^<]*)</option>', block):
             assert sc.validate(key, value)[0], (key, value)
+            assert label == labels[value], (key, value, label)
 
 
 # ---------------------------------------------------------------------------

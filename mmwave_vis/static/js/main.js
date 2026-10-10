@@ -376,7 +376,9 @@ tabs.forEach((tab, i) => {
         next.focus();
     });
 });
-selectTab(tabs.some(t => t.id === prefs.get('activeTab')) ? prefs.get('activeTab') : 'tab-zones');
+// The Detection tab was called Switch before 4.2
+const savedTab = prefs.get('activeTab') === 'tab-switch' ? 'tab-detection' : prefs.get('activeTab');
+selectTab(tabs.some(t => t.id === savedTab) ? savedTab : 'tab-zones');
 
 $$('[data-info]').forEach(bindInfo);
 

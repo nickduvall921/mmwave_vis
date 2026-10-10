@@ -146,7 +146,7 @@
     <aside class="panel">
         <div class="tabs" role="tablist" aria-label="Settings">
             <button class="tab" type="button" role="tab" id="tab-zones" aria-controls="panel-zones" aria-selected="true">Zones</button>
-            <button class="tab" type="button" role="tab" id="tab-switch" aria-controls="panel-switch" aria-selected="false">Switch</button>
+            <button class="tab" type="button" role="tab" id="tab-detection" aria-controls="panel-detection" aria-selected="false">Detection</button>
             <button class="tab" type="button" role="tab" id="tab-config" aria-controls="panel-config" aria-selected="false">Config</button>
             <button class="tab" type="button" role="tab" id="tab-history" aria-controls="panel-history" aria-selected="false">History</button>
             <button class="tab" type="button" role="tab" id="tab-display" aria-controls="panel-display" aria-selected="false">Display</button>
@@ -219,12 +219,8 @@
             </section>
         </div>
 
-        <!-- Switch settings -->
-        <div class="tab-panel" role="tabpanel" id="panel-switch" aria-labelledby="tab-switch" hidden>
-            <section class="section">
-                <div class="section-head"><h2>This switch</h2></div>
-                <div id="switchInfo"></div>
-            </section>
+        <!-- Detection: how the radar detects people, and tests of it -->
+        <div class="tab-panel" role="tabpanel" id="panel-detection" aria-labelledby="tab-detection" hidden>
             <section class="section">
                 <div class="toggle-row">
                     <label class="toggle-title" for="mmWaveTargetInfoReport">Target reporting</label>
@@ -235,13 +231,14 @@
                     <input type="checkbox" role="switch" class="switch" id="mmWaveTargetInfoReport" data-param="mmWaveTargetInfoReport" data-on="Enable" data-off="Disable (default)">
                 </div>
                 <div class="info-panel" id="targetReportInfo" hidden>
-                    <p>Sends live positions so people show up on the map. Turn it on while you set up zones and off when you're done, since it adds Zigbee traffic.</p>
+                    <p>Sends live positions so people show up on the map and in the History heat map. Turn it on while you set up zones and off when you're done.</p>
+                    <p>Leaving it on can slow a larger Zigbee network down significantly: every switch with it on sends a report about once a second while anyone is in view, and that traffic can delay commands to your other devices.</p>
                     <p class="z2m-only">If nobody shows up with it on, bind <code>manuSpecificInovelliMMWave</code> on the switch's Bind tab in Zigbee2MQTT.</p>
                     <p class="zha-only">If nobody shows up with it on, open the switch in ZHA and choose Reconfigure.</p>
                 </div>
             </section>
             <section class="section">
-                <div class="section-head"><h2>Detection</h2></div>
+                <div class="section-head"><h2>Sensitivity and timing</h2></div>
                 <div class="field">
                     <span class="label-info"><label for="mmWaveDetectSensitivity">Sensitivity</label><button class="info-btn" type="button" aria-label="About sensitivity" aria-expanded="false" aria-controls="sensitivityInfo" data-info="sensitivityInfo"></button></span>
                     <select id="mmWaveDetectSensitivity" data-param="mmWaveDetectSensitivity">
@@ -295,7 +292,7 @@
                 </div>
             </section>
             <section class="section">
-                <div class="section-head"><span class="label-info"><h2>System</h2><button class="info-btn" type="button" aria-label="About these settings" aria-expanded="false" aria-controls="systemInfo" data-info="systemInfo"></button></span></div>
+                <div class="section-head"><span class="label-info"><h2>Room and light</h2><button class="info-btn" type="button" aria-label="About these settings" aria-expanded="false" aria-controls="systemInfo" data-info="systemInfo"></button></span></div>
                 <div class="info-panel info-under-head" id="systemInfo" hidden>
                     <p>Changes are sent to the switch as soon as you make them. Every other setting, from dimming speeds to the LED bar, is in the Config tab.</p>
                     <p class="zha-only">If settings look out of date, open the device in ZHA and choose Reconfigure to restore the cluster binding.</p>
@@ -308,15 +305,15 @@
                         <option value="Large">Medium (4.2 × 3.6 m)</option>
                     </select>
                 </label>
-                <label class="field wide"><span>Wired device control</span>
+                <label class="field wide"><span>Presence controls the light</span>
                     <select id="mmwaveControlWiredDevice" data-param="mmwaveControlWiredDevice">
-                        <option value="Disabled">Disabled</option>
-                        <option value="Occupancy (default)">Occupancy</option>
-                        <option value="Vacancy">Vacancy</option>
-                        <option value="Wasteful Occupancy">Wasteful occupancy</option>
-                        <option value="Mirrored Occupancy">Mirrored occupancy</option>
-                        <option value="Mirrored Vacancy">Mirrored vacancy</option>
-                        <option value="Mirrored Wasteful Occupancy">Mirrored wasteful occupancy</option>
+                        <option value="Disabled">Off</option>
+                        <option value="Occupancy (default)">Turn on and off</option>
+                        <option value="Vacancy">Only turn off</option>
+                        <option value="Wasteful Occupancy">Only turn on</option>
+                        <option value="Mirrored Occupancy">Inverted: on when empty, off when occupied</option>
+                        <option value="Mirrored Vacancy">Inverted: only turn on when empty</option>
+                        <option value="Mirrored Wasteful Occupancy">Inverted: only turn off when occupied</option>
                     </select>
                 </label>
             </section>
@@ -324,6 +321,10 @@
 
         <!-- Config: every setting on the switch, built by config.js from assets/settings.json -->
         <div class="tab-panel" role="tabpanel" id="panel-config" aria-labelledby="tab-config" hidden>
+            <section class="section">
+                <div class="section-head"><h2>This switch</h2></div>
+                <div id="switchInfo"></div>
+            </section>
             <section class="section cfg-top">
                 <div class="cfg-tools">
                     <input type="search" id="cfgSearch" placeholder="Search settings" aria-label="Search settings" autocomplete="off" spellcheck="false">
@@ -355,7 +356,7 @@
                 <div class="info-panel" id="historyInfo" hidden>
                     <p>Records where people were and when each switch's occupancy and light changed, for every switch, so you can see a heat map and a timeline here.</p>
                     <p>It's kept in the addon's data folder on this Home Assistant and never sent anywhere.</p>
-                    <p>Positions are only recorded while a switch has target reporting on.</p>
+                    <p>Positions are only recorded while a switch has target reporting on. On a larger Zigbee network, leaving it on can slow other devices down; see Target reporting in the Detection tab.</p>
                 </div>
                 <div class="tool-row" id="historyKeepRow" hidden>
                     <span>Keep for</span>

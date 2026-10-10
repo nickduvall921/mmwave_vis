@@ -1,5 +1,5 @@
 // The selected switch's firmware, mmWave module version, Zigbee signal and
-// firmware updates (top of the Switch settings tab, and a line in the status popover).
+// firmware updates (top of the Config tab, and a line in the status popover).
 
 import { state, emit } from './state.js';
 import { $, h, setText, toast, copyText, shortDateTime } from './ui.js';

@@ -141,7 +141,7 @@ function renderStatus() {
     } else if (state.device && stats && stats.has_ieee === false) {
         text = 'Waiting for Zigbee2MQTT to report this switch\'s IEEE address before recording it.';
     } else if (state.settings.mmWaveTargetInfoReport && state.settings.mmWaveTargetInfoReport !== 'Enable') {
-        text = 'Target reporting is off on this switch, so occupancy changes are recorded but positions aren\'t. Turn it on in Switch settings for the heat map and replays.';
+        text = 'Target reporting is off on this switch, so occupancy changes are recorded but positions aren\'t. Turn it on in the Detection tab for the heat map and replays.';
     } else if (stats && stats.first_t) {
         text = `Recording since ${shortDateTime(stats.first_t * 1000)}.`;
     } else if (settings.enabled) {

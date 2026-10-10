@@ -214,7 +214,7 @@
    "control": "toggle",
    "on": "Enable",
    "default": "Disable (default)",
-   "help": "Sends live positions, up to four people about once a second, so they show up on the map and in the History heat map. It adds Zigbee traffic, so turn it off when you don't need it. Whether each area is occupied is reported either way."
+   "help": "Sends live positions, up to four people about once a second, so they show up on the map and in the History heat map. Whether each area is occupied is reported either way.\n\nTurn it off when you don't need it. Leaving it on can slow a larger Zigbee network down significantly: every switch with it on sends a report about once a second while anyone is in view, and that traffic can delay commands to your other devices."
   },
   {
    "key": "mmWaveRoomSizePreset",

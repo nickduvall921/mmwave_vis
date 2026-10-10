@@ -12,6 +12,7 @@
 - ZHA quirk: the quick start time and brightness settings (parameters 23 and 24). Update the quirk in your custom quirks folder to change them through ZHA.
 
 ### Changed
+- The Switch tab is now called Detection: target reporting, sensitivity and timing, the hold time and sit-still tests, room size and whether presence controls the light. The switch's details (firmware, radar version, signal, updates) moved to the top of the Config tab.
 - Every setting the addon writes is checked against the same catalogue the Config tab is built from, instead of a short list of mmWave settings.
 - Room size presets are labelled with their sizes: Zigbee2MQTT's Small, Medium and Large are Inovelli's extra small (2 × 2 m), small and medium presets. On ZHA the Config tab also offers Inovelli's large and extra large presets.
 - Stay life goes up to 72000 (1 hour), so Inovelli's suggested 15 to 30 minutes for bedrooms can be set.
