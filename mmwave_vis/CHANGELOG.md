@@ -6,7 +6,7 @@
 ### Added
 - Config tab: all 91 settings of the switch, grouped (Presence, On/off and brightness, Fade and dimming speeds, Paddle and buttons, LED bar, Individual LEDs, Wiring and load, Bindings and fan control, Power reporting, Status, Advanced). Each setting has an ⓘ explaining it in plain words, from Inovelli's documentation, Zigbee2MQTT's definitions and what people have found on the forum, with its default, range, parameter number and a Reset to default button.
   - Values are shown as what they mean ("2.5 s", "Last brightness", "34%"), LED colours with a colour wheel, and a dot marks every setting that isn't at its default.
-  - Search the settings, or show only the ones you've changed.
+  - Search the settings (type p and a number, such as p13, to find a parameter by its number), or show only the ones you've changed. Refresh Values reads them all from the switch again.
   - Changes go to the switch straight away and show Saved once the switch reports the new value. Settings that could stop the light or an aux switch working (switch type, output mode, smart bulb mode, more output without neutral, the paddle lock) ask first.
   - Works on Zigbee2MQTT and ZHA. On ZHA the addon reads each group's settings from the switch when you open it, remembers them, and reads a setting back after changing it to confirm it.
 - ZHA quirk: the quick start time and brightness settings (parameters 23 and 24). Update the quirk in your custom quirks folder to change them through ZHA.

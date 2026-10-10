@@ -327,15 +327,16 @@
             </section>
             <section class="section cfg-top">
                 <div class="cfg-tools">
-                    <input type="search" id="cfgSearch" placeholder="Search settings" aria-label="Search settings" autocomplete="off" spellcheck="false">
-                    <button class="btn small" type="button" id="cfgRead">Read from switch</button>
+                    <input type="search" id="cfgSearch" placeholder="Search settings or p13" aria-label="Search settings" autocomplete="off" spellcheck="false">
+                    <button class="btn small" type="button" id="cfgRead">Refresh Values</button>
                     <button class="info-btn" type="button" aria-label="About the Config tab" aria-expanded="false" aria-controls="configInfo" data-info="configInfo"></button>
                 </div>
                 <div class="info-panel" id="configInfo" hidden>
-                    <p>Every setting on the switch, in groups. Each has an ⓘ explaining what it does. Changes are sent as soon as you make them, and show Saved once the switch reports the new value. Settings that could stop the light working ask first.</p>
-                    <p>A dot marks a setting that isn't at its default; Reset to default is under each ⓘ.</p>
-                    <p class="zha-only">On ZHA, settings are read from the switch when you open a group, one at a time over Zigbee, so a large group takes a few seconds. Read from switch reads them all again.</p>
-                    <p class="z2m-only">Values come from Zigbee2MQTT. Read from switch asks the switch for all of them again.</p>
+                    <p>Every setting on the switch, each with an ⓘ. Changes are sent straight away and show Saved once the switch confirms. Risky ones ask first.</p>
+                    <p>Search by name, or type p and a parameter number (p13) to jump to that parameter.</p>
+                    <p>Blue dot indicates value not at default.</p>
+                    <p class="zha-only">On ZHA, settings are read from the switch when you open a group, one at a time over Zigbee, so a large group takes a few seconds. "Refresh Values" pulls all values from the switch again.</p>
+                    <p class="z2m-only">Values from Zigbee2MQTT. "Refresh Values" pulls all values from the switch again.</p>
                 </div>
                 <label class="check"><input type="checkbox" id="cfgChanged"><span>Only settings changed from default</span></label>
                 <p class="status-line" id="cfgStatus"></p>

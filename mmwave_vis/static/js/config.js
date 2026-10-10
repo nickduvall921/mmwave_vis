@@ -20,7 +20,7 @@ const groups = [];             // { g, el, count, keys }
 const pending = new Map();     // key → { value, timer }
 const requested = new Set();   // settings asked from this switch since it was selected
 const unread = new Set();      // settings the switch didn't answer (ZHA)
-let reading = null;            // { left: Set, total } while "Read from switch" runs
+let reading = null;            // { left: Set, total } while "Refresh Values" runs
 let stateArrived = false;      // the switch's state has come in since it was selected
 let readWhenState = false;     // the tab opened before that, so read what's missing once it has
 let stateTimer = 0;
@@ -119,7 +119,7 @@ function buildRow(s) {
         s.help.split('\n\n').map(p => h('p', null, p)),
         s.quirkUpdate ? h('p', { class: 'zha-only' }, 'On ZHA this needs the quirk from Visualizer 4.2 or later; older copies of the quirk don\'t know this setting.') : null,
         h('p', { class: 'cfg-meta' }, meta.join(' '), reset ? ' ' : null, reset));
-    const r = { s, row, info, control, note, mark, swatch, text: `${s.title} ${s.sub || ''} ${s.help} ${s.key} p${s.param}`.toLowerCase() };
+    const r = { s, row, info, control, note, mark, swatch, text: `${s.title} ${s.sub || ''} ${s.help} ${s.key}`.toLowerCase() };
 
     if (control.tagName === 'INPUT' && control.type === 'range') {
         control.addEventListener('input', () => renderNote(r, Number(control.value)));
@@ -241,6 +241,9 @@ const search = () => $('#cfgSearch');
 const changedOnly = () => $('#cfgChanged');
 const filtering = () => !!(search().value.trim() || changedOnly().checked);
 
+// "p13" finds parameter 13 itself (not 130 to 134); other words match the title, help or key
+const matchesWord = (r, w) => (/^p\d+$/.test(w) ? r.s.param === Number(w.slice(1)) : r.text.includes(w));
+
 function applyFilter() {
     const q = search().value.trim().toLowerCase();
     const onlyChanged = changedOnly().checked;
@@ -249,7 +252,7 @@ function applyFilter() {
         let any = false;
         for (const key of keys) {
             const r = rows.get(key);
-            const match = (!q || q.split(/\s+/).every(w => r.text.includes(w))) &&
+            const match = (!q || q.split(/\s+/).every(w => matchesWord(r, w))) &&
                 (!onlyChanged || (!r.s.readOnly && has(key) && !isDefault(r.s, known(key))));
             r.row.hidden = !match;
             if (!match) r.info.hidden = true;
@@ -372,7 +375,7 @@ function send(r, value) {
         pending.delete(key);
         r.failed = 'Not confirmed';
         showValue(r, known(key));
-        toast(`The switch didn't confirm ${r.s.title.toLowerCase()}. Press Read from switch to see what it has.`, 'error', 6000);
+        toast(`The switch didn't confirm ${r.s.title.toLowerCase()}. Press Refresh Values to see what it has.`, 'error', 6000);
         setTimeout(() => { r.failed = ''; renderNote(r, known(key)); }, 8000);
     }, CONFIRM_MS[state.stack] || 12000);
     pending.set(key, { value: String(value), timer });
