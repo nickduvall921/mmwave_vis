@@ -1,6 +1,11 @@
 # Changelog
 
 
+## [4.1.3] - 2026-10-10
+
+### Added
+- An ⓘ next to the target count explains why a target can stay on the map after the room clears: the switch often stops sending positions without clearing the last one. Go by the Occupied/Clear status and the area chips instead.
+
 ## [4.1.2] - 2026-10-09
 
 ### Fixed

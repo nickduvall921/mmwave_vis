@@ -206,6 +206,9 @@ a.btn.off { opacity: 0.45; pointer-events: none; }
 
 .readout { display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; font-size: 13px; color: var(--text-2); min-height: 26px; }
 .readout strong { color: var(--text); font-weight: 500; }
+.readout .info-btn { width: 26px; height: 26px; margin: -4px 0 -4px 2px; vertical-align: middle; }
+.readout .info-btn svg { width: 16px; height: 16px; }
+.stage > .info-panel { margin: 0; }
 .occ { display: inline-flex; align-items: center; gap: 7px; color: var(--text-2); font-weight: 500; }
 .occ[data-state="on"] { color: var(--text); }
 .occ[data-state="on"] .dot { background: var(--ok); }
@@ -607,6 +610,7 @@ button.event-row:hover { background: var(--hover); }
     .field { grid-template-columns: 1fr 52%; }
     .info-btn { width: 40px; height: 40px; }
     .info-btn svg { width: 19px; height: 19px; }
+    .readout .info-btn { width: 34px; height: 34px; margin: -8px 0 -8px 0; }
     input[type="checkbox"].switch { width: 54px; height: 32px; }
     input[type="checkbox"].switch::before { width: 26px; height: 26px; }
     input[type="checkbox"].switch:checked::before { transform: translateX(22px); }
