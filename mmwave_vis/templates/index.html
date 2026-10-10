@@ -23,8 +23,9 @@
     <link rel="modulepreload" href="{{ ingress_path }}/assets/js/history.js">
     <link rel="modulepreload" href="{{ ingress_path }}/assets/js/tester.js">
     <link rel="modulepreload" href="{{ ingress_path }}/assets/js/switchinfo.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/assets/js/config.js">
 </head>
-<body class="stack-{{ zigbee_stack }}" data-ingress="{{ ingress_path }}">
+<body class="stack-{{ zigbee_stack }}" data-ingress="{{ ingress_path }}" data-catalog="{{ ingress_path }}/assets/settings.json?v={{ version }}">
 
 <header class="topbar">
     <h1 class="brand">mmWave Visualizer</h1>
@@ -146,6 +147,7 @@
         <div class="tabs" role="tablist" aria-label="Settings">
             <button class="tab" type="button" role="tab" id="tab-zones" aria-controls="panel-zones" aria-selected="true">Zones</button>
             <button class="tab" type="button" role="tab" id="tab-switch" aria-controls="panel-switch" aria-selected="false">Switch</button>
+            <button class="tab" type="button" role="tab" id="tab-config" aria-controls="panel-config" aria-selected="false">Config</button>
             <button class="tab" type="button" role="tab" id="tab-history" aria-controls="panel-history" aria-selected="false">History</button>
             <button class="tab" type="button" role="tab" id="tab-display" aria-controls="panel-display" aria-selected="false">Display</button>
         </div>
@@ -271,7 +273,7 @@
                 </div>
                 <div class="field">
                     <span class="label-info"><label for="mmWaveStayLife">Stay life <span class="unit-note" id="stayLifeSecs"></span></label><button class="info-btn" type="button" aria-label="About stay life" aria-expanded="false" aria-controls="stayLifeInfo" data-info="stayLifeInfo"></button></span>
-                    <input type="number" id="mmWaveStayLife" data-param="mmWaveStayLife" min="0" max="28800">
+                    <input type="number" id="mmWaveStayLife" data-param="mmWaveStayLife" min="0" max="72000">
                 </div>
                 <div class="info-panel" id="stayLifeInfo" hidden>
                     <p>How long the switch keeps counting someone in a stay area after they stop moving. It's in steps of 50 ms: 20 is 1 second and 300 (the default) is 15 seconds.</p>
@@ -295,15 +297,15 @@
             <section class="section">
                 <div class="section-head"><span class="label-info"><h2>System</h2><button class="info-btn" type="button" aria-label="About these settings" aria-expanded="false" aria-controls="systemInfo" data-info="systemInfo"></button></span></div>
                 <div class="info-panel info-under-head" id="systemInfo" hidden>
-                    <p>Changes are sent to the switch as soon as you make them.</p>
+                    <p>Changes are sent to the switch as soon as you make them. Every other setting, from dimming speeds to the LED bar, is in the Config tab.</p>
                     <p class="zha-only">If settings look out of date, open the device in ZHA and choose Reconfigure to restore the cluster binding.</p>
                 </div>
                 <label class="field"><span>Room preset</span>
                     <select id="mmWaveRoomSizePreset" data-param="mmWaveRoomSizePreset">
                         <option value="Custom">Custom</option>
-                        <option value="Small">Small</option>
-                        <option value="Medium">Medium</option>
-                        <option value="Large">Large</option>
+                        <option value="Small">Extra small (2 × 2 m)</option>
+                        <option value="Medium">Small (3.2 × 2.8 m)</option>
+                        <option value="Large">Medium (4.2 × 3.6 m)</option>
                     </select>
                 </label>
                 <label class="field wide"><span>Wired device control</span>
@@ -318,6 +320,27 @@
                     </select>
                 </label>
             </section>
+        </div>
+
+        <!-- Config: every setting on the switch, built by config.js from assets/settings.json -->
+        <div class="tab-panel" role="tabpanel" id="panel-config" aria-labelledby="tab-config" hidden>
+            <section class="section cfg-top">
+                <div class="cfg-tools">
+                    <input type="search" id="cfgSearch" placeholder="Search settings" aria-label="Search settings" autocomplete="off" spellcheck="false">
+                    <button class="btn small" type="button" id="cfgRead">Read from switch</button>
+                    <button class="info-btn" type="button" aria-label="About the Config tab" aria-expanded="false" aria-controls="configInfo" data-info="configInfo"></button>
+                </div>
+                <div class="info-panel" id="configInfo" hidden>
+                    <p>Every setting on the switch, in groups. Each has an ⓘ explaining what it does. Changes are sent as soon as you make them, and show Saved once the switch reports the new value. Settings that could stop the light working ask first.</p>
+                    <p>A dot marks a setting that isn't at its default; Reset to default is under each ⓘ.</p>
+                    <p class="zha-only">On ZHA, settings are read from the switch when you open a group, one at a time over Zigbee, so a large group takes a few seconds. Read from switch reads them all again.</p>
+                    <p class="z2m-only">Values come from Zigbee2MQTT. Read from switch asks the switch for all of them again.</p>
+                </div>
+                <label class="check"><input type="checkbox" id="cfgChanged"><span>Only settings changed from default</span></label>
+                <p class="status-line" id="cfgStatus"></p>
+                <p class="empty-line" id="cfgEmpty"></p>
+            </section>
+            <div id="cfgGroups"></div>
         </div>
 
         <!-- History -->

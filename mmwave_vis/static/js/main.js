@@ -4,7 +4,7 @@
 
 import { state, on, emit, emptyZones, freshReportTimes, zoneName, customName, ZONE_TYPES } from './state.js';
 import * as prefs from './prefs.js';
-import { $, $$, h, setText, num, toast, setNotice, clearNotice, bindPopover, closePopover, confirmAction, downloadBlob, fileSafe, duration } from './ui.js';
+import { $, $$, h, setText, num, toast, setNotice, clearNotice, bindPopover, closePopover, confirmAction, downloadBlob, fileSafe, duration, bindInfo } from './ui.js';
 import { Radar } from './radar.js';
 import * as zones from './zones.js';
 import * as recorder from './recorder.js';
@@ -16,6 +16,7 @@ import { initUndo, pushSnapshot, undoActionFor, drop as dropUndo } from './undo.
 import * as history from './history.js';
 import { initTester, stopTests, STAY_LIFE_STEP_S } from './tester.js';
 import { initSwitchInfo, deviceInfoFromServer, clearDeviceInfo } from './switchinfo.js';
+import * as config from './config.js';
 
 const ingress = document.body.dataset.ingress || '';
 const socket = io({ path: ingress + '/socket.io' });
@@ -362,6 +363,7 @@ function selectTab(id) {
     }
     prefs.set('activeTab', id);
     if (historyReady) history.tabShown(id === 'tab-history');
+    if (historyReady) config.tabShown(id === 'tab-config');
 }
 let historyReady = false;
 
@@ -376,18 +378,7 @@ tabs.forEach((tab, i) => {
 });
 selectTab(tabs.some(t => t.id === prefs.get('activeTab')) ? prefs.get('activeTab') : 'tab-zones');
 
-// ⓘ buttons open a short explanation underneath (tooltips don't work on touch screens).
-// The markup leaves them empty; they all get the same icon here.
-const INFO_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
-    '<path d="M8 7.2v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="4.9" r="0.85" fill="currentColor"/></svg>';
-$$('[data-info]').forEach(btn => {
-    if (!btn.firstElementChild) btn.innerHTML = INFO_ICON;
-    btn.addEventListener('click', () => {
-        const panel = $('#' + btn.dataset.info);
-        panel.hidden = !panel.hidden;
-        btn.setAttribute('aria-expanded', String(!panel.hidden));
-    });
-});
+$$('[data-info]').forEach(bindInfo);
 
 // --- Header menus ----------------------------------------------------------------
 
@@ -586,6 +577,7 @@ socket.on('device_config', msg => {
         state.settings[param] = c[param];
     }
     if (settingsChanged) emit('device-settings');
+    emit('device-config', c);           // the Config tab keeps every other setting
 });
 
 // detection_zones / interference_zones / stay_zones
@@ -660,6 +652,8 @@ initSwitchInfo();
 history.initHistory(radar);
 historyReady = true;
 history.tabShown(prefs.get('activeTab') === 'tab-history');
+config.tabShown(prefs.get('activeTab') === 'tab-config');
+config.initConfig();
 radar.setZones(zones.displayZones(), zones.pendingKeys());
 radar.setRecording(recorder.slots, recorder.padding());
 renderStatus();

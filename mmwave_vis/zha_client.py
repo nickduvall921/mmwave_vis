@@ -30,6 +30,7 @@ from collections import deque
 
 from websockets.sync.client import connect as ws_connect
 
+import settings_catalog
 from ha_ws import entity_roles, rest_json
 from utils import layout_key
 
@@ -41,26 +42,8 @@ PACKET_RING = 150   # recent zha_events per switch, for the diagnostics file
 # Cluster / Manufacturer Constants
 # ---------------------------------------------------------------------------
 CLUSTER_MMWAVE = 64562   # 0xFC32 — mmWave presence cluster
-CLUSTER_DIMMER = 64561   # 0xFC31 — switch/dimmer cluster
 MANUFACTURER   = 4655    # 0x122F — Inovelli
 ENDPOINT       = 1
-
-# Attribute IDs on CLUSTER_MMWAVE (0xFC32)
-ATTR_HEIGHT_MIN         = 0x0065   # int16 cm — Detection Area 0 Z min
-ATTR_HEIGHT_MAX         = 0x0066   # int16 cm — Detection Area 0 Z max
-ATTR_WIDTH_MIN          = 0x0067   # int16 cm — Detection Area 0 X min
-ATTR_WIDTH_MAX          = 0x0068   # int16 cm — Detection Area 0 X max
-ATTR_DEPTH_MIN          = 0x0069   # int16 cm — Detection Area 0 Y min
-ATTR_DEPTH_MAX          = 0x006A   # int16 cm — Detection Area 0 Y max
-ATTR_TARGET_INFO_REPORT = 0x006B   # uint8  0/1
-ATTR_STAY_LIFE          = 0x006C   # uint32 ms
-ATTR_DETECT_SENSITIVITY = 0x0070   # uint8  0-2
-ATTR_DETECT_TRIGGER     = 0x0071   # uint8  0-2
-ATTR_HOLD_TIME          = 0x0072   # uint32 ms
-
-# Attribute IDs on CLUSTER_DIMMER (0xFC31)
-ATTR_ROOM_SIZE_PRESET   = 0x0075   # uint8 0-5
-ATTR_LIGHT_ON_PRESENCE  = 0x006E   # uint8 0-6 (wired device control)
 
 # Command IDs on CLUSTER_MMWAVE
 CMD_CONTROL    = 0x00   # mmwave_control_command  (control_id: uint8)
@@ -69,48 +52,21 @@ CMD_SET_DETECT = 0x02   # set_detection_area
 CMD_SET_STAY   = 0x03   # set_stay_area
 
 # ---------------------------------------------------------------------------
-# String ↔ integer lookup tables
-# Frontend uses Z2M-style display strings; ZHA attributes use integers.
+# Integer → display string, for HA entity states
+# The frontend uses Z2M-style display strings; ZHA attributes are integers. The
+# settings catalogue lists both (Trigger speed: 0 is the slowest, as in Z2M and
+# ZHA's built-in quirk; before 4.1 this table was reversed here).
 # ---------------------------------------------------------------------------
 
-SENSITIVITY_MAP = {
-    "Low":            0,
-    "Medium":         1,
-    "High (default)": 2,
-}
+def _reverse(key):
+    return {o["raw"]: o["value"] for o in settings_catalog.SETTINGS[key]["options"]}
 
-# 0 is the slowest: matches Zigbee2MQTT's converter and ZHA's built-in quirk
-# (InovelliMmwaveTargetSpeed: Low = 0, Medium = 1, Fast = 2). Before 4.1 this
-# table was reversed, so choosing Fast on ZHA set the switch to 5 s.
-TRIGGER_MAP = {
-    "Slow (5s)":            0,
-    "Medium (1s)":          1,
-    "Fast (0.2s, default)": 2,
-}
 
-ROOM_SIZE_MAP = {
-    "Custom": 0,
-    "Small":  1,
-    "Medium": 2,
-    "Large":  3,
-}
-
-WIRED_DEVICE_MAP = {
-    "Disabled":                    0,
-    "Occupancy (default)":         1,
-    "Vacancy":                     2,
-    "Wasteful Occupancy":          3,
-    "Mirrored Occupancy":          4,
-    "Mirrored Vacancy":            5,
-    "Mirrored Wasteful Occupancy": 6,
-}
-
-# Reverse maps for translating HA entity state integers back to frontend strings
-_REVERSE_SENSITIVITY  = {v: k for k, v in SENSITIVITY_MAP.items()}
-_REVERSE_TRIGGER      = {v: k for k, v in TRIGGER_MAP.items()}
-_REVERSE_ROOM_SIZE    = {v: k for k, v in ROOM_SIZE_MAP.items()}
-_REVERSE_WIRED_DEVICE = {v: k for k, v in WIRED_DEVICE_MAP.items()}
-_REVERSE_TARGET_INFO  = {0: "Disable (default)", 1: "Enable"}
+_REVERSE_SENSITIVITY  = _reverse("mmWaveDetectSensitivity")
+_REVERSE_TRIGGER      = _reverse("mmWaveDetectTrigger")
+_REVERSE_ROOM_SIZE    = _reverse("mmWaveRoomSizePreset")
+_REVERSE_WIRED_DEVICE = _reverse("mmwaveControlWiredDevice")
+_REVERSE_TARGET_INFO  = _reverse("mmWaveTargetInfoReport")
 
 # Entity suffix → (reverse_map | None, frontend_param_name)
 # Used by _sync_entity_states to translate /api/states into device_config emits.
@@ -332,13 +288,13 @@ class ZHAClient:
         if action_id in (3, 4, 5):
             self._requery_soon()
 
-    def update_parameter(self, param: str, value):
+    def update_parameter(self, param: str, value) -> bool:
         """
         Translate a Z2M-style parameter write into the appropriate ZHA
-        cluster command or attribute write.
+        cluster command or attribute write. False if ZHA can't reach the setting.
         """
         if not self._ieee:
-            return
+            return False
 
         # Zone area writes → ZHA cluster commands
         if param == "mmwave_detection_areas":
@@ -351,42 +307,16 @@ class ZHAClient:
             self._write_zone_areas(CMD_SET_STAY, value)
             self._requery_soon()
 
-        # Enum attributes — convert display string → integer
-        elif param == "mmWaveDetectSensitivity":
-            self._write_enum_attr(ATTR_DETECT_SENSITIVITY, value, SENSITIVITY_MAP, param)
-        elif param == "mmWaveDetectTrigger":
-            self._write_enum_attr(ATTR_DETECT_TRIGGER, value, TRIGGER_MAP, param)
-        elif param == "mmWaveTargetInfoReport":
-            self._write_attr(ATTR_TARGET_INFO_REPORT, 1 if value == "Enable" else 0)
-        elif param == "mmWaveRoomSizePreset":
-            self._write_enum_attr(ATTR_ROOM_SIZE_PRESET, value, ROOM_SIZE_MAP, param,
-                                  cluster=CLUSTER_DIMMER)
-        elif param == "mmwaveControlWiredDevice":
-            self._write_enum_attr(ATTR_LIGHT_ON_PRESENCE, value, WIRED_DEVICE_MAP, param,
-                                  cluster=CLUSTER_DIMMER)
-
-        # Numeric attributes
-        elif param == "mmWaveHoldTime":
-            self._write_attr(ATTR_HOLD_TIME, int(value))
-        elif param == "mmWaveStayLife":
-            self._write_attr(ATTR_STAY_LIFE, int(value))
-
-        # Detection Area 0 individual axis attributes (legacy / convenience)
-        elif param == "mmWaveWidthMin":
-            self._write_attr(ATTR_WIDTH_MIN, int(value))
-        elif param == "mmWaveWidthMax":
-            self._write_attr(ATTR_WIDTH_MAX, int(value))
-        elif param == "mmWaveDepthMin":
-            self._write_attr(ATTR_DEPTH_MIN, int(value))
-        elif param == "mmWaveDepthMax":
-            self._write_attr(ATTR_DEPTH_MAX, int(value))
-        elif param == "mmWaveHeightMin":
-            self._write_attr(ATTR_HEIGHT_MIN, int(value))
-        elif param == "mmWaveHeightMax":
-            self._write_attr(ATTR_HEIGHT_MAX, int(value))
-
+        # Every other setting is an attribute in the settings catalogue, which turns the
+        # Z2M-style value (an enum label or a number) into the raw attribute value
         else:
-            log.debug(f"ZHA: unhandled parameter: {param}={value}")
+            address = settings_catalog.zha_address(param)
+            if address is None:
+                log.debug(f"ZHA: unhandled parameter: {param}={value}")
+                return False
+            cluster, attr = address
+            self._write_attr(attr, settings_catalog.to_raw(param, value), cluster=cluster)
+        return True
 
     def force_sync(self, sid=None):
         """
@@ -1216,15 +1146,6 @@ class ZHAClient:
             "value":        value,
             "manufacturer": MANUFACTURER,
         })
-
-    def _write_enum_attr(self, attr_id: int, value: str, lookup: dict,
-                         param_name: str, cluster: int = CLUSTER_MMWAVE):
-        """Convert a display string to int via lookup, then write the attribute."""
-        int_val = lookup.get(value)
-        if int_val is not None:
-            self._write_attr(attr_id, int_val, cluster=cluster)
-        else:
-            log.warning(f"ZHA: unknown value '{value}' for {param_name}")
 
     def _ws_call_service(self, domain: str, service: str, service_data: dict):
         """

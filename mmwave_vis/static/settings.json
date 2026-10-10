@@ -1,0 +1,2820 @@
+{
+ "about": "Settings of the Inovelli VZM32-SN, for the Config tab and the addon's checks. Each value is the one Zigbee2MQTT uses; raw is the attribute value ZHA reads and writes. Ids, ranges and option values follow zigbee-herdsman-converters (src/lib/inovelli.ts); titles, help and defaults come from Inovelli's documentation, the forum and readings from real switches. A setting with riskyTo asks for confirmation only when changed to one of those values. tests/test_settings_catalog.py checks it.",
+ "groups": [
+  {
+   "id": "presence",
+   "title": "Presence",
+   "help": "How the radar decides someone is there and what it does with the light. Detection, interference and stay areas are drawn in the Zones tab."
+  },
+  {
+   "id": "onoff",
+   "title": "On, off and brightness",
+   "help": "Brightness uses the switch's scale of 1 to 254; the percentage is shown next to each value. Brightness settings only apply in Dimmer mode."
+  },
+  {
+   "id": "speeds",
+   "title": "Fade and dimming speeds",
+   "help": "Times are in tenths of a second: 25 is 2.5 seconds and 0 is instant. \"Hub\" means Home Assistant, a group or a binding; \"paddle\" means this switch, an aux switch, or presence turning the light on or off. 127 makes a speed follow another one. These only apply in Dimmer mode."
+  },
+  {
+   "id": "paddle",
+   "title": "Paddle and buttons",
+   "help": "What taps and holds on the paddle do. Every tap is also reported to your hub as a button event for automations."
+  },
+  {
+   "id": "ledbar",
+   "title": "LED bar",
+   "help": "Colours are points on a colour wheel from 0 to 255: 0 red, 21 orange, 42 yellow, 85 green, 127 cyan, 170 blue, 212 violet and 234 pink. 255 is white."
+  },
+  {
+   "id": "leds",
+   "title": "Individual LEDs",
+   "help": "Give one LED its own colour or brightness. Colour 255 and brightness 101 (the defaults) follow the whole bar. LED 7 is at the top and LED 1 at the bottom. A single LED can't be set to white, because 255 means \"follow the bar\"."
+  },
+  {
+   "id": "wiring",
+   "title": "Wiring and load",
+   "help": "How the switch is wired and what kind of light it drives. A wrong choice here can stop the light or an aux switch from working, so these ask before changing."
+  },
+  {
+   "id": "binding",
+   "title": "Bindings and fan control",
+   "help": "For devices bound directly to this switch over Zigbee, such as Inovelli's fan and canopy module. Leave these alone for an ordinary light."
+  },
+  {
+   "id": "energy",
+   "title": "Power reporting",
+   "help": "How often the switch reports power and energy use. Reporting less often cuts Zigbee traffic on a busy network."
+  },
+  {
+   "id": "status",
+   "title": "Status",
+   "help": "Readings from the switch. These can't be changed here."
+  },
+  {
+   "id": "advanced",
+   "title": "Advanced",
+   "help": "Settings for firmware updates. Leave them alone unless Inovelli support asks you to change them."
+  }
+ ],
+ "settings": [
+  {
+   "key": "mmwaveControlWiredDevice",
+   "param": 110,
+   "cluster": "fc31",
+   "attr": 110,
+   "type": "uint8",
+   "group": "presence",
+   "title": "Presence controls the light",
+   "options": [
+    {
+     "value": "Disabled",
+     "raw": 0,
+     "label": "Off"
+    },
+    {
+     "value": "Occupancy (default)",
+     "raw": 1,
+     "label": "Turn on and off"
+    },
+    {
+     "value": "Vacancy",
+     "raw": 2,
+     "label": "Only turn off"
+    },
+    {
+     "value": "Wasteful Occupancy",
+     "raw": 3,
+     "label": "Only turn on"
+    },
+    {
+     "value": "Mirrored Occupancy",
+     "raw": 4,
+     "label": "Inverted: on when empty, off when occupied"
+    },
+    {
+     "value": "Mirrored Vacancy",
+     "raw": 5,
+     "label": "Inverted: only turn on when empty"
+    },
+    {
+     "value": "Mirrored Wasteful Occupancy",
+     "raw": 6,
+     "label": "Inverted: only turn off when occupied"
+    }
+   ],
+   "control": "select",
+   "default": "Occupancy (default)",
+   "help": "Whether the radar turns the light on and off by itself. With the default, it comes on when someone arrives and goes off once the hold time runs out. \"Only turn off\" leaves turning it on to you. Choose Off to leave the light to your automations; occupancy is still reported to your hub either way.\n\nThe inverted choices are for unusual setups, such as a light that should be on while the room is empty. You can change this from an automation, for example to \"Only turn off\" at night."
+  },
+  {
+   "key": "mmWaveDetectSensitivity",
+   "param": 112,
+   "cluster": "fc32",
+   "attr": 112,
+   "type": "uint8",
+   "group": "presence",
+   "title": "Sensitivity",
+   "options": [
+    {
+     "value": "Low",
+     "raw": 0
+    },
+    {
+     "value": "Medium",
+     "raw": 1
+    },
+    {
+     "value": "High (default)",
+     "raw": 2,
+     "label": "High"
+    }
+   ],
+   "control": "select",
+   "default": "High (default)",
+   "help": "How small a movement counts as presence. High notices someone breathing, but also reflections from mirrors, glass and tile, and people passing a doorway. Inovelli suggests Medium for bathrooms and other reflective rooms.\n\nIf the light stays on in an empty room, lower it. If it goes off on someone sitting still, raise it or add a stay area."
+  },
+  {
+   "key": "mmWaveDetectTrigger",
+   "param": 113,
+   "cluster": "fc32",
+   "attr": 113,
+   "type": "uint8",
+   "group": "presence",
+   "title": "Trigger speed",
+   "options": [
+    {
+     "value": "Fast (0.2s, default)",
+     "raw": 2,
+     "label": "Fast (0.2 s)"
+    },
+    {
+     "value": "Medium (1s)",
+     "raw": 1,
+     "label": "Medium (1 s)"
+    },
+    {
+     "value": "Slow (5s)",
+     "raw": 0,
+     "label": "Slow (5 s)"
+    }
+   ],
+   "control": "select",
+   "default": "Fast (0.2s, default)",
+   "help": "How long movement has to last before the room counts as occupied: about 0.2, 1 or 5 seconds. Slower ignores pets, curtains and other brief movement, but the light comes on later when you walk in. Inovelli calls this detection delay."
+  },
+  {
+   "key": "mmWaveHoldTime",
+   "param": 114,
+   "cluster": "fc32",
+   "attr": 114,
+   "type": "uint32",
+   "group": "presence",
+   "title": "Hold time",
+   "control": "number",
+   "min": 0,
+   "max": 28800,
+   "format": "seconds",
+   "default": 30,
+   "help": "How long the room stays occupied after the radar stops seeing anyone, in seconds. It's the delay before the light turns off. If the light goes off on someone reading or watching TV, try 60 to 240.\n\nEven at 0 the switch takes about 5 seconds to clear. Switches ship at 30 seconds, although Inovelli's docs say 10."
+  },
+  {
+   "key": "mmWaveStayLife",
+   "param": 108,
+   "cluster": "fc32",
+   "attr": 108,
+   "type": "uint32",
+   "group": "presence",
+   "title": "Stay life",
+   "control": "number",
+   "min": 0,
+   "max": 72000,
+   "format": "steps50ms",
+   "default": 300,
+   "help": "How long someone who goes still inside a stay area keeps counting as present. It's in steps of 50 ms: 20 is 1 second, 300 (the default) is 15 seconds and 18000 is 15 minutes. Inovelli suggests 18000 to 36000 for bedrooms.\n\nIt only matters where you've drawn a stay area, over a couch, bed or bath, in the Zones tab."
+  },
+  {
+   "key": "mmWaveTargetInfoReport",
+   "param": 107,
+   "cluster": "fc32",
+   "attr": 107,
+   "type": "uint8",
+   "group": "presence",
+   "title": "Target reporting",
+   "options": [
+    {
+     "value": "Disable (default)",
+     "raw": 0
+    },
+    {
+     "value": "Enable",
+     "raw": 1
+    }
+   ],
+   "control": "toggle",
+   "on": "Enable",
+   "default": "Disable (default)",
+   "help": "Sends live positions, up to four people about once a second, so they show up on the map and in the History heat map. It adds Zigbee traffic, so turn it off when you don't need it. Whether each area is occupied is reported either way."
+  },
+  {
+   "key": "mmWaveRoomSizePreset",
+   "param": 117,
+   "cluster": "fc31",
+   "attr": 117,
+   "type": "uint8",
+   "group": "presence",
+   "title": "Room size preset",
+   "options": [
+    {
+     "value": "Custom",
+     "raw": 0
+    },
+    {
+     "value": "Small",
+     "raw": 1,
+     "label": "Extra small (2 × 2 m)"
+    },
+    {
+     "value": "Medium",
+     "raw": 2,
+     "label": "Small (3.2 × 2.8 m)"
+    },
+    {
+     "value": "Large",
+     "raw": 3,
+     "label": "Medium (4.2 × 3.6 m)"
+    },
+    {
+     "value": "Preset 4",
+     "raw": 4,
+     "label": "Large (5.2 × 4 m)",
+     "zhaOnly": true
+    },
+    {
+     "value": "Preset 5",
+     "raw": 5,
+     "label": "Extra large (6.2 × 4.6 m)",
+     "zhaOnly": true
+    }
+   ],
+   "control": "select",
+   "default": "Custom",
+   "help": "A quick way to size detection area 1. Choosing a size replaces that area with a box in front of the switch; changing the area afterwards sets this back to Custom. You can also cycle sizes at the switch: hold down and tap Config 5 times.\n\nZigbee2MQTT calls the first three sizes Small, Medium and Large. Inovelli has two larger sizes that only ZHA can choose."
+  },
+  {
+   "key": "defaultLevelLocal",
+   "param": 13,
+   "cluster": "fc31",
+   "attr": 13,
+   "type": "uint8",
+   "group": "onoff",
+   "title": "Brightness from the paddle",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 255,
+     "label": "Last brightness"
+    }
+   ],
+   "format": "level",
+   "default": 255,
+   "help": "The brightness the light comes on at from the paddle, an aux switch, or when presence turns it on. 255 (the default) brings back the brightness it had before it was turned off."
+  },
+  {
+   "key": "defaultLevelRemote",
+   "param": 14,
+   "cluster": "fc31",
+   "attr": 14,
+   "type": "uint8",
+   "group": "onoff",
+   "title": "Brightness from the hub",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 255,
+     "label": "Last brightness"
+    }
+   ],
+   "format": "level",
+   "default": 255,
+   "help": "The brightness used when your hub turns the light on without saying how bright. 255 (the default) brings back the last brightness."
+  },
+  {
+   "key": "stateAfterPowerRestored",
+   "param": 15,
+   "cluster": "fc31",
+   "attr": 15,
+   "type": "uint8",
+   "group": "onoff",
+   "title": "After a power cut",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Stay off"
+    },
+    {
+     "raw": 255,
+     "label": "As it was"
+    }
+   ],
+   "format": "level",
+   "default": 255,
+   "help": "What the light does when power comes back: stay off (0), come on at a set brightness (1 to 254), or go back to how it was (255, the default). In On/Off mode any brightness means on."
+  },
+  {
+   "key": "minimumLevel",
+   "param": 9,
+   "cluster": "fc31",
+   "attr": 9,
+   "type": "uint8",
+   "group": "onoff",
+   "title": "Minimum brightness",
+   "control": "number",
+   "min": 1,
+   "max": 254,
+   "format": "level",
+   "default": 1,
+   "help": "The dimmest the switch will go. If bulbs flicker, buzz or go out near the bottom, raise it until they stay steady at the lowest setting. The default is 1."
+  },
+  {
+   "key": "maximumLevel",
+   "param": 10,
+   "cluster": "fc31",
+   "attr": 10,
+   "type": "uint8",
+   "group": "onoff",
+   "title": "Maximum brightness",
+   "control": "number",
+   "min": 2,
+   "max": 255,
+   "format": "level",
+   "default": 255,
+   "help": "The brightest the switch will go. Lower it if bulbs reach full brightness well before the top of the range, or to cap brightness. The default is 255 (full)."
+  },
+  {
+   "key": "autoTimerOff",
+   "param": 12,
+   "cluster": "fc31",
+   "attr": 12,
+   "type": "uint16",
+   "group": "onoff",
+   "title": "Turn off after",
+   "control": "number",
+   "min": 0,
+   "max": 32767,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "seconds",
+   "default": 0,
+   "help": "Turns the light off this many seconds after it was turned on, whether or not anyone is there. 0 (the default) turns the timer off. This is separate from the presence hold time."
+  },
+  {
+   "key": "quickStartTime",
+   "param": 23,
+   "cluster": "fc31",
+   "attr": 23,
+   "type": "uint8",
+   "group": "onoff",
+   "title": "Quick start",
+   "control": "number",
+   "min": 0,
+   "max": 60,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "sixtieths",
+   "default": 0,
+   "quirkUpdate": true,
+   "help": "Gives the bulbs a short burst of full power as they turn on, for LEDs that won't start or that flicker at low brightness. It's in 60ths of a second, so 60 is 1 second. 0 (the default) turns it off."
+  },
+  {
+   "key": "quickStartLevel",
+   "param": 24,
+   "cluster": "fc31",
+   "attr": 24,
+   "type": "uint8",
+   "group": "onoff",
+   "title": "Quick start brightness",
+   "control": "number",
+   "min": 1,
+   "max": 254,
+   "format": "level",
+   "default": 254,
+   "quirkUpdate": true,
+   "help": "How bright the quick start burst is. Around 50 still starts stubborn bulbs with less of a flash. The default is 254 (full)."
+  },
+  {
+   "key": "dimmingSpeedUpRemote",
+   "param": 1,
+   "cluster": "fc31",
+   "attr": 1,
+   "type": "uint8",
+   "group": "speeds",
+   "title": "Dim up speed (hub)",
+   "control": "number",
+   "min": 0,
+   "max": 126,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Instant"
+    }
+   ],
+   "format": "tenths",
+   "default": 25,
+   "help": "How fast the light brightens when your hub changes its brightness. The other seven speeds follow this one until you set them, so it's the main one to change. The default is 25 (2.5 s)."
+  },
+  {
+   "key": "dimmingSpeedUpLocal",
+   "param": 2,
+   "cluster": "fc31",
+   "attr": 2,
+   "type": "uint8",
+   "group": "speeds",
+   "title": "Dim up speed (paddle)",
+   "control": "number",
+   "min": 0,
+   "max": 127,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Instant"
+    },
+    {
+     "raw": 127,
+     "label": "Same as dim up (hub)"
+    }
+   ],
+   "format": "tenths",
+   "default": 127,
+   "help": "How fast the light brightens while you hold the paddle up. 127 (the default) uses the hub's dim up speed."
+  },
+  {
+   "key": "rampRateOffToOnRemote",
+   "param": 3,
+   "cluster": "fc31",
+   "attr": 3,
+   "type": "uint8",
+   "group": "speeds",
+   "title": "Fade on (hub)",
+   "control": "number",
+   "min": 0,
+   "max": 127,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Instant"
+    },
+    {
+     "raw": 127,
+     "label": "Same as dim up (hub)"
+    }
+   ],
+   "format": "tenths",
+   "default": 127,
+   "help": "How long the light takes to fade on when your hub turns it on. 0 makes it come on at once. 127 (the default) uses the hub's dim up speed."
+  },
+  {
+   "key": "rampRateOffToOnLocal",
+   "param": 4,
+   "cluster": "fc31",
+   "attr": 4,
+   "type": "uint8",
+   "group": "speeds",
+   "title": "Fade on (paddle)",
+   "control": "number",
+   "min": 0,
+   "max": 127,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Instant"
+    },
+    {
+     "raw": 127,
+     "label": "Same as fade on (hub)"
+    }
+   ],
+   "format": "tenths",
+   "default": 127,
+   "help": "How long the light takes to fade on from the paddle, an aux switch, or when presence turns it on. 127 (the default) uses the hub's fade on."
+  },
+  {
+   "key": "dimmingSpeedDownRemote",
+   "param": 5,
+   "cluster": "fc31",
+   "attr": 5,
+   "type": "uint8",
+   "group": "speeds",
+   "title": "Dim down speed (hub)",
+   "control": "number",
+   "min": 0,
+   "max": 127,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Instant"
+    },
+    {
+     "raw": 127,
+     "label": "Same as dim up (hub)"
+    }
+   ],
+   "format": "tenths",
+   "default": 127,
+   "help": "How fast the light dims when your hub lowers its brightness. 127 (the default) uses the hub's dim up speed."
+  },
+  {
+   "key": "dimmingSpeedDownLocal",
+   "param": 6,
+   "cluster": "fc31",
+   "attr": 6,
+   "type": "uint8",
+   "group": "speeds",
+   "title": "Dim down speed (paddle)",
+   "control": "number",
+   "min": 0,
+   "max": 127,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Instant"
+    },
+    {
+     "raw": 127,
+     "label": "Same as dim up (paddle)"
+    }
+   ],
+   "format": "tenths",
+   "default": 127,
+   "help": "How fast the light dims while you hold the paddle down. 127 (the default) uses the paddle's dim up speed."
+  },
+  {
+   "key": "rampRateOnToOffRemote",
+   "param": 7,
+   "cluster": "fc31",
+   "attr": 7,
+   "type": "uint8",
+   "group": "speeds",
+   "title": "Fade off (hub)",
+   "control": "number",
+   "min": 0,
+   "max": 127,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Instant"
+    },
+    {
+     "raw": 127,
+     "label": "Same as fade on (hub)"
+    }
+   ],
+   "format": "tenths",
+   "default": 127,
+   "help": "How long the light takes to fade out when your hub turns it off. 127 (the default) uses the hub's fade on."
+  },
+  {
+   "key": "rampRateOnToOffLocal",
+   "param": 8,
+   "cluster": "fc31",
+   "attr": 8,
+   "type": "uint8",
+   "group": "speeds",
+   "title": "Fade off (paddle)",
+   "control": "number",
+   "min": 0,
+   "max": 127,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Instant"
+    },
+    {
+     "raw": 127,
+     "label": "Same as fade on (paddle)"
+    }
+   ],
+   "format": "tenths",
+   "default": 127,
+   "help": "How long the light takes to fade out from the paddle, or when the room empties. 127 (the default) uses the paddle's fade on.\n\nOn firmware 1.00, walking back in during the fade could leave the light stuck part way. Firmware 1.01 fixed that."
+  },
+  {
+   "key": "invertSwitch",
+   "param": 11,
+   "cluster": "fc31",
+   "attr": 11,
+   "type": "bool",
+   "group": "paddle",
+   "title": "Upside down",
+   "options": [
+    {
+     "value": "Yes",
+     "raw": 1
+    },
+    {
+     "value": "No",
+     "raw": 0
+    }
+   ],
+   "control": "toggle",
+   "on": "Yes",
+   "default": "No",
+   "help": "Swaps the paddle so the bottom turns the light on and the top turns it off, for a switch mounted upside down. The up and down button events swap too."
+  },
+  {
+   "key": "buttonDelay",
+   "param": 50,
+   "cluster": "fc31",
+   "attr": 50,
+   "type": "uint8",
+   "group": "paddle",
+   "title": "Tap delay",
+   "options": [
+    {
+     "value": "0ms",
+     "raw": 0,
+     "label": "0 ms (no multi-tap)"
+    },
+    {
+     "value": "100ms",
+     "raw": 1,
+     "label": "100 ms"
+    },
+    {
+     "value": "200ms",
+     "raw": 2,
+     "label": "200 ms"
+    },
+    {
+     "value": "300ms",
+     "raw": 3,
+     "label": "300 ms"
+    },
+    {
+     "value": "400ms",
+     "raw": 4,
+     "label": "400 ms"
+    },
+    {
+     "value": "500ms",
+     "raw": 5,
+     "label": "500 ms"
+    },
+    {
+     "value": "600ms",
+     "raw": 6,
+     "label": "600 ms"
+    },
+    {
+     "value": "700ms",
+     "raw": 7,
+     "label": "700 ms"
+    },
+    {
+     "value": "800ms",
+     "raw": 8,
+     "label": "800 ms"
+    },
+    {
+     "value": "900ms",
+     "raw": 9,
+     "label": "900 ms"
+    }
+   ],
+   "control": "select",
+   "default": "500ms",
+   "help": "How long the switch waits after a tap to see whether a double or triple tap follows. The default is 500 ms.\n\n0 makes the light respond at once, but the paddle then can't do multi-tap scenes (the Config button still can). 100 and 200 ms act like 300 ms."
+  },
+  {
+   "key": "doubleTapUpToParam55",
+   "param": 53,
+   "cluster": "fc31",
+   "attr": 53,
+   "type": "bool",
+   "group": "paddle",
+   "title": "Double-tap up sets brightness",
+   "options": [
+    {
+     "value": "Disabled",
+     "raw": 0
+    },
+    {
+     "value": "Enabled",
+     "raw": 1
+    }
+   ],
+   "control": "toggle",
+   "on": "Enabled",
+   "default": "Disabled",
+   "help": "When on, double-tapping up jumps the light to the brightness below. The double-tap is still reported to your hub either way."
+  },
+  {
+   "key": "brightnessLevelForDoubleTapUp",
+   "param": 55,
+   "cluster": "fc31",
+   "attr": 55,
+   "type": "uint8",
+   "group": "paddle",
+   "title": "Double-tap up brightness",
+   "control": "number",
+   "min": 2,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 255,
+     "label": "Plain on"
+    }
+   ],
+   "format": "level",
+   "default": 254,
+   "help": "The brightness double-tap up jumps to, when that's turned on. The default is 254 (full). 255 sends a plain \"on\" instead."
+  },
+  {
+   "key": "doubleTapDownToParam56",
+   "param": 54,
+   "cluster": "fc31",
+   "attr": 54,
+   "type": "bool",
+   "group": "paddle",
+   "title": "Double-tap down sets brightness",
+   "options": [
+    {
+     "value": "Disabled",
+     "raw": 0
+    },
+    {
+     "value": "Enabled",
+     "raw": 1
+    }
+   ],
+   "control": "toggle",
+   "on": "Enabled",
+   "default": "Disabled",
+   "help": "When on, double-tapping down jumps the light to the brightness below, for example a night light level."
+  },
+  {
+   "key": "brightnessLevelForDoubleTapDown",
+   "param": 56,
+   "cluster": "fc31",
+   "attr": 56,
+   "type": "uint8",
+   "group": "paddle",
+   "title": "Double-tap down brightness",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Off"
+    },
+    {
+     "raw": 255,
+     "label": "Plain off"
+    }
+   ],
+   "format": "level",
+   "default": 2,
+   "help": "The brightness double-tap down jumps to, when that's turned on. The default is 2, the dimmest. 0 turns the light off, and 255 sends a plain \"off\"."
+  },
+  {
+   "key": "auxSwitchUniqueScenes",
+   "param": 123,
+   "cluster": "fc31",
+   "attr": 123,
+   "type": "bool",
+   "group": "paddle",
+   "title": "Aux switch has its own buttons",
+   "options": [
+    {
+     "value": "Disabled",
+     "raw": 0
+    },
+    {
+     "value": "Enabled",
+     "raw": 1
+    }
+   ],
+   "control": "toggle",
+   "on": "Enabled",
+   "default": "Disabled",
+   "help": "When on, taps on a wired aux switch are reported as separate buttons, so a double-tap on the aux can run a different automation from one on this switch. When off, the aux switch acts exactly like this one."
+  },
+  {
+   "key": "doubleTapClearNotifications",
+   "param": 262,
+   "cluster": "fc31",
+   "attr": 262,
+   "type": "bool",
+   "group": "paddle",
+   "title": "Double-tap Config clears notifications",
+   "options": [
+    {
+     "value": "Enabled (Default)",
+     "raw": 0
+    },
+    {
+     "value": "Disabled",
+     "raw": 1
+    }
+   ],
+   "control": "toggle",
+   "on": "Enabled (Default)",
+   "default": "Enabled (Default)",
+   "help": "When on (the default), double-tapping the Config button dismisses an LED notification your hub started."
+  },
+  {
+   "key": "localProtection",
+   "param": 256,
+   "cluster": "fc31",
+   "attr": 256,
+   "type": "bool",
+   "group": "paddle",
+   "title": "Lock the paddle",
+   "options": [
+    {
+     "value": "Disabled",
+     "raw": 0
+    },
+    {
+     "value": "Enabled",
+     "raw": 1
+    }
+   ],
+   "control": "toggle",
+   "on": "Enabled",
+   "default": "Disabled",
+   "risky": "The paddle will stop turning the light on and off until you turn this off again, here or from your hub.",
+   "riskyTo": [
+    "Enabled"
+   ],
+   "help": "Stops the paddle from turning the light on and off, like a child lock. Your hub and presence still control it."
+  },
+  {
+   "key": "remoteProtection",
+   "param": 257,
+   "cluster": "fc31",
+   "attr": 257,
+   "type": "bool",
+   "group": "paddle",
+   "title": "Hub control blocked",
+   "options": [
+    {
+     "value": "Disabled",
+     "raw": 0,
+     "label": "No"
+    },
+    {
+     "value": "Enabled",
+     "raw": 1,
+     "label": "Yes"
+    }
+   ],
+   "control": "select",
+   "readOnly": true,
+   "help": "Whether the switch ignores on, off and brightness commands from your hub. It can only be changed with a command that Zigbee2MQTT and ZHA don't offer, so it's shown here for reference."
+  },
+  {
+   "key": "ledColorWhenOn",
+   "param": 95,
+   "cluster": "fc31",
+   "attr": 95,
+   "type": "uint8",
+   "group": "ledbar",
+   "title": "Colour when on",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "White"
+    }
+   ],
+   "format": "hue",
+   "default": 170,
+   "help": "The LED bar's colour while the light is on. The default is 170 (blue)."
+  },
+  {
+   "key": "ledIntensityWhenOn",
+   "param": 97,
+   "cluster": "fc31",
+   "attr": 97,
+   "type": "uint8",
+   "group": "ledbar",
+   "title": "Brightness when on",
+   "control": "number",
+   "min": 0,
+   "max": 100,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 33,
+   "help": "How bright the LED bar is while the light is on, from 0 to 100%. 0 turns the bar off. The default is 33%."
+  },
+  {
+   "key": "ledColorWhenOff",
+   "param": 96,
+   "cluster": "fc31",
+   "attr": 96,
+   "type": "uint8",
+   "group": "ledbar",
+   "title": "Colour when off",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "White"
+    }
+   ],
+   "format": "hue",
+   "default": 170,
+   "help": "The LED bar's colour while the light is off. The default is 170 (blue)."
+  },
+  {
+   "key": "ledIntensityWhenOff",
+   "param": 98,
+   "cluster": "fc31",
+   "attr": 98,
+   "type": "uint8",
+   "group": "ledbar",
+   "title": "Brightness when off",
+   "control": "number",
+   "min": 0,
+   "max": 100,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 1,
+   "help": "How bright the LED bar is while the light is off. Keep it low in bedrooms; 0 turns it off. The default is 1%."
+  },
+  {
+   "key": "loadLevelIndicatorTimeout",
+   "param": 17,
+   "cluster": "fc31",
+   "attr": 17,
+   "type": "uint8",
+   "group": "ledbar",
+   "title": "Show brightness after a change",
+   "options": [
+    {
+     "value": "Stay Off",
+     "raw": 0,
+     "label": "Never"
+    },
+    {
+     "value": "1 Second",
+     "raw": 1,
+     "label": "1 s"
+    },
+    {
+     "value": "2 Seconds",
+     "raw": 2,
+     "label": "2 s"
+    },
+    {
+     "value": "3 Seconds",
+     "raw": 3,
+     "label": "3 s"
+    },
+    {
+     "value": "4 Seconds",
+     "raw": 4,
+     "label": "4 s"
+    },
+    {
+     "value": "5 Seconds",
+     "raw": 5,
+     "label": "5 s"
+    },
+    {
+     "value": "6 Seconds",
+     "raw": 6,
+     "label": "6 s"
+    },
+    {
+     "value": "7 Seconds",
+     "raw": 7,
+     "label": "7 s"
+    },
+    {
+     "value": "8 Seconds",
+     "raw": 8,
+     "label": "8 s"
+    },
+    {
+     "value": "9 Seconds",
+     "raw": 9,
+     "label": "9 s"
+    },
+    {
+     "value": "10 Seconds",
+     "raw": 10,
+     "label": "10 s"
+    },
+    {
+     "value": "Stay On",
+     "raw": 11,
+     "label": "Always"
+    }
+   ],
+   "control": "select",
+   "default": "Stay On",
+   "help": "After you change the brightness, the bar shows it for this long, then goes back to its usual colour and brightness. The default, Always, keeps showing it.\n\nOn firmware 1.00, anything other than Always could make the switch stop responding. Firmware 1.01 fixed that."
+  },
+  {
+   "key": "onOffLedMode",
+   "param": 259,
+   "cluster": "fc31",
+   "attr": 259,
+   "type": "bool",
+   "group": "ledbar",
+   "title": "One LED in On/Off mode",
+   "options": [
+    {
+     "value": "All",
+     "raw": 0
+    },
+    {
+     "value": "One",
+     "raw": 1
+    }
+   ],
+   "control": "toggle",
+   "on": "One",
+   "default": "All",
+   "help": "In On/Off mode, light only the bottom LED instead of the whole bar, like Inovelli's older on/off switches."
+  },
+  {
+   "key": "ledBarScaling",
+   "param": 100,
+   "cluster": "fc31",
+   "attr": 100,
+   "type": "bool",
+   "group": "ledbar",
+   "title": "Brightness display",
+   "options": [
+    {
+     "value": "Gen3 method (VZM-style)",
+     "raw": 0,
+     "label": "Gen3 (Blue series)"
+    },
+    {
+     "value": "Gen2 method (LZW-style)",
+     "raw": 1,
+     "label": "Gen2 (older LZW)"
+    }
+   ],
+   "control": "select",
+   "default": "Gen3 method (VZM-style)",
+   "help": "How many LEDs light up for a given brightness. Choose Gen2 to match Inovelli's older Gen2 (LZW) switches in the same box."
+  },
+  {
+   "key": "firmwareUpdateInProgressIndicator",
+   "param": 260,
+   "cluster": "fc31",
+   "attr": 260,
+   "type": "bool",
+   "group": "ledbar",
+   "title": "Show firmware update progress",
+   "options": [
+    {
+     "value": "Disabled",
+     "raw": 0
+    },
+    {
+     "value": "Enabled",
+     "raw": 1
+    }
+   ],
+   "control": "toggle",
+   "on": "Enabled",
+   "default": "Enabled",
+   "help": "Fills the LED bar to show progress while the switch updates its firmware. On by default."
+  },
+  {
+   "key": "defaultLed7ColorWhenOn",
+   "param": 90,
+   "cluster": "fc31",
+   "attr": 90,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Colour when on",
+   "sub": "LED 7 (top)",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "Same as bar"
+    }
+   ],
+   "format": "ledHue",
+   "default": 255,
+   "help": "LED 7's colour while the light is on. 255 (the default) follows the bar's colour."
+  },
+  {
+   "key": "defaultLed7IntensityWhenOn",
+   "param": 92,
+   "cluster": "fc31",
+   "attr": 92,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Brightness when on",
+   "sub": "LED 7 (top)",
+   "control": "number",
+   "min": 0,
+   "max": 101,
+   "presets": [
+    {
+     "raw": 101,
+     "label": "Same as bar"
+    },
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 101,
+   "help": "LED 7's brightness while the light is on, from 0 to 100%. 101 (the default) follows the bar's brightness."
+  },
+  {
+   "key": "defaultLed7ColorWhenOff",
+   "param": 91,
+   "cluster": "fc31",
+   "attr": 91,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Colour when off",
+   "sub": "LED 7 (top)",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "Same as bar"
+    }
+   ],
+   "format": "ledHue",
+   "default": 255,
+   "help": "LED 7's colour while the light is off. 255 (the default) follows the bar's colour."
+  },
+  {
+   "key": "defaultLed7IntensityWhenOff",
+   "param": 93,
+   "cluster": "fc31",
+   "attr": 93,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Brightness when off",
+   "sub": "LED 7 (top)",
+   "control": "number",
+   "min": 0,
+   "max": 101,
+   "presets": [
+    {
+     "raw": 101,
+     "label": "Same as bar"
+    },
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 101,
+   "help": "LED 7's brightness while the light is off, from 0 to 100%. 101 (the default) follows the bar's brightness."
+  },
+  {
+   "key": "defaultLed6ColorWhenOn",
+   "param": 85,
+   "cluster": "fc31",
+   "attr": 85,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Colour when on",
+   "sub": "LED 6",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "Same as bar"
+    }
+   ],
+   "format": "ledHue",
+   "default": 255,
+   "help": "LED 6's colour while the light is on. 255 (the default) follows the bar's colour."
+  },
+  {
+   "key": "defaultLed6IntensityWhenOn",
+   "param": 87,
+   "cluster": "fc31",
+   "attr": 87,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Brightness when on",
+   "sub": "LED 6",
+   "control": "number",
+   "min": 0,
+   "max": 101,
+   "presets": [
+    {
+     "raw": 101,
+     "label": "Same as bar"
+    },
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 101,
+   "help": "LED 6's brightness while the light is on, from 0 to 100%. 101 (the default) follows the bar's brightness."
+  },
+  {
+   "key": "defaultLed6ColorWhenOff",
+   "param": 86,
+   "cluster": "fc31",
+   "attr": 86,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Colour when off",
+   "sub": "LED 6",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "Same as bar"
+    }
+   ],
+   "format": "ledHue",
+   "default": 255,
+   "help": "LED 6's colour while the light is off. 255 (the default) follows the bar's colour."
+  },
+  {
+   "key": "defaultLed6IntensityWhenOff",
+   "param": 88,
+   "cluster": "fc31",
+   "attr": 88,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Brightness when off",
+   "sub": "LED 6",
+   "control": "number",
+   "min": 0,
+   "max": 101,
+   "presets": [
+    {
+     "raw": 101,
+     "label": "Same as bar"
+    },
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 101,
+   "help": "LED 6's brightness while the light is off, from 0 to 100%. 101 (the default) follows the bar's brightness."
+  },
+  {
+   "key": "defaultLed5ColorWhenOn",
+   "param": 80,
+   "cluster": "fc31",
+   "attr": 80,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Colour when on",
+   "sub": "LED 5",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "Same as bar"
+    }
+   ],
+   "format": "ledHue",
+   "default": 255,
+   "help": "LED 5's colour while the light is on. 255 (the default) follows the bar's colour."
+  },
+  {
+   "key": "defaultLed5IntensityWhenOn",
+   "param": 82,
+   "cluster": "fc31",
+   "attr": 82,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Brightness when on",
+   "sub": "LED 5",
+   "control": "number",
+   "min": 0,
+   "max": 101,
+   "presets": [
+    {
+     "raw": 101,
+     "label": "Same as bar"
+    },
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 101,
+   "help": "LED 5's brightness while the light is on, from 0 to 100%. 101 (the default) follows the bar's brightness."
+  },
+  {
+   "key": "defaultLed5ColorWhenOff",
+   "param": 81,
+   "cluster": "fc31",
+   "attr": 81,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Colour when off",
+   "sub": "LED 5",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "Same as bar"
+    }
+   ],
+   "format": "ledHue",
+   "default": 255,
+   "help": "LED 5's colour while the light is off. 255 (the default) follows the bar's colour."
+  },
+  {
+   "key": "defaultLed5IntensityWhenOff",
+   "param": 83,
+   "cluster": "fc31",
+   "attr": 83,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Brightness when off",
+   "sub": "LED 5",
+   "control": "number",
+   "min": 0,
+   "max": 101,
+   "presets": [
+    {
+     "raw": 101,
+     "label": "Same as bar"
+    },
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 101,
+   "help": "LED 5's brightness while the light is off, from 0 to 100%. 101 (the default) follows the bar's brightness."
+  },
+  {
+   "key": "defaultLed4ColorWhenOn",
+   "param": 75,
+   "cluster": "fc31",
+   "attr": 75,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Colour when on",
+   "sub": "LED 4",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "Same as bar"
+    }
+   ],
+   "format": "ledHue",
+   "default": 255,
+   "help": "LED 4's colour while the light is on. 255 (the default) follows the bar's colour."
+  },
+  {
+   "key": "defaultLed4IntensityWhenOn",
+   "param": 77,
+   "cluster": "fc31",
+   "attr": 77,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Brightness when on",
+   "sub": "LED 4",
+   "control": "number",
+   "min": 0,
+   "max": 101,
+   "presets": [
+    {
+     "raw": 101,
+     "label": "Same as bar"
+    },
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 101,
+   "help": "LED 4's brightness while the light is on, from 0 to 100%. 101 (the default) follows the bar's brightness."
+  },
+  {
+   "key": "defaultLed4ColorWhenOff",
+   "param": 76,
+   "cluster": "fc31",
+   "attr": 76,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Colour when off",
+   "sub": "LED 4",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "Same as bar"
+    }
+   ],
+   "format": "ledHue",
+   "default": 255,
+   "help": "LED 4's colour while the light is off. 255 (the default) follows the bar's colour."
+  },
+  {
+   "key": "defaultLed4IntensityWhenOff",
+   "param": 78,
+   "cluster": "fc31",
+   "attr": 78,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Brightness when off",
+   "sub": "LED 4",
+   "control": "number",
+   "min": 0,
+   "max": 101,
+   "presets": [
+    {
+     "raw": 101,
+     "label": "Same as bar"
+    },
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 101,
+   "help": "LED 4's brightness while the light is off, from 0 to 100%. 101 (the default) follows the bar's brightness."
+  },
+  {
+   "key": "defaultLed3ColorWhenOn",
+   "param": 70,
+   "cluster": "fc31",
+   "attr": 70,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Colour when on",
+   "sub": "LED 3",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "Same as bar"
+    }
+   ],
+   "format": "ledHue",
+   "default": 255,
+   "help": "LED 3's colour while the light is on. 255 (the default) follows the bar's colour."
+  },
+  {
+   "key": "defaultLed3IntensityWhenOn",
+   "param": 72,
+   "cluster": "fc31",
+   "attr": 72,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Brightness when on",
+   "sub": "LED 3",
+   "control": "number",
+   "min": 0,
+   "max": 101,
+   "presets": [
+    {
+     "raw": 101,
+     "label": "Same as bar"
+    },
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 101,
+   "help": "LED 3's brightness while the light is on, from 0 to 100%. 101 (the default) follows the bar's brightness."
+  },
+  {
+   "key": "defaultLed3ColorWhenOff",
+   "param": 71,
+   "cluster": "fc31",
+   "attr": 71,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Colour when off",
+   "sub": "LED 3",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "Same as bar"
+    }
+   ],
+   "format": "ledHue",
+   "default": 255,
+   "help": "LED 3's colour while the light is off. 255 (the default) follows the bar's colour."
+  },
+  {
+   "key": "defaultLed3IntensityWhenOff",
+   "param": 73,
+   "cluster": "fc31",
+   "attr": 73,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Brightness when off",
+   "sub": "LED 3",
+   "control": "number",
+   "min": 0,
+   "max": 101,
+   "presets": [
+    {
+     "raw": 101,
+     "label": "Same as bar"
+    },
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 101,
+   "help": "LED 3's brightness while the light is off, from 0 to 100%. 101 (the default) follows the bar's brightness."
+  },
+  {
+   "key": "defaultLed2ColorWhenOn",
+   "param": 65,
+   "cluster": "fc31",
+   "attr": 65,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Colour when on",
+   "sub": "LED 2",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "Same as bar"
+    }
+   ],
+   "format": "ledHue",
+   "default": 255,
+   "help": "LED 2's colour while the light is on. 255 (the default) follows the bar's colour."
+  },
+  {
+   "key": "defaultLed2IntensityWhenOn",
+   "param": 67,
+   "cluster": "fc31",
+   "attr": 67,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Brightness when on",
+   "sub": "LED 2",
+   "control": "number",
+   "min": 0,
+   "max": 101,
+   "presets": [
+    {
+     "raw": 101,
+     "label": "Same as bar"
+    },
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 101,
+   "help": "LED 2's brightness while the light is on, from 0 to 100%. 101 (the default) follows the bar's brightness."
+  },
+  {
+   "key": "defaultLed2ColorWhenOff",
+   "param": 66,
+   "cluster": "fc31",
+   "attr": 66,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Colour when off",
+   "sub": "LED 2",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "Same as bar"
+    }
+   ],
+   "format": "ledHue",
+   "default": 255,
+   "help": "LED 2's colour while the light is off. 255 (the default) follows the bar's colour."
+  },
+  {
+   "key": "defaultLed2IntensityWhenOff",
+   "param": 68,
+   "cluster": "fc31",
+   "attr": 68,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Brightness when off",
+   "sub": "LED 2",
+   "control": "number",
+   "min": 0,
+   "max": 101,
+   "presets": [
+    {
+     "raw": 101,
+     "label": "Same as bar"
+    },
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 101,
+   "help": "LED 2's brightness while the light is off, from 0 to 100%. 101 (the default) follows the bar's brightness."
+  },
+  {
+   "key": "defaultLed1ColorWhenOn",
+   "param": 60,
+   "cluster": "fc31",
+   "attr": 60,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Colour when on",
+   "sub": "LED 1 (bottom)",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "Same as bar"
+    }
+   ],
+   "format": "ledHue",
+   "default": 255,
+   "help": "LED 1's colour while the light is on. 255 (the default) follows the bar's colour."
+  },
+  {
+   "key": "defaultLed1IntensityWhenOn",
+   "param": 62,
+   "cluster": "fc31",
+   "attr": 62,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Brightness when on",
+   "sub": "LED 1 (bottom)",
+   "control": "number",
+   "min": 0,
+   "max": 101,
+   "presets": [
+    {
+     "raw": 101,
+     "label": "Same as bar"
+    },
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 101,
+   "help": "LED 1's brightness while the light is on, from 0 to 100%. 101 (the default) follows the bar's brightness."
+  },
+  {
+   "key": "defaultLed1ColorWhenOff",
+   "param": 61,
+   "cluster": "fc31",
+   "attr": 61,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Colour when off",
+   "sub": "LED 1 (bottom)",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "Same as bar"
+    }
+   ],
+   "format": "ledHue",
+   "default": 255,
+   "help": "LED 1's colour while the light is off. 255 (the default) follows the bar's colour."
+  },
+  {
+   "key": "defaultLed1IntensityWhenOff",
+   "param": 63,
+   "cluster": "fc31",
+   "attr": 63,
+   "type": "uint8",
+   "group": "leds",
+   "title": "Brightness when off",
+   "sub": "LED 1 (bottom)",
+   "control": "number",
+   "min": 0,
+   "max": 101,
+   "presets": [
+    {
+     "raw": 101,
+     "label": "Same as bar"
+    },
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 101,
+   "help": "LED 1's brightness while the light is off, from 0 to 100%. 101 (the default) follows the bar's brightness."
+  },
+  {
+   "key": "switchType",
+   "param": 22,
+   "cluster": "fc31",
+   "attr": 22,
+   "type": "uint8",
+   "group": "wiring",
+   "title": "Switch type",
+   "options": [
+    {
+     "value": "Single Pole",
+     "raw": 0,
+     "label": "Single pole"
+    },
+    {
+     "value": "Aux Switch",
+     "raw": 1,
+     "label": "Aux switch (3-way)"
+    }
+   ],
+   "control": "select",
+   "default": "Single Pole",
+   "risky": "Choose the type that matches the wiring: Aux switch only if a compatible aux switch is wired to the traveler, Single pole otherwise. With the wrong type the aux switch stops working.",
+   "help": "Whether an aux switch is wired to this switch's traveler for 3-way or 4-way control. This switch only works with compatible aux switches (Inovelli, GE/Enbrighten or HomeSeer), not with an ordinary 3-way switch. The default is single pole."
+  },
+  {
+   "key": "outputMode",
+   "param": 258,
+   "cluster": "fc31",
+   "attr": 258,
+   "type": "bool",
+   "group": "wiring",
+   "title": "Output mode",
+   "options": [
+    {
+     "value": "Dimmer",
+     "raw": 0
+    },
+    {
+     "value": "On/Off",
+     "raw": 1
+    }
+   ],
+   "control": "select",
+   "default": "Dimmer",
+   "risky": "Dimming a light that isn't dimmable can damage it. Use Dimmer only for dimmable bulbs.",
+   "riskyTo": [
+    "Dimmer"
+   ],
+   "help": "Dimmer for dimmable bulbs, On/Off for lights that mustn't be dimmed. The brightness and speed settings only apply in Dimmer mode. You can also change it at the switch: hold up and tap Config 3 times. This switch ships in Dimmer mode."
+  },
+  {
+   "key": "smartBulbMode",
+   "param": 52,
+   "cluster": "fc31",
+   "attr": 52,
+   "type": "bool",
+   "group": "wiring",
+   "title": "Smart bulb mode",
+   "options": [
+    {
+     "value": "Disabled",
+     "raw": 0
+    },
+    {
+     "value": "Smart Bulb Mode",
+     "raw": 1
+    }
+   ],
+   "control": "toggle",
+   "on": "Smart Bulb Mode",
+   "default": "Disabled",
+   "risky": "With smart bulb mode on, the light gets full power all the time and the paddle only sends commands. Ordinary bulbs will stay on until you turn this off.",
+   "riskyTo": [
+    "Smart Bulb Mode"
+   ],
+   "help": "Keeps full power on the light so wired smart bulbs stay connected. The paddle then sends commands to your hub or to bound bulbs instead of switching the power. Use it with smart bulbs and a binding or automation, otherwise the paddle seems to do nothing."
+  },
+  {
+   "key": "higherOutputInNonNeutral",
+   "param": 25,
+   "cluster": "fc31",
+   "attr": 25,
+   "type": "bool",
+   "group": "wiring",
+   "title": "More output without neutral",
+   "options": [
+    {
+     "value": "Disabled (default)",
+     "raw": 0
+    },
+    {
+     "value": "Enabled",
+     "raw": 1
+    }
+   ],
+   "control": "toggle",
+   "on": "Enabled",
+   "default": "Disabled (default)",
+   "risky": "More output without a neutral can make bulbs flicker or the switch restart. If that happens, turn this off again.",
+   "riskyTo": [
+    "Enabled"
+   ],
+   "help": "Without a neutral wire, the switch holds some output back to keep itself powered. Turning this on makes bulbs brighter, but can cause flicker, reboots or aux switch trouble. If it does, turn it off or lower the maximum brightness. It has no effect with a neutral."
+  },
+  {
+   "key": "powerType",
+   "param": 21,
+   "cluster": "fc31",
+   "attr": 21,
+   "type": "bool",
+   "group": "wiring",
+   "title": "Neutral wire",
+   "options": [
+    {
+     "value": "Non Neutral",
+     "raw": 0,
+     "label": "Not connected"
+    },
+    {
+     "value": "Neutral",
+     "raw": 1,
+     "label": "Connected"
+    }
+   ],
+   "control": "select",
+   "readOnly": true,
+   "help": "Whether the switch detects a neutral wire. It works this out itself. Some features, such as trailing edge dimming and more output without neutral, depend on it."
+  },
+  {
+   "key": "dimmingMode",
+   "param": 26,
+   "cluster": "fc31",
+   "attr": 26,
+   "type": "uint8",
+   "group": "wiring",
+   "title": "Dimming method",
+   "options": [
+    {
+     "value": "Leading edge",
+     "raw": 0
+    },
+    {
+     "value": "Trailing edge",
+     "raw": 1
+    }
+   ],
+   "control": "select",
+   "readOnly": true,
+   "help": "Leading edge or trailing edge dimming. Trailing edge often suits LED bulbs better, with less hum and flicker, but it needs a neutral wire. It can only be changed at the switch: hold down and tap Config 13 times."
+  },
+  {
+   "key": "bindingOffToOnSyncLevel",
+   "param": 125,
+   "cluster": "fc31",
+   "attr": 125,
+   "type": "bool",
+   "group": "binding",
+   "title": "Bound lights come on at the set brightness",
+   "options": [
+    {
+     "value": "Disabled",
+     "raw": 0
+    },
+    {
+     "value": "Enabled",
+     "raw": 1
+    }
+   ],
+   "control": "toggle",
+   "on": "Enabled",
+   "default": "Disabled",
+   "help": "When this switch turns bound lights on, also send them the brightness from the paddle setting, so they don't come back at their own last brightness."
+  },
+  {
+   "key": "singleTapBehavior",
+   "param": 120,
+   "cluster": "fc31",
+   "attr": 120,
+   "type": "uint8",
+   "group": "binding",
+   "title": "Single tap",
+   "options": [
+    {
+     "value": "Old Behavior",
+     "raw": 0,
+     "label": "On and off"
+    },
+    {
+     "value": "New Behavior",
+     "raw": 1,
+     "label": "Step through levels"
+    },
+    {
+     "value": "Down Always Off",
+     "raw": 2,
+     "label": "Step up; down turns off"
+    }
+   ],
+   "control": "select",
+   "default": "Old Behavior",
+   "help": "What one tap does: turn the light on and off (the default), or step through the low, medium and high levels below, like a fan control."
+  },
+  {
+   "key": "fanTimerMode",
+   "param": 121,
+   "cluster": "fc31",
+   "attr": 121,
+   "type": "bool",
+   "group": "binding",
+   "title": "Fan timer",
+   "options": [
+    {
+     "value": "Disabled",
+     "raw": 0
+    },
+    {
+     "value": "Enabled",
+     "raw": 1
+    }
+   ],
+   "control": "toggle",
+   "on": "Enabled",
+   "default": "Disabled",
+   "help": "For a bathroom fan: tapping up 2, 3, 4 or 5 times runs it for 5, 10, 15 or 30 minutes."
+  },
+  {
+   "key": "fanControlMode",
+   "param": 130,
+   "cluster": "fc31",
+   "attr": 130,
+   "type": "uint8",
+   "group": "binding",
+   "title": "Config button controls a bound fan",
+   "options": [
+    {
+     "value": "Disabled",
+     "raw": 0,
+     "label": "Off"
+    },
+    {
+     "value": "Multi Tap",
+     "raw": 1,
+     "label": "Multi-tap picks a speed"
+    },
+    {
+     "value": "Cycle",
+     "raw": 2,
+     "label": "Each tap steps the speed"
+    }
+   ],
+   "control": "select",
+   "default": "Disabled",
+   "help": "How the Config button controls a fan module bound to it: not at all (the default), tapping 1 to 3 times for low, medium or high, or each tap stepping to the next speed."
+  },
+  {
+   "key": "lowLevelForFanControlMode",
+   "param": 131,
+   "cluster": "fc31",
+   "attr": 131,
+   "type": "uint8",
+   "group": "binding",
+   "title": "Low level",
+   "control": "number",
+   "min": 2,
+   "max": 254,
+   "format": "level",
+   "default": 63,
+   "help": "The level sent to the bound device for low. The default is 63."
+  },
+  {
+   "key": "mediumLevelForFanControlMode",
+   "param": 132,
+   "cluster": "fc31",
+   "attr": 132,
+   "type": "uint8",
+   "group": "binding",
+   "title": "Medium level",
+   "control": "number",
+   "min": 2,
+   "max": 254,
+   "format": "level",
+   "default": 128,
+   "help": "The level sent to the bound device for medium. The default is 128."
+  },
+  {
+   "key": "highLevelForFanControlMode",
+   "param": 133,
+   "cluster": "fc31",
+   "attr": 133,
+   "type": "uint8",
+   "group": "binding",
+   "title": "High level",
+   "control": "number",
+   "min": 2,
+   "max": 254,
+   "format": "level",
+   "default": 254,
+   "help": "The level sent to the bound device for high. The default is 254."
+  },
+  {
+   "key": "ledColorForFanControlMode",
+   "param": 134,
+   "cluster": "fc31",
+   "attr": 134,
+   "type": "uint8",
+   "group": "binding",
+   "title": "LED colour for fan speed",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Red"
+    },
+    {
+     "raw": 21,
+     "label": "Orange"
+    },
+    {
+     "raw": 42,
+     "label": "Yellow"
+    },
+    {
+     "raw": 85,
+     "label": "Green"
+    },
+    {
+     "raw": 127,
+     "label": "Cyan"
+    },
+    {
+     "raw": 170,
+     "label": "Blue"
+    },
+    {
+     "raw": 212,
+     "label": "Violet"
+    },
+    {
+     "raw": 234,
+     "label": "Pink"
+    },
+    {
+     "raw": 255,
+     "label": "White"
+    }
+   ],
+   "format": "hue",
+   "default": 212,
+   "help": "The LED bar's colour while it shows the fan speed. The default is 212 (violet)."
+  },
+  {
+   "key": "activePowerReports",
+   "param": 18,
+   "cluster": "fc31",
+   "attr": 18,
+   "type": "uint8",
+   "group": "energy",
+   "title": "Report when power changes by",
+   "control": "number",
+   "min": 0,
+   "max": 100,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "percent",
+   "default": 10,
+   "help": "Sends a power reading when the wattage changes by this many percent. 0 turns these reports off. The default is 10%."
+  },
+  {
+   "key": "periodicPowerAndEnergyReports",
+   "param": 19,
+   "cluster": "fc31",
+   "attr": 19,
+   "type": "uint16",
+   "group": "energy",
+   "title": "Report every",
+   "control": "number",
+   "min": 0,
+   "max": 32767,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "seconds",
+   "default": 3600,
+   "help": "Also sends power and energy on a schedule, this many seconds apart. 0 turns the schedule off. The default is 3600 (1 hour)."
+  },
+  {
+   "key": "activeEnergyReports",
+   "param": 20,
+   "cluster": "fc31",
+   "attr": 20,
+   "type": "uint16",
+   "group": "energy",
+   "title": "Report when energy grows by",
+   "control": "number",
+   "min": 0,
+   "max": 32767,
+   "presets": [
+    {
+     "raw": 0,
+     "label": "Off"
+    }
+   ],
+   "format": "hundredthsKwh",
+   "default": 10,
+   "help": "Sends an energy reading each time use grows by this much, in hundredths of a kWh: 10 (the default) is 0.1 kWh. 0 turns these reports off."
+  },
+  {
+   "key": "internalTemperature",
+   "param": 32,
+   "cluster": "fc31",
+   "attr": 32,
+   "type": "int8",
+   "group": "status",
+   "title": "Internal temperature",
+   "control": "number",
+   "min": 0,
+   "max": 127,
+   "format": "celsius",
+   "readOnly": true,
+   "help": "The switch's own temperature. 40 to 55 °C is normal for a dimmer with a light on."
+  },
+  {
+   "key": "overheat",
+   "param": 33,
+   "cluster": "fc31",
+   "attr": 33,
+   "type": "bool",
+   "group": "status",
+   "title": "Overheated",
+   "options": [
+    {
+     "value": "No Alert",
+     "raw": 0,
+     "label": "No"
+    },
+    {
+     "value": "Overheated",
+     "raw": 1,
+     "label": "Yes"
+    }
+   ],
+   "control": "select",
+   "readOnly": true,
+   "help": "At 90 °C the switch turns the light off and blinks red until it cools to 70 °C. The light doesn't come back on by itself."
+  },
+  {
+   "key": "deviceBindNumber",
+   "param": 51,
+   "cluster": "fc31",
+   "attr": 51,
+   "type": "uint8",
+   "group": "status",
+   "title": "Zigbee bindings",
+   "control": "number",
+   "min": 0,
+   "max": 255,
+   "readOnly": true,
+   "help": "How many Zigbee bindings the switch has, not counting your hub. A group counts as 2."
+  },
+  {
+   "key": "mmWaveVersion",
+   "param": 115,
+   "cluster": "fc32",
+   "attr": 115,
+   "type": "uint32",
+   "group": "status",
+   "title": "Radar firmware",
+   "control": "number",
+   "min": 0,
+   "max": 4294967295,
+   "format": "version",
+   "readOnly": true,
+   "help": "The firmware version of the radar module."
+  },
+  {
+   "key": "otaImageType",
+   "param": 34,
+   "cluster": "fc31",
+   "attr": 34,
+   "type": "uint8",
+   "group": "advanced",
+   "title": "Firmware to request",
+   "options": [
+    {
+     "value": "Zigbee (259)",
+     "raw": 0,
+     "label": "Switch firmware"
+    },
+    {
+     "value": "mmWave (260)",
+     "raw": 1,
+     "label": "Radar firmware"
+    },
+    {
+     "value": "Alternating (259 & 260) (default)",
+     "raw": 2,
+     "label": "Both, in turn"
+    }
+   ],
+   "control": "select",
+   "default": "Alternating (259 & 260) (default)",
+   "risky": "This changes which firmware the switch looks for when it updates. Leave it unless Inovelli support asked you to change it.",
+   "zha": false,
+   "help": "Which firmware the switch asks your hub's update server for: its own, the radar module's, or both in turn."
+  }
+ ]
+}

@@ -6,37 +6,15 @@ configuration — making them straightforward to unit test in isolation.
 """
 import re
 
+import settings_catalog
+
 # ---------------------------------------------------------------------------
-# Parameter validation whitelist
+# Parameter validation
+# Zone writes are checked here; every other setting against the settings
+# catalogue (static/settings.json), which lists what each one accepts.
 # ---------------------------------------------------------------------------
 
 VALID_PARAMETERS = {
-    'mmWaveDetectSensitivity': {
-        'type': 'enum',
-        'options': ['Low', 'Medium', 'High (default)']
-    },
-    'mmWaveDetectTrigger': {
-        'type': 'enum',
-        'options': ['Fast (0.2s, default)', 'Medium (1s)', 'Slow (5s)']
-    },
-    'mmWaveRoomSizePreset': {
-        'type': 'enum',
-        'options': ['Custom', 'Small', 'Medium', 'Large']
-    },
-    'mmWaveTargetInfoReport': {
-        'type': 'enum',
-        'options': ['Disable (default)', 'Enable']
-    },
-    'mmwaveControlWiredDevice': {
-        'type': 'enum',
-        'options': [
-            'Disabled', 'Occupancy (default)', 'Vacancy',
-            'Wasteful Occupancy', 'Mirrored Occupancy',
-            'Mirrored Vacancy', 'Mirrored Wasteful Occupancy'
-        ]
-    },
-    'mmWaveHoldTime':  {'type': 'int', 'min': 0, 'max': 28800},
-    'mmWaveStayLife':  {'type': 'int', 'min': 0, 'max': 28800},
     'mmwave_detection_areas':    {'type': 'zone_composite'},
     'mmwave_interference_areas': {'type': 'zone_composite'},
     'mmwave_stay_areas':         {'type': 'zone_composite'},
@@ -47,30 +25,15 @@ ZONE_COORD_RANGE = (-10000, 10000)
 
 
 def validate_parameter(param, value):
-    """Validate a parameter name and value against the whitelist.
+    """Validate a parameter name and value before anything is sent to a switch.
     Returns (is_valid: bool, error_message: str | None).
     """
     if param not in VALID_PARAMETERS:
-        return False, f"Unknown parameter: {param}"
+        return settings_catalog.validate(param, value)
 
-    schema = VALID_PARAMETERS[param]
-    ptype  = schema['type']
+    ptype = VALID_PARAMETERS[param]['type']
 
-    if ptype == 'enum':
-        if not isinstance(value, str) or value not in schema['options']:
-            return False, f"Invalid value '{value}' for {param}. Allowed: {schema['options']}"
-        return True, None
-
-    elif ptype == 'int':
-        try:
-            int_val = int(value)
-        except (ValueError, TypeError):
-            return False, f"Parameter {param} requires an integer, got: {value}"
-        if int_val < schema['min'] or int_val > schema['max']:
-            return False, f"Parameter {param} value {int_val} out of range [{schema['min']}, {schema['max']}]"
-        return True, None
-
-    elif ptype == 'zone_composite':
+    if ptype == 'zone_composite':
         if not isinstance(value, dict):
             return False, f"Parameter {param} expects a dict, got: {type(value).__name__}"
         for area_key, area_val in value.items():

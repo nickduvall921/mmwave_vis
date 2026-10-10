@@ -1,6 +1,21 @@
 # Changelog
 
 
+## [Unreleased]
+
+### Added
+- Config tab: all 91 settings of the switch, grouped (Presence, On/off and brightness, Fade and dimming speeds, Paddle and buttons, LED bar, Individual LEDs, Wiring and load, Bindings and fan control, Power reporting, Status, Advanced). Each setting has an ⓘ explaining it in plain words, from Inovelli's documentation, Zigbee2MQTT's definitions and what people have found on the forum, with its default, range, parameter number and a Reset to default button.
+  - Values are shown as what they mean ("2.5 s", "Last brightness", "34%"), LED colours with a colour wheel, and a dot marks every setting that isn't at its default.
+  - Search the settings, or show only the ones you've changed.
+  - Changes go to the switch straight away and show Saved once the switch reports the new value. Settings that could stop the light or an aux switch working (switch type, output mode, smart bulb mode, more output without neutral, the paddle lock) ask first.
+  - Works on Zigbee2MQTT and ZHA. On ZHA the addon reads each group's settings from the switch when you open it, remembers them, and reads a setting back after changing it to confirm it.
+- ZHA quirk: the quick start time and brightness settings (parameters 23 and 24). Update the quirk in your custom quirks folder to change them through ZHA.
+
+### Changed
+- Every setting the addon writes is checked against the same catalogue the Config tab is built from, instead of a short list of mmWave settings.
+- Room size presets are labelled with their sizes: Zigbee2MQTT's Small, Medium and Large are Inovelli's extra small (2 × 2 m), small and medium presets. On ZHA the Config tab also offers Inovelli's large and extra large presets.
+- Stay life goes up to 72000 (1 hour), so Inovelli's suggested 15 to 30 minutes for bedrooms can be set.
+
 ## [4.1.2] - 2026-10-09
 
 ### Fixed
