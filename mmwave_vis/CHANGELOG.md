@@ -12,12 +12,15 @@
 - Detection tab: changes wait for Apply too, with an Apply bar at the top and one under each group of settings. It shares the waiting changes with the Config tab, which shows the same mmWave settings.
 - ZHA: the addon tells which quirk runs the switch: the Visualizer's, Home Assistant's built-in one (2026.8 and later), another custom quirk or none. It's shown with the switch's details, and with any quirk but the Visualizer's the page says what's missing, links to how to install it, and greys out what needs the switch's radar reports (live targets on the map, zones, the recorder, the tests, target reporting and the heat map). Settings still work in the Detection and Config tabs with the built-in quirk, and any the running quirk doesn't have are greyed out with the reason.
 - ZHA quirk: the quick start time and brightness settings (parameters 23 and 24). Update the quirk in your custom quirks folder to change them through ZHA.
+- ZHA quirk: the entities Home Assistant's built-in quirk has that this one didn't: remote dimming speeds and ramp rates, remote and power-on default level, switch type, internal temperature and overheat protection.
 
 ### Changed
 - The Switch tab is now called Detection: target reporting, sensitivity and timing, the hold time and sit-still tests, room size and whether presence controls the light. The switch's details (firmware, radar version, signal, updates) moved to the top of the Config tab.
 - Every setting the addon writes is checked against the same catalogue the Config tab is built from, instead of a short list of mmWave settings.
 - Room size presets are labelled with their sizes: Zigbee2MQTT's Small, Medium and Large are Inovelli's extra small (2 × 2 m), small and medium presets. On ZHA the Detection and Config tabs also offer Inovelli's large and extra large presets.
 - Stay life goes up to 72000 (1 hour), so Inovelli's suggested 15 to 30 minutes for bedrooms can be set.
+- ZHA quirk: its entities are now the same as Home Assistant's built-in quirk's, with the same IDs, names and options, so switching between the two keeps entity IDs, history and automations. Sensitivity, trigger speed, room size, presence behaviour, output mode, LED scaling and non-neutral output are dropdowns. **Updating the quirk changes most of its entity IDs once:** the old entities stay behind as unavailable (many ending in `_2`); update automations that used them, then delete the leftovers. The target info report and stay life entities keep their IDs. See ZHADOC.md. On Home Assistant before 2026.8, ZHA itself still creates the settings every Inovelli switch shares, and the quirk leaves those to it.
+- ZHA quirk: the VZM31-SN's "Disable relay click in on off mode" setting is gone from the VZM32-SN, which doesn't have it.
 - ZHA: settings are read from entities by their registry ID, so the built-in quirk's entities (and renamed ones) are recognised, including its own select labels.
 - ZHA: reading settings from a switch that has stopped answering gives up after three failed reads in a row instead of waiting out every setting.
 

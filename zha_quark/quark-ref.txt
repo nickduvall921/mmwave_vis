@@ -451,7 +451,6 @@ Attr ID | HA Entity Name                        | Type    | Range       | Descri
 0x0102  | output_mode                           | bool    | 0=Dimmer, 1=On-Off
 0x0103  | on_off_led_mode                       | bool    | 0/1         | Show only 1 LED (on/off indicator)
 0x0104  | firmware_progress_led                 | bool    | 0/1         | LED during firmware update
-0x0105  | relay_click_in_on_off_mode            | bool    | 0/1         | Disable relay click in on/off mode
 0x0106  | disable_clear_notifications_double_tap| bool    | 0/1         | Disable config 2x tap→clear notif
 
 Per-LED color/intensity attributes (LED 1–7):
@@ -728,60 +727,69 @@ SECTION 9 — AUTOMATION EXAMPLES
 SECTION 10 — HA ENTITIES EXPOSED BY QUIRK (SUMMARY)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-These entities appear in the ZHA device configuration panel automatically.
-They are all EntityType.CONFIG and use the cluster's read/write attribute mechanism.
+The entities are the same as ZHA's built-in VZM32-SN quirk (Home Assistant 2026.8+):
+same platforms, unique ids, names and options, so switching between the two quirks
+keeps every entity. Unique ids are "<ieee>-1-<cluster id>-<attribute>", e.g.
+"<ieee>-1-64562-mmwave_hold_time" (64561 = 0xFC31, 64562 = 0xFC32). This quirk adds
+two of its own, marked "(Visualizer)", with unique ids "<ieee>-1-<attribute>".
 
-SWITCH ENTITIES (toggle, Cluster 0xFC31):
-  invert_switch                        — Invert paddle direction
-  smart_bulb_mode                      — Always-hot relay for smart bulbs
-  double_tap_up_enabled                — Enable double-tap up action
-  double_tap_down_enabled              — Enable double-tap down action
-  aux_switch_scenes                    — Aux paddle sends scene commands
-  binding_off_to_on_sync_level         — Sync level when binding turns on
-  local_protection                     — Lock out physical paddle
-  remote_protection                    — Lock out ZHA/remote control
-  on_off_led_mode                      — Single LED on/off indicator mode
-  firmware_progress_led                — LED during firmware update
-  relay_click_in_on_off_mode           — Disable relay click sound
-  disable_clear_notifications_double_tap — Disable 2x config tap to clear
-  output_mode                          — Dimmer (off) or On/Off (on)
-  increased_non_neutral_output         — Low (off) or High (on) non-neutral
-  led_scaling_mode                     — VZM31SN (off) or LZW31SN (on) scale
+On Home Assistant before 2026.8, ZHA itself makes the entities every Inovelli switch
+shares (marked "shared"), with the same unique ids; the quirk then only adds the rest.
+All are configuration entities unless marked diagnostic.
 
-SWITCH ENTITIES (toggle, Cluster 0xFC32):
-  mmwave_target_info_report            — Enable live mmWave target reports
-
-NUMBER ENTITIES (slider, Cluster 0xFC31):
-  dimming_speed_up_local               (0–127)
-  ramp_rate_off_to_on_local            (0–127)
-  dimming_speed_down_local             (0–127)
-  ramp_rate_on_to_off_local            (0–127)
-  default_level_local                  (0–255)
-  load_level_indicator_timeout         (0–11)
+NUMBER ENTITIES (Cluster 0xFC31, shared):
+  dimming_speed_up_remote (0–126), dimming_speed_up_local, dimming_speed_down_remote,
+  dimming_speed_down_local, ramp_rate_off_to_on_remote, ramp_rate_off_to_on_local,
+  ramp_rate_on_to_off_remote, ramp_rate_on_to_off_local (0–127)
   button_delay                         (0–9)
-  double_tap_up_level                  (2–255)
-  double_tap_down_level                (0–255)
-  led_color_when_on                    (0–255)
-  led_color_when_off                   (0–255)
-  led_intensity_when_on                (0–100)
-  led_intensity_when_off               (0–100)
-  auto_off_timer                       (0–32767 seconds)
   minimum_level                        (1–254)
   maximum_level                        (2–255)
-  mmwave_room_size_preset              (0–3)  — 0=Custom 1=Small 2=Medium 3=Large
-  light_on_presence_behavior           (0–6)  — Auto-light on presence mode
+  auto_off_timer                       (0–32767 seconds)
+  default_level_local, default_level_remote, state_after_power_restored (0–255)
+  load_level_indicator_timeout         (0–11)
+  led_color_when_on, led_color_when_off (0–255)
+  led_intensity_when_on, led_intensity_when_off (0–100)
+  double_tap_up_level                  (2–254)
+  double_tap_down_level                (0–254)
 
-NUMBER ENTITIES (slider, Cluster 0xFC32):
+SWITCH ENTITIES (Cluster 0xFC31):
+  invert_switch, smart_bulb_mode, double_tap_up_enabled, double_tap_down_enabled,
+  aux_switch_scenes, binding_off_to_on_sync_level, local_protection,
+  on_off_led_mode ("Only 1 LED mode"), firmware_progress_led,
+  disable_clear_notifications_double_tap                    (shared)
+  remote_protection
+
+SELECT ENTITIES (Cluster 0xFC31):
+  output_mode                   Dimmer / OnOff                       (shared)
+  led_scaling_mode              VZM31SN / LZW31SN                    (shared)
+  increased_non_neutral_output  Low / High                           (shared)
+  switch_type                   Single Pole / Three Way AUX
+  light_on_presence_behavior    Disabled / On When Occupied Off When Unoccupied /
+                                Off When Vacant / On When Occupied /
+                                On When Vacant Off When Occupied / On When Vacant /
+                                Off When Occupied
+  mmwave_room_size_preset       Custom / X Small / Small / Medium / Large / X Large
+
+SENSOR ENTITIES (Cluster 0xFC31, diagnostic, shared):
+  internal_temp_monitor          °C (unique id "<ieee>-1-64561")
+  overheated                     Normal / Overheated
+
+NUMBER ENTITIES (Cluster 0xFC32):
   mmwave_height_minimum_floor          (−600 to +600 cm)  → Detection Area 0 Z min
   mmwave_height_maximum_ceiling        (−600 to +600 cm)  → Detection Area 0 Z max
   mmwave_width_minimum_left            (−600 to +600 cm)  → Detection Area 0 X min
   mmwave_width_maximum_right           (−600 to +600 cm)  → Detection Area 0 X max
   mmwave_depth_minimum_near            (0 to +600 cm)     → Detection Area 0 Y min
   mmwave_depth_maximum_far             (0 to +600 cm)     → Detection Area 0 Y max
-  mmwave_detect_sensitivity            (0–2)
-  mmwave_stay_life                     (0–4294967295 ms)
-  mmwave_detect_trigger                (0–2)
-  mmwave_hold_time                     (0–4294967295 ms)
+  mmwave_hold_time                     (0–4294967295 s)
+  mmwave_stay_life                     (0–4294967295, 50 ms steps)   (Visualizer)
+
+SELECT ENTITIES (Cluster 0xFC32):
+  mmwave_detect_sensitivity     Low / Medium / High
+  mmwave_detect_trigger         Low / Medium / Fast  ("mmWave target speed"; Low = 5 s)
+
+SWITCH ENTITIES (Cluster 0xFC32):
+  mmwave_target_info_report     Enable live mmWave target reports   (Visualizer)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SECTION 11 — IMPORTANT NOTES AND LIMITATIONS
