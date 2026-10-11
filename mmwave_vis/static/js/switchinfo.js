@@ -1,10 +1,18 @@
 // The selected switch's firmware, mmWave module version, Zigbee signal and
-// firmware updates (top of the Switch settings tab, and a line in the status popover).
+// firmware updates (top of the Config tab, and a line in the status popover).
 
 import { state, emit } from './state.js';
 import { $, h, setText, toast, copyText, shortDateTime } from './ui.js';
 
 const WEAK_LQI = 80;
+
+// Which ZHA quirk runs the switch (device_info.quirk_kind)
+const QUIRKS = {
+    visualizer: "The Visualizer's",
+    builtin: "Home Assistant's built-in",
+    custom: 'Another custom quirk',
+    none: 'None',
+};
 
 export function deviceInfoFromServer(info) {
     if (!info || info.topic !== state.device) return;
@@ -57,6 +65,10 @@ function render() {
         items.push(...row('Signal', h('span', { class: weak ? 'warn-text' : null }, signal)));
     }
     if (info.last_seen) items.push(...row('Last seen', shortDateTime(info.last_seen * 1000)));
+    if (state.stack === 'zha' && QUIRKS[info.quirk]) {
+        items.push(...row('ZHA quirk', h('span', { class: info.quirk === 'visualizer' ? null : 'warn-text', title: info.quirk_class || '' },
+            QUIRKS[info.quirk])));
+    }
     const up = info.update;
     if (up && up.latest) {
         items.push(...row('Update', up.in_progress ? 'Installing…'
@@ -73,6 +85,10 @@ function render() {
     const notes = [];
     if (info.link && info.link.lqi != null && info.link.lqi < WEAK_LQI) {
         notes.push(h('p', { class: 'hint' }, 'The Zigbee signal is weak, which can make tracking choppy. A mains-powered Zigbee device between the switch and your coordinator helps.'));
+    }
+    const unsupported = (info.unsupported_settings || []).length;
+    if (state.stack === 'zha' && unsupported) {
+        notes.push(h('p', { class: 'hint' }, `This switch's quirk doesn't have ${unsupported === 1 ? '1 setting' : `${unsupported} settings`}, so ${unsupported === 1 ? "it's" : "they're"} greyed out below.`));
     }
     if (!info.ha_available) {
         notes.push(h('p', { class: 'hint' }, 'Running without Home Assistant, so update and entity details aren\'t available.'));

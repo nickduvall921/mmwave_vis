@@ -331,3 +331,53 @@ def test_line_tap_never_raises():
     tap = logtap.LineTap(Broken(), __import__("collections").deque(), __import__("threading").Lock(), "err")
     assert tap.write("x\n") == 2
     tap.flush()
+
+
+# ---------------------------------------------------------------------------
+# Which ZHA quirk runs the switch
+# ---------------------------------------------------------------------------
+
+BUILTIN = "zhaquirks.inovelli.VZM32SN:(Inovelli / VZM32-SN)"
+CUSTOM = "inovelli.VZM32SN:(Inovelli / VZM32-SN)"
+
+
+@pytest.mark.parametrize("applied,cls,marker,kind", [
+    (True, CUSTOM, True, device_info.QUIRK_VISUALIZER),    # the marker entity decides
+    (True, BUILTIN, False, device_info.QUIRK_BUILTIN),
+    (True, BUILTIN, None, device_info.QUIRK_BUILTIN),      # no registry: the class still tells
+    (True, CUSTOM, False, device_info.QUIRK_CUSTOM),       # Inovelli's own, say
+    (False, None, False, device_info.QUIRK_NONE),
+    (True, CUSTOM, None, None),                            # can't tell without the registry
+    (None, None, None, None),
+])
+def test_quirk_kind(applied, cls, marker, kind):
+    assert device_info.quirk_kind(applied, cls, marker) == kind
+
+
+def test_unsupported_settings_lists_attributes_the_quirk_lacks():
+    import settings_catalog as sc
+    every = {}
+    for key in sc.zha_keys():
+        cluster, attr = sc.zha_address(key)
+        every.setdefault(cluster, set()).add(attr)
+    assert device_info.unsupported_settings(every) == []
+    assert device_info.unsupported_settings(None) == []      # unknown: nothing assumed missing
+    # An older Visualizer quirk without quick start
+    older = {c: set(ids) for c, ids in every.items()}
+    for key in ("quickStartTime", "quickStartLevel"):
+        cluster, attr = sc.zha_address(key)
+        older[cluster].discard(attr)
+    assert sorted(device_info.unsupported_settings(older)) == ["quickStartLevel", "quickStartTime"]
+    # A switch without the mmWave cluster: only FC31 is known
+    fc31 = {0xFC31: every[0xFC31]}
+    assert device_info.unsupported_settings(fc31) == []
+
+
+def test_apply_zha_quirk():
+    info = device_info.zha_info(IEEE_ZHA, {"quirk_applied": True, "quirk_class": BUILTIN})
+    device_info.apply_zha_quirk(info, {"quirk_applied": True, "quirk_class": BUILTIN}, None, {"occupancy": "binary_sensor.x"})
+    assert info["quirk"] == device_info.QUIRK_BUILTIN
+    assert info["quirk_class"] == BUILTIN
+    assert info["unsupported_settings"] == []
+    device_info.apply_zha_quirk(info, {"quirk_applied": True, "quirk_class": CUSTOM}, None, {"target_report": "switch.x"})
+    assert info["quirk"] == device_info.QUIRK_VISUALIZER

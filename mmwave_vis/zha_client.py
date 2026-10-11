@@ -30,6 +30,8 @@ from collections import deque
 
 from websockets.sync.client import connect as ws_connect
 
+import settings_catalog
+from device_info import quirk_kind, QUIRK_VISUALIZER, QUIRK_BUILTIN
 from ha_ws import entity_roles, rest_json
 from utils import layout_key
 
@@ -41,26 +43,8 @@ PACKET_RING = 150   # recent zha_events per switch, for the diagnostics file
 # Cluster / Manufacturer Constants
 # ---------------------------------------------------------------------------
 CLUSTER_MMWAVE = 64562   # 0xFC32 — mmWave presence cluster
-CLUSTER_DIMMER = 64561   # 0xFC31 — switch/dimmer cluster
 MANUFACTURER   = 4655    # 0x122F — Inovelli
 ENDPOINT       = 1
-
-# Attribute IDs on CLUSTER_MMWAVE (0xFC32)
-ATTR_HEIGHT_MIN         = 0x0065   # int16 cm — Detection Area 0 Z min
-ATTR_HEIGHT_MAX         = 0x0066   # int16 cm — Detection Area 0 Z max
-ATTR_WIDTH_MIN          = 0x0067   # int16 cm — Detection Area 0 X min
-ATTR_WIDTH_MAX          = 0x0068   # int16 cm — Detection Area 0 X max
-ATTR_DEPTH_MIN          = 0x0069   # int16 cm — Detection Area 0 Y min
-ATTR_DEPTH_MAX          = 0x006A   # int16 cm — Detection Area 0 Y max
-ATTR_TARGET_INFO_REPORT = 0x006B   # uint8  0/1
-ATTR_STAY_LIFE          = 0x006C   # uint32 ms
-ATTR_DETECT_SENSITIVITY = 0x0070   # uint8  0-2
-ATTR_DETECT_TRIGGER     = 0x0071   # uint8  0-2
-ATTR_HOLD_TIME          = 0x0072   # uint32 ms
-
-# Attribute IDs on CLUSTER_DIMMER (0xFC31)
-ATTR_ROOM_SIZE_PRESET   = 0x0075   # uint8 0-5
-ATTR_LIGHT_ON_PRESENCE  = 0x006E   # uint8 0-6 (wired device control)
 
 # Command IDs on CLUSTER_MMWAVE
 CMD_CONTROL    = 0x00   # mmwave_control_command  (control_id: uint8)
@@ -69,48 +53,21 @@ CMD_SET_DETECT = 0x02   # set_detection_area
 CMD_SET_STAY   = 0x03   # set_stay_area
 
 # ---------------------------------------------------------------------------
-# String ↔ integer lookup tables
-# Frontend uses Z2M-style display strings; ZHA attributes use integers.
+# Integer → display string, for HA entity states
+# The frontend uses Z2M-style display strings; ZHA attributes are integers. The
+# settings catalogue lists both (Trigger speed: 0 is the slowest, as in Z2M and
+# ZHA's built-in quirk; before 4.1 this table was reversed here).
 # ---------------------------------------------------------------------------
 
-SENSITIVITY_MAP = {
-    "Low":            0,
-    "Medium":         1,
-    "High (default)": 2,
-}
+def _reverse(key):
+    return {o["raw"]: o["value"] for o in settings_catalog.SETTINGS[key]["options"]}
 
-# 0 is the slowest: matches Zigbee2MQTT's converter and ZHA's built-in quirk
-# (InovelliMmwaveTargetSpeed: Low = 0, Medium = 1, Fast = 2). Before 4.1 this
-# table was reversed, so choosing Fast on ZHA set the switch to 5 s.
-TRIGGER_MAP = {
-    "Slow (5s)":            0,
-    "Medium (1s)":          1,
-    "Fast (0.2s, default)": 2,
-}
 
-ROOM_SIZE_MAP = {
-    "Custom": 0,
-    "Small":  1,
-    "Medium": 2,
-    "Large":  3,
-}
-
-WIRED_DEVICE_MAP = {
-    "Disabled":                    0,
-    "Occupancy (default)":         1,
-    "Vacancy":                     2,
-    "Wasteful Occupancy":          3,
-    "Mirrored Occupancy":          4,
-    "Mirrored Vacancy":            5,
-    "Mirrored Wasteful Occupancy": 6,
-}
-
-# Reverse maps for translating HA entity state integers back to frontend strings
-_REVERSE_SENSITIVITY  = {v: k for k, v in SENSITIVITY_MAP.items()}
-_REVERSE_TRIGGER      = {v: k for k, v in TRIGGER_MAP.items()}
-_REVERSE_ROOM_SIZE    = {v: k for k, v in ROOM_SIZE_MAP.items()}
-_REVERSE_WIRED_DEVICE = {v: k for k, v in WIRED_DEVICE_MAP.items()}
-_REVERSE_TARGET_INFO  = {0: "Disable (default)", 1: "Enable"}
+_REVERSE_SENSITIVITY  = _reverse("mmWaveDetectSensitivity")
+_REVERSE_TRIGGER      = _reverse("mmWaveDetectTrigger")
+_REVERSE_ROOM_SIZE    = _reverse("mmWaveRoomSizePreset")
+_REVERSE_WIRED_DEVICE = _reverse("mmwaveControlWiredDevice")
+_REVERSE_TARGET_INFO  = _reverse("mmWaveTargetInfoReport")
 
 # Entity suffix → (reverse_map | None, frontend_param_name)
 # Used by _sync_entity_states to translate /api/states into device_config emits.
@@ -123,6 +80,14 @@ _ENTITY_SUFFIX_MAP = {
     "mmwave_target_info_report":  (_REVERSE_TARGET_INFO,  "mmWaveTargetInfoReport"),
     "mmwave_room_size_preset":    (_REVERSE_ROOM_SIZE,    "mmWaveRoomSizePreset"),
     "light_on_presence_behavior": (_REVERSE_WIRED_DEVICE, "mmwaveControlWiredDevice"),
+}
+
+# entity_id endings that differ from the attribute name, for matching without the entity
+# registry: the quirk names these entities "mmWave sensitivity" and "mmWave target speed",
+# so Home Assistant makes "..._mmwave_sensitivity" and "..._mmwave_target_speed"
+_ENTITY_ID_ALIASES = {
+    "mmwave_sensitivity":  "mmwave_detect_sensitivity",
+    "mmwave_target_speed": "mmwave_detect_trigger",
 }
 
 
@@ -289,14 +254,19 @@ class ZHAClient:
         self.socketio.emit("zha_device_info", {
             "ieee":     ieee,
             "quirk_ok": dev.get("quirk_ok", True),
+            "quirk":    dev.get("quirk"),
         }, **emit_kwargs)
         self._emit_entity_states(ieee, sid)
 
         self.query_areas()
 
         # Start binding timeout — if no data arrives within the window,
-        # warn the user that the 0xFC32 binding may be missing.
-        self._start_binding_timer()
+        # warn the user that the 0xFC32 binding may be missing. Not when another
+        # quirk runs the switch: then that's why, and the quirk notice says so.
+        if dev.get("quirk_ok", True):
+            self._start_binding_timer()
+        else:
+            self._cancel_binding_timer()
 
     def query_areas(self):
         """Send control_id=2 to make the device report all zone configs."""
@@ -332,13 +302,13 @@ class ZHAClient:
         if action_id in (3, 4, 5):
             self._requery_soon()
 
-    def update_parameter(self, param: str, value):
+    def update_parameter(self, param: str, value) -> bool:
         """
         Translate a Z2M-style parameter write into the appropriate ZHA
-        cluster command or attribute write.
+        cluster command or attribute write. False if ZHA can't reach the setting.
         """
         if not self._ieee:
-            return
+            return False
 
         # Zone area writes → ZHA cluster commands
         if param == "mmwave_detection_areas":
@@ -351,42 +321,16 @@ class ZHAClient:
             self._write_zone_areas(CMD_SET_STAY, value)
             self._requery_soon()
 
-        # Enum attributes — convert display string → integer
-        elif param == "mmWaveDetectSensitivity":
-            self._write_enum_attr(ATTR_DETECT_SENSITIVITY, value, SENSITIVITY_MAP, param)
-        elif param == "mmWaveDetectTrigger":
-            self._write_enum_attr(ATTR_DETECT_TRIGGER, value, TRIGGER_MAP, param)
-        elif param == "mmWaveTargetInfoReport":
-            self._write_attr(ATTR_TARGET_INFO_REPORT, 1 if value == "Enable" else 0)
-        elif param == "mmWaveRoomSizePreset":
-            self._write_enum_attr(ATTR_ROOM_SIZE_PRESET, value, ROOM_SIZE_MAP, param,
-                                  cluster=CLUSTER_DIMMER)
-        elif param == "mmwaveControlWiredDevice":
-            self._write_enum_attr(ATTR_LIGHT_ON_PRESENCE, value, WIRED_DEVICE_MAP, param,
-                                  cluster=CLUSTER_DIMMER)
-
-        # Numeric attributes
-        elif param == "mmWaveHoldTime":
-            self._write_attr(ATTR_HOLD_TIME, int(value))
-        elif param == "mmWaveStayLife":
-            self._write_attr(ATTR_STAY_LIFE, int(value))
-
-        # Detection Area 0 individual axis attributes (legacy / convenience)
-        elif param == "mmWaveWidthMin":
-            self._write_attr(ATTR_WIDTH_MIN, int(value))
-        elif param == "mmWaveWidthMax":
-            self._write_attr(ATTR_WIDTH_MAX, int(value))
-        elif param == "mmWaveDepthMin":
-            self._write_attr(ATTR_DEPTH_MIN, int(value))
-        elif param == "mmWaveDepthMax":
-            self._write_attr(ATTR_DEPTH_MAX, int(value))
-        elif param == "mmWaveHeightMin":
-            self._write_attr(ATTR_HEIGHT_MIN, int(value))
-        elif param == "mmWaveHeightMax":
-            self._write_attr(ATTR_HEIGHT_MAX, int(value))
-
+        # Every other setting is an attribute in the settings catalogue, which turns the
+        # Z2M-style value (an enum label or a number) into the raw attribute value
         else:
-            log.debug(f"ZHA: unhandled parameter: {param}={value}")
+            address = settings_catalog.zha_address(param)
+            if address is None:
+                log.debug(f"ZHA: unhandled parameter: {param}={value}")
+                return False
+            cluster, attr = address
+            self._write_attr(attr, settings_catalog.to_raw(param, value), cluster=cluster)
+        return True
 
     def force_sync(self, sid=None):
         """
@@ -415,6 +359,7 @@ class ZHAClient:
         self.socketio.emit("zha_device_info", {
             "ieee":     self._ieee,
             "quirk_ok": dev.get("quirk_ok", True),
+            "quirk":    dev.get("quirk"),
         }, **emit_kwargs)
 
         # 3. Request fresh zone data from the device
@@ -696,15 +641,24 @@ class ZHAClient:
             entities = ent_registry.get(ha_device_id) if ha_device_id else None
             entity_ids = [e["entity_id"] for e in (entities or []) if e.get("entity_id")]
             roles = entity_roles(entities)
+            kind = quirk_kind(dev.get("quirk_applied"), dev.get("quirk_class"),
+                              self._has_visualizer_entity(entities))
             facts = {
-                "roles":       roles,
-                "sw_version":  reg_entry.get("sw_version") or dev.get("sw_version"),
-                "lqi":         dev.get("lqi"),
-                "rssi":        dev.get("rssi"),
-                "quirk_class": dev.get("quirk_class"),
+                "roles":            roles,
+                "sw_version":       reg_entry.get("sw_version") or dev.get("sw_version"),
+                "lqi":              dev.get("lqi"),
+                "rssi":             dev.get("rssi"),
+                "quirk_class":      dev.get("quirk_class"),
+                "quirk":            kind,
+                "setting_entities": self._setting_entities(entities),
             }
-            quirk_ok = self._check_quirk_ok(dev, entities)
-            if not quirk_ok:
+            # Unknown (no registry to look at): give the quirk the benefit of the doubt
+            quirk_ok = kind == QUIRK_VISUALIZER or (kind is None and self._check_quirk_ok(dev, entities))
+            if kind == QUIRK_BUILTIN:
+                print(f"ZHA: {ieee} runs ZHA's built-in VZM32-SN quirk. Its settings work, but it "
+                      "doesn't pass the radar's reports on: no live targets, area occupancy or "
+                      "zones. Install this repo's quirk for those; see ZHADOC.md.", flush=True)
+            elif not quirk_ok:
                 if self._legacy_quirk_ok(dev):
                     # Some quirk is applied / 0xFC32 is in the signature, but
                     # the Visualizer-only entity is missing — almost always the
@@ -1040,11 +994,10 @@ class ZHAClient:
         Read current HA entity states and emit the translated values as
         device_config so the sidebar dropdowns/sliders populate correctly.
 
-        We GET /api/states and match entities by entity_id suffix against
-        the known attribute names in _ENTITY_SUFFIX_MAP. Filtering by
-        device_id is not reliable (it's not exposed in /api/states attributes),
-        so we rely on suffix matching alone, which is sufficient since all
-        VZM32-SN entities have unique suffix names.
+        We GET /api/states and match this switch's entities to the attribute
+        names in _ENTITY_SUFFIX_MAP: by registry unique_id when discovery found
+        one (both this repo's quirk and ZHA's built-in one end it with the
+        attribute name), else by the entity_id's ending.
         """
         try:
             states = self._rest_get("/states")
@@ -1058,9 +1011,11 @@ class ZHAClient:
         # Only this switch's own entities: with two VZM32-SN switches the suffixes
         # match both, and the other switch's values would win half the time.
         own = None
+        by_entity = {}
         for dev in self.device_list.values():
             if ha_device_id and dev.get("ha_device_id") == ha_device_id and dev.get("entity_ids"):
                 own = set(dev["entity_ids"])
+                by_entity = dev.get("setting_entities") or {}
 
         config_payload = {}
         for state in states:
@@ -1071,12 +1026,18 @@ class ZHAClient:
             if raw_state in (None, "unavailable", "unknown"):
                 continue
 
-            for suffix, (reverse_map, param_name) in _ENTITY_SUFFIX_MAP.items():
-                if entity_id.endswith(f"_{suffix}"):
-                    translated = self._translate_state(raw_state, reverse_map)
-                    if translated is not None:
-                        config_payload[param_name] = translated
-                    break
+            # By unique_id when the registry gave one (works for any quirk and survives a
+            # renamed entity), else by the entity_id's ending (this repo's quirk)
+            suffix = by_entity.get(entity_id) or next(
+                (s for s in _ENTITY_SUFFIX_MAP if entity_id.endswith(f"_{s}")), None) or next(
+                (attr for alias, attr in _ENTITY_ID_ALIASES.items() if entity_id.endswith(f"_{alias}")), None)
+            if suffix is None:
+                continue
+            reverse_map, param_name = _ENTITY_SUFFIX_MAP[suffix]
+            options = (state.get("attributes") or {}).get("options")
+            translated = self._translate_state(raw_state, reverse_map, options)
+            if translated is not None:
+                config_payload[param_name] = translated
 
         if config_payload:
             payload = {"topic": self._topic, "payload": config_payload}
@@ -1084,6 +1045,22 @@ class ZHAClient:
                 self.socketio.emit("device_config", payload, to=sid)
             else:
                 self.socketio.emit("device_config", payload)
+
+    @staticmethod
+    def _setting_entities(entities: list | None) -> dict:
+        """entity_id → attribute name for the settings in _ENTITY_SUFFIX_MAP, from the
+        entity registry. Both quirks end the unique_id with the attribute name: this
+        repo's "<ieee>-1-mmwave_hold_time", ZHA's built-in "<ieee>-1-64562-mmwave_hold_time"."""
+        found = {}
+        for entry in entities or []:
+            if not isinstance(entry, dict) or not entry.get("entity_id"):
+                continue
+            uid = (entry.get("unique_id") or "").lower()
+            for name in _ENTITY_SUFFIX_MAP:
+                if uid.endswith(f"-{name}"):
+                    found[entry["entity_id"]] = name
+                    break
+        return found
 
     # Entity created only by the Visualizer quirk's 0xFC32 declarations.
     # Neither the official Inovelli quirk nor a quirk-less device has it,
@@ -1157,13 +1134,14 @@ class ZHAClient:
         return bool(dev.get("quirk_applied", False))
 
     @staticmethod
-    def _translate_state(raw_state: str, reverse_map: dict | None):
+    def _translate_state(raw_state: str, reverse_map: dict | None, options: list | None = None):
         """Convert a raw HA state string to the value the frontend expects.
 
         ZHA number entities return integer strings ("0", "1", ...).
-        ZHA select entities return display strings ("Disable (default)", "Enable", ...).
+        ZHA select entities return display strings ("Disable (default)", "Enable", ...),
+        or with ZHA's built-in quirk its own labels ("High", "X Small"), which are
+        matched by position in the entity's options.
         ZHA switch entities (the quirk's target info report) return "on" / "off".
-        All three are handled here.
         """
         if raw_state in ("on", "off") and reverse_map is _REVERSE_TARGET_INFO:
             raw_state = "1" if raw_state == "on" else "0"
@@ -1172,6 +1150,10 @@ class ZHAClient:
             # Check for an exact match among the known display values.
             if raw_state in reverse_map.values():
                 return raw_state
+            # ZHA lists an enum's options in definition order, and these enums count
+            # 0, 1, 2...: a label's position is its raw value
+            if isinstance(options, list) and raw_state in options and len(options) == len(reverse_map):
+                return reverse_map.get(options.index(raw_state))
         try:
             int_val = int(float(raw_state))
         except (ValueError, TypeError):
@@ -1216,15 +1198,6 @@ class ZHAClient:
             "value":        value,
             "manufacturer": MANUFACTURER,
         })
-
-    def _write_enum_attr(self, attr_id: int, value: str, lookup: dict,
-                         param_name: str, cluster: int = CLUSTER_MMWAVE):
-        """Convert a display string to int via lookup, then write the attribute."""
-        int_val = lookup.get(value)
-        if int_val is not None:
-            self._write_attr(attr_id, int_val, cluster=cluster)
-        else:
-            log.warning(f"ZHA: unknown value '{value}' for {param_name}")
 
     def _ws_call_service(self, domain: str, service: str, service_data: dict):
         """

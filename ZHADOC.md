@@ -32,10 +32,17 @@ Home Assistant 2026.8 added built-in ZHA support for the VZM32-SN, and the gener
 
 A quirk in `custom_quirks_path` takes priority over the built-in one, so you don't need to turn anything off: install this one as below and it wins. Details in [#54](https://github.com/nickduvall921/mmwave_vis/issues/54).
 
-Things to know when you switch quirks (either way):
+The addon tells you which quirk is running: the Config tab's switch details show it, and with any other quirk the page says so, links here and greys out what needs the radar reports (live targets, zones, the movement recorder, the tests and the heat map). The switch's settings still work with the built-in quirk, in the Detection and Config tabs, stay life included.
 
-- **Some entity IDs change.** The two quirks register entities differently, so after switching you'll see leftovers marked `restored: true` / unavailable and new entities with `_2` on the end. Delete the leftovers once nothing uses them, and check automations that used the old IDs.
-- **A few built-in entities go away.** These exist only with the built-in quirk: remote dimming speeds and ramp rates, remote and power-on default level, internal temperature, overheat, and switch type. Sensitivity, trigger speed and room preset are numbers here instead of selects.
+**Switching between the two quirks keeps your entities.** This quirk creates the same entities as the built-in one, with the same IDs, names and options, so entity IDs, history and automations carry over either way. It adds two of its own: *mmWave target info report* and *mmWave stay life*, which go unavailable if you switch back to the built-in quirk.
+
+#### Updating from an earlier version of this quirk
+
+Copies of this quirk from before the addon had a Config tab registered their entities differently. After updating, once:
+
+- **Most entity IDs change.** The settings come back as new entities (sensitivity, trigger speed, room size, presence behaviour, output mode, LED scaling and non-neutral output are now dropdowns), and the old ones stay behind as `unavailable` / `restored: true`, many of them ending in `_2`. If you still have entities left over from before Home Assistant 2026.8 (without the `_2`), they come back to life with their old IDs. Update automations that used the `_2` IDs, then delete the unavailable leftovers.
+- **New entities:** remote dimming speeds and ramp rates, remote and power-on default level, switch type, internal temperature and overheat protection.
+- *mmWave target info report* and *mmWave stay life* keep their IDs, and the addon doesn't care either way.
 
 On Home Assistant 2026.7 or earlier, first install and test the official Inovelli quirk:
 https://help.inovelli.com/en/articles/13019007-blue-series-mmwave-presence-dimmer-switch-zha-custom-quirk-install
@@ -185,12 +192,11 @@ report attribute to be enabled. Work through these in order:
 4. **Still nothing?** Try removing and re-pairing the device so the bind is
    created fresh at interview time.
 
-> **Switched from the official Inovelli quirk?** Some entities are named
-> differently in this quirk (for example, sensitivity is a *number* here, not a
-> *select*). Entities created by the old quirk will be left behind as
-> `restored: true` / `unavailable` because nothing backs them anymore. Delete
-> those stale entities (or re-pair the device) — they are leftovers, not the
-> live entities this quirk creates.
+> **Switched from Inovelli's own custom quirk, or updated this one?** Entities
+> it created that this quirk doesn't are left behind as `restored: true` /
+> `unavailable` because nothing backs them anymore. Delete those stale entities
+> (or re-pair the device): they are leftovers, not the live entities this quirk
+> creates.
 
 ### "No token found" warning in the log
 
@@ -208,7 +214,11 @@ HA Core wasn't fully ready when the addon started. The addon will retry automati
 
 ### Settings (sensitivity, hold time, etc.) not showing correct values after selecting a device
 
-Click the **Sync** button. This triggers a fresh read of all settings from the device and populates the sidebar.
+Click the **Sync** button. This triggers a fresh read of the mmWave settings from the device. In the Config tab, **Refresh Values** reads every setting from the switch again.
+
+### Some settings are greyed out in the Config tab
+
+The quirk running the switch doesn't have them, so ZHA can't change them (it would accept the change and drop it). The switch details at the top of the Config tab say how many. With an older copy of this repo's quirk that's quick start time and brightness: copy the current `__init__.py` and `VZM32SN.py` over it, delete `__pycache__` and restart Home Assistant.
 
 ### Stay zone coordinates invert after being set
 

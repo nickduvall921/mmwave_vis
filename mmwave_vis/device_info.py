@@ -6,6 +6,50 @@ Both stacks end up in the same shape, built from whatever each one reports.
 import re
 from datetime import datetime
 
+import settings_catalog
+
+# Which ZHA quirk runs a switch. Only the Visualizer's passes the radar's reports
+# (targets, area occupancy, zones) on to Home Assistant; the others still let the
+# switch's settings be read and written, as far as they define them.
+QUIRK_VISUALIZER = 'visualizer'   # this repo's quirk: has the "mmWave target info report" entity
+QUIRK_BUILTIN = 'builtin'         # ZHA's own (zha-quirks, Home Assistant 2026.8 and later)
+QUIRK_CUSTOM = 'custom'           # another quirk from custom_quirks_path, e.g. Inovelli's
+QUIRK_NONE = 'none'               # no quirk: the switch's own clusters aren't understood
+
+
+def quirk_kind(quirk_applied, quirk_class, has_marker):
+    """Which quirk runs a ZHA switch, or None if there's too little to tell.
+
+    quirk_class is ZHA's "<module>:<label>" for the quirk, e.g.
+    "zhaquirks.inovelli.VZM32SN:(Inovelli / VZM32-SN)" for the built-in one and
+    "inovelli.VZM32SN:(Inovelli / VZM32-SN)" for one from custom_quirks_path.
+    has_marker: whether the Visualizer-only entity exists (None: registry unknown).
+    """
+    if has_marker:
+        return QUIRK_VISUALIZER
+    if quirk_applied is False:
+        return QUIRK_NONE
+    if isinstance(quirk_class, str) and quirk_class.startswith('zhaquirks.'):
+        return QUIRK_BUILTIN
+    if quirk_applied and has_marker is False:
+        return QUIRK_CUSTOM
+    return None
+
+
+def unsupported_settings(defined):
+    """Catalogue settings ZHA can't change on this switch because its quirk doesn't
+    define their attribute. defined: {cluster id: attribute ids} as ZHA lists them,
+    or None when unknown (then nothing is assumed missing)."""
+    if not defined:
+        return []
+    missing = []
+    for key in settings_catalog.zha_keys():
+        cluster, attr = settings_catalog.zha_address(key)
+        ids = defined.get(cluster)
+        if ids is not None and attr not in ids:
+            missing.append(key)
+    return missing
+
 
 def format_ota(value):
     """An OTA file version (int, decimal string or hex string) as 0x01030102."""
@@ -64,6 +108,8 @@ def empty_info(stack, ieee=None):
         'link': {'lqi': None, 'rssi': None},
         'last_seen': None,
         'quirk_class': None,
+        'quirk': None,
+        'unsupported_settings': [],
         'update': None,
         'ha_device_id': None,
         'entities': {},
@@ -126,6 +172,15 @@ def z2m_info(ieee, bridge_entry=None, state=None, last_seen=None):
     info['mmwave_version'] = format_mmwave(state.get('mmWaveVersion'))
     info['link']['lqi'] = _int_or_none(state.get('linkquality'))
     info['last_seen'] = _epoch(state.get('last_seen')) or last_seen
+    return info
+
+
+def apply_zha_quirk(info, zha_dev, defined, roles):
+    """Which quirk runs the switch and which settings it can't change (after apply_registry)."""
+    zha_dev = zha_dev or {}
+    has_marker = ('target_report' in roles) if roles is not None else None
+    info['quirk'] = quirk_kind(zha_dev.get('quirk_applied'), zha_dev.get('quirk_class'), has_marker)
+    info['unsupported_settings'] = unsupported_settings(defined)
     return info
 
 

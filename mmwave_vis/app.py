@@ -20,6 +20,7 @@ Debug mode (debug: true in config):
 
 import json
 import os
+import queue
 import signal
 import sys
 import traceback
@@ -151,7 +152,6 @@ session_topics_lock = threading.Lock()
 # Parameter validation + parsing utilities  (shared by both stacks)
 # ---------------------------------------------------------------------------
 from utils import (
-    VALID_PARAMETERS, VALID_ZONE_KEYS, ZONE_COORD_RANGE,
     validate_parameter, safe_int, decode_raw_targets, decode_raw_zones,
     normalize_layout, layout_key, normalize_zone_names, is_fresh_target_frame, target_frame_mark,
 )
@@ -159,6 +159,7 @@ from layout_store import LayoutStore
 import device_info
 import diagnostics
 import ha_ws
+import settings_catalog
 from history import History
 
 layout_store = LayoutStore(os.path.join(DATA_DIR, 'layouts.json'))
@@ -348,7 +349,7 @@ class Z2MDriver:
         is_valid, error_msg = validate_parameter(param, value)
         if not is_valid:
             print(f"Parameter validation failed: {error_msg}", flush=True)
-            socketio.emit('command_error', {'error': error_msg}, to=sid)
+            socketio.emit('command_error', {'error': error_msg, 'param': param}, to=sid)
             return
 
         with self.device_list_lock:
@@ -381,6 +382,46 @@ class Z2MDriver:
             value = int(value)
         self._client.publish(f"{topic}/set", json.dumps({param: value}))
         socketio.emit('command_ack', {'param': param, 'status': 'sent'}, to=sid)
+
+    def update_parameters(self, sid, params):
+        """Settings the page queued and applied together, sent in one /set message.
+        Every error names the settings it's about, so the page can put them back."""
+        keys = list(params)
+        with session_topics_lock:
+            topic = session_topics.get(sid)
+        if not topic:
+            socketio.emit('command_error', {'error': 'No device selected', 'params': keys}, to=sid)
+            return
+        if not self.mqtt_connected:
+            socketio.emit('command_error', {'error': 'MQTT broker is not connected', 'params': keys}, to=sid)
+            return
+        payload, errors, bad = {}, [], []
+        for key, value in params.items():
+            is_valid, error_msg = (settings_catalog.validate(key, value, stack='z2m') if settings_catalog.setting(key)
+                                   else (False, f'Unknown setting: {key}'))
+            if not is_valid:
+                errors.append(error_msg)
+                bad.append(key)
+                continue
+            if isinstance(value, str) and value.lstrip('-').isnumeric():
+                value = int(value)
+            payload[key] = value
+        if bad:
+            print(f"Parameter validation failed: {'; '.join(errors)}", flush=True)
+            socketio.emit('command_error', {'error': ' '.join(errors), 'params': bad}, to=sid)
+        if payload:
+            self._client.publish(f"{topic}/set", json.dumps(payload))
+            socketio.emit('command_ack', {'params': list(payload), 'status': 'sent'}, to=sid)
+
+    def read_settings(self, sid, keys):
+        """Ask Zigbee2MQTT to read settings from the switch; they come back as state updates."""
+        with session_topics_lock:
+            topic = session_topics.get(sid)
+        if not topic or not self.mqtt_connected:
+            return
+        keys = [k for k in keys if settings_catalog.setting(k)]
+        if keys:
+            self._client.publish(f"{topic}/get", json.dumps({k: "" for k in keys}))
 
     def send_command(self, sid, cmd_action):
         with session_topics_lock:
@@ -779,6 +820,13 @@ class ZHADriver:
                               history_key=history_key)
         self._attrs = {}       # ieee → attributes read from the switch (cached; they're radio reads)
         self._attrs_lock = threading.Lock()
+        self._settings = {}    # ieee → {setting: (value, when read)} from the switch, for the Config tab
+        self._reading = {}     # ieee → settings being read now
+        self._again = {}       # ieee → {setting: topic} to read again when the read under way ends
+        self._unsupported = {} # ieee → settings the switch's quirk doesn't define
+        self._settings_lock = threading.Lock()
+        self._writes = queue.Queue()   # Applies waiting to be written, one after another in order
+        self._writer = None
 
     def start(self):
         self._zha.start()
@@ -789,16 +837,23 @@ class ZHADriver:
         return [dict(d) for d in list(self._zha.device_list.values())]
 
     def device_facts(self, topic, force=False):
-        """(ieee, zha/device info, attributes read from the switch) for device_info."""
+        """(ieee, zha/device info, attributes read from the switch, attributes its quirk
+        defines per cluster) for device_info."""
         ieee = self._topic_to_ieee(topic) if isinstance(topic, str) else None
         if not ieee or not HA_TOKEN:
-            return ieee, {}, {}
+            return ieee, {}, {}, None
         zha_dev = {}
+        defined = None
         with self._attrs_lock:
             attrs = None if force else self._attrs.get(ieee)
         try:
             with ha_ws.HAConnection(HA_TOKEN, HA_WS_URL) as ha:
                 zha_dev = ha.request('zha/device', ieee=ieee) or {}
+                defined = self._defined_attributes(ha, ieee)
+                if defined is not None:
+                    unsupported = set(device_info.unsupported_settings(defined))
+                    with self._settings_lock:
+                        self._unsupported[ieee] = unsupported
                 if attrs is None:
                     attrs = {}
                     complete = True
@@ -825,7 +880,24 @@ class ZHADriver:
         dev = self._zha.device_list.get(ieee) or {}
         if not zha_dev.get('sw_version') and dev.get('sw_version'):
             zha_dev['sw_version'] = dev['sw_version']
-        return ieee, zha_dev, attrs or {}
+        return ieee, zha_dev, attrs or {}, defined
+
+    @staticmethod
+    def _defined_attributes(ha, ieee):
+        """{cluster id: attribute ids} the switch's quirk defines on the two Inovelli
+        clusters, from ZHA (no radio traffic). ZHA can only write those. None if unknown.
+        Not cached: installing another quirk and restarting HA changes it."""
+        defined = {}
+        for cluster in settings_catalog.CLUSTERS.values():
+            try:
+                # [{id, name}, ...]; empty when the switch has no such cluster
+                rows = ha.request('zha/devices/clusters/attributes', ieee=ieee, endpoint_id=1,
+                                  cluster_id=cluster, cluster_type='in')
+            except ha_ws.HAError as e:
+                print(f"ZHA: couldn't list the attributes of 0x{cluster:04X} on {ieee}: {e}", flush=True)
+                return None
+            defined[cluster] = {r.get('id') for r in rows or [] if isinstance(r, dict)}
+        return defined
 
     def diagnostics_parts(self, topic):
         ieee = self._topic_to_ieee(topic) if isinstance(topic, str) else None
@@ -844,26 +916,37 @@ class ZHADriver:
             session_topics[sid] = new_topic
         ieee = self._topic_to_ieee(new_topic)
         if ieee:
+            # Settings already read from this switch, so the Config tab fills in at once.
+            # First: set_device sends the live entity states, which are fresher.
+            now = time.monotonic()
+            with self._settings_lock:
+                # Not older ones: the switch may have been changed from elsewhere since
+                known = {k: v for k, (v, at) in (self._settings.get(ieee) or {}).items()
+                         if now - at < self.SETTINGS_KEEP_S}
+            if known:
+                socketio.emit('device_config', {'topic': new_topic, 'payload': known}, to=sid)
             self._zha.set_device(ieee, new_topic, sid=sid)
         else:
             print(f"ZHA: unknown topic {new_topic}", flush=True)
 
-    def _target_session_device(self, sid):
+    def _target_session_device(self, sid, params=None):
         """IEEE of the switch this browser has selected, made the monitored one.
 
         ZHAClient watches a single switch for every browser, and its writes go to
         that switch. If another browser has since selected a different one, point
         it back at this browser's switch so a command never lands on the wrong device.
-        Returns None (after telling the browser) when no known switch is selected.
+        Returns None (after telling the browser, naming `params` if given) when no
+        known switch is selected.
         """
+        extra = {'params': list(params)} if params else {}
         with session_topics_lock:
             topic = session_topics.get(sid)
         if not topic:
-            socketio.emit('command_error', {'error': 'No device selected'}, to=sid)
+            socketio.emit('command_error', {'error': 'No device selected', **extra}, to=sid)
             return None
         ieee = self._topic_to_ieee(topic)
         if not ieee or ieee not in self._zha.device_list:
-            socketio.emit('command_error', {'error': 'Device not found'}, to=sid)
+            socketio.emit('command_error', {'error': 'Device not found', **extra}, to=sid)
             return None
         if self._zha._ieee != ieee:
             self._zha.set_device(ieee, topic, sid=sid)
@@ -872,12 +955,215 @@ class ZHADriver:
     def update_parameter(self, sid, param, value):
         is_valid, error_msg = validate_parameter(param, value)
         if not is_valid:
-            socketio.emit('command_error', {'error': error_msg}, to=sid)
+            socketio.emit('command_error', {'error': error_msg, 'param': param}, to=sid)
             return
-        if not self._target_session_device(sid):
+        ieee = self._target_session_device(sid, [param])
+        if not ieee:
             return
-        self._zha.update_parameter(param, value)
+        if not self._zha.update_parameter(param, value):
+            socketio.emit('command_error', {'error': "That setting can't be changed through ZHA.", 'param': param}, to=sid)
+            return
         socketio.emit('command_ack', {'param': param, 'status': 'sent'}, to=sid)
+        # ZHA doesn't report the change back: read it from the switch once it has applied it
+        if settings_catalog.zha_address(param):
+            with session_topics_lock:
+                topic = session_topics.get(sid)
+            self._read_settings_later(ieee, topic, [param], self.CONFIRM_DELAY_S)
+
+    CONFIRM_DELAY_S = 1.5
+    SETTINGS_KEEP_S = 15 * 60   # how long a setting read from the switch is shown without reading it again
+
+    def update_parameters(self, sid, params):
+        """Settings the page queued and applied together. ZHA writes one attribute per
+        service call; then they're all read back in one go to confirm them. Every error
+        names the settings it's about, so the page can put them back."""
+        good, errors, bad = {}, [], []
+        for key, value in params.items():
+            is_valid, error_msg = (validate_parameter(key, value) if settings_catalog.setting(key)
+                                   else (False, f'Unknown setting: {key}'))
+            if is_valid:
+                good[key] = value
+            else:
+                errors.append(error_msg)
+                bad.append(key)
+        if good and not HA_TOKEN and self._zha._ws is None:
+            # ZHAClient drops what it can't send; say so now rather than "not confirmed" later
+            errors.append('Home Assistant is not connected, so nothing was sent.')
+            bad.extend(good)
+            good = {}
+        for key in [k for k in good if not settings_catalog.zha_address(k)]:
+            errors.append(f"{settings_catalog.setting(key)['title']} can't be changed through ZHA.")
+            bad.append(key)
+            del good[key]
+        if good:
+            ieee = self._target_session_device(sid, list(good))
+            if ieee:
+                with session_topics_lock:
+                    topic = session_topics.get(sid)
+                if HA_TOKEN:
+                    self._queue_write(sid, ieee, topic, good)
+                else:
+                    for key, value in good.items():
+                        self._zha.update_parameter(key, value)
+                    socketio.emit('command_ack', {'params': list(good), 'status': 'sent'}, to=sid)
+                    # Fire and forget: give the write a moment before reading it back
+                    self._read_settings_later(ieee, topic, list(good), self.CONFIRM_DELAY_S + 0.2 * len(good))
+        if bad:
+            socketio.emit('command_error', {'error': ' '.join(errors), 'params': bad}, to=sid)
+
+    def _queue_write(self, sid, ieee, topic, values):
+        """Write an Apply after the ones before it. One writer, so two Applies of the
+        same setting reach the switch in the order they were made."""
+        with self._settings_lock:
+            if self._writer is None:
+                self._writer = threading.Thread(target=self._write_loop, name="zha-settings-writer", daemon=True)
+                self._writer.start()
+        self._writes.put((sid, ieee, topic, values))
+
+    def _write_loop(self):
+        while True:
+            job = self._writes.get()
+            try:
+                self._write_settings(*job)
+            except Exception:
+                traceback.print_exc()
+
+    def _lacking(self, ha, ieee):
+        """Settings the switch's quirk doesn't define. device_info normally finds out;
+        if it hasn't yet, ask ZHA now (no radio traffic) on connection `ha`."""
+        with self._settings_lock:
+            known = self._unsupported.get(ieee)
+        if known is not None:
+            return known
+        defined = self._defined_attributes(ha, ieee)
+        if defined is None:
+            return set()
+        known = set(device_info.unsupported_settings(defined))
+        with self._settings_lock:
+            self._unsupported[ieee] = known
+        return known
+
+    def _write_settings(self, sid, ieee, topic, values):
+        """Write each setting and wait for ZHA to have sent it, then read them back:
+        ZHA doesn't report changes, and a read before the write has gone out would
+        return the old value. Anything not written is reported with its setting."""
+        written, refused, errors = [], [], []
+        try:
+            with ha_ws.HAConnection(HA_TOKEN, HA_WS_URL) as ha:
+                lacking = self._lacking(ha, ieee)
+                for key, value in values.items():
+                    title = settings_catalog.setting(key)['title']
+                    if key in lacking:
+                        # zigpy accepts a write to an attribute the quirk doesn't define and drops it
+                        refused.append(key)
+                        errors.append(f"The ZHA quirk running this switch can't change {title}.")
+                        continue
+                    try:
+                        settings_catalog.write_zha(ha.request, ieee, key, value)
+                    except ha_ws.HAConnectionError:
+                        raise
+                    except ha_ws.HAError as e:
+                        refused.append(key)
+                        errors.append(f"Couldn't change {title}: {e}")
+                        continue
+                    written.append(key)
+        except ha_ws.HAError as e:
+            # The connection failed: what wasn't written by then wasn't sent
+            lost = [k for k in values if k not in written and k not in refused]
+            if lost:
+                refused.extend(lost)
+                titles = ', '.join(settings_catalog.setting(k)['title'] for k in lost)
+                errors.append(f"Couldn't change {titles}: {e}")
+        if written:
+            socketio.emit('command_ack', {'params': written, 'status': 'sent'}, to=sid)
+        # Every one: a write the connection dropped during may still have reached the switch
+        self._read_settings_later(ieee, topic, list(values), 0.3)
+        if refused:
+            print(f"ZHA: writing {', '.join(refused)} to {ieee} failed: {' '.join(errors)}", flush=True)
+            socketio.emit('command_error', {'error': ' '.join(errors), 'params': refused}, to=sid)
+
+    def read_settings(self, sid, keys):
+        """Read settings from the switch for the Config tab, in the background."""
+        with session_topics_lock:
+            topic = session_topics.get(sid)
+        ieee = self._topic_to_ieee(topic) if topic else None
+        if ieee:
+            self._read_settings_later(ieee, topic, keys, 0)
+
+    def _read_settings_later(self, ieee, topic, keys, delay):
+        if not HA_TOKEN:
+            return
+        with self._settings_lock:
+            busy = self._reading.setdefault(ieee, set())
+            lacking = self._unsupported.get(ieee) or set()
+            # Not settings the quirk doesn't define: there's nothing ZHA can tell us
+            wanted = [k for k in settings_catalog.zha_keys(keys) if k not in lacking]
+            keys = [k for k in wanted if k not in busy]
+            # Settings a read under way already has: it may have read them before a write
+            # (or for a page that has since gone), so read them again once it's done
+            self._again.setdefault(ieee, {}).update({k: topic for k in wanted if k in busy})
+            busy.update(keys)
+        if keys:
+            timer = threading.Timer(delay, self._read_settings, args=(ieee, topic, keys))
+            timer.daemon = True
+            timer.start()
+
+    def _read_settings(self, ieee, topic, keys):
+        """Radio reads, one attribute each: values go to every page watching the switch
+        as they arrive, half a second's worth at a time."""
+        batch = {}
+        sent_at = time.monotonic()
+
+        def send():
+            nonlocal sent_at
+            if batch:
+                emit_to_topic_subscribers('device_config', {'topic': topic, 'payload': dict(batch)}, topic)
+                batch.clear()
+            sent_at = time.monotonic()
+
+        left = set(keys)
+
+        def done(key):
+            # Read (or not): another read of it can start
+            with self._settings_lock:
+                if key in left:
+                    left.discard(key)
+                    self._reading.get(ieee, set()).discard(key)
+
+        def got(key, value):
+            with self._settings_lock:
+                self._settings.setdefault(ieee, {})[key] = (value, time.monotonic())
+            done(key)
+            batch[key] = value
+            if time.monotonic() - sent_at >= 0.5:
+                send()
+
+        failed = list(keys)
+        try:
+            with ha_ws.HAConnection(HA_TOKEN, HA_WS_URL) as ha:
+                # Asked for before device_info found out what the quirk lacks: nothing to read
+                lacking = [k for k in keys if k in self._lacking(ha, ieee)]
+                for key in lacking:
+                    done(key)
+                readable = [k for k in keys if k not in lacking]
+                _, failed = settings_catalog.read_zha(ha.request, ieee, readable, on_value=got, on_failed=done)
+                failed = lacking + failed
+        except ha_ws.HAError as e:
+            print(f"ZHA: couldn't read settings from {ieee}: {e}", flush=True)
+        finally:
+            with self._settings_lock:
+                self._reading.get(ieee, set()).difference_update(left)
+                left.clear()
+                again = self._again.pop(ieee, {})
+        by_topic = {}
+        for key, again_topic in again.items():
+            by_topic.setdefault(again_topic, []).append(key)
+        for again_topic, again_keys in by_topic.items():
+            self._read_settings_later(ieee, again_topic, again_keys, 0.2)
+        send()
+        if failed:
+            print(f"ZHA: {len(failed)} setting(s) didn't answer on {ieee}: {', '.join(failed)}", flush=True)
+            emit_to_topic_subscribers('settings_unread', {'topic': topic, 'keys': failed}, topic)
 
     def send_command(self, sid, cmd_action):
         if not self._target_session_device(sid):
@@ -1037,7 +1323,7 @@ _device_info_cache = {}
 def build_device_info(topic, force=False):
     """Firmware, link quality, update and HA entities for one switch (slow: HA round trips)."""
     if ZIGBEE_STACK == 'zha':
-        ieee, zha_dev, attrs = driver.device_facts(topic, force)
+        ieee, zha_dev, attrs, defined = driver.device_facts(topic, force)
         info = device_info.zha_info(ieee, zha_dev, attrs)
     else:
         ieee, entry, facts, last_seen = driver.device_facts(topic)
@@ -1046,6 +1332,8 @@ def build_device_info(topic, force=False):
     update_entity = ((reg or {}).get('roles') or {}).get('update')
     update_state = ha_ws.rest_state(HA_TOKEN, update_entity) if update_entity else None
     device_info.apply_registry(info, reg, update_state)
+    if ZIGBEE_STACK == 'zha':
+        device_info.apply_zha_quirk(info, zha_dev, defined, (reg or {}).get('roles') if reg else None)
     info['topic'] = topic
     info['ha_available'] = bool(HA_TOKEN)
     info['ha_error'] = registry.error
@@ -1205,7 +1493,24 @@ def handle_save_layout(data):
 
 @socketio.on('update_parameter')
 def handle_update_parameter(data):
-    driver.update_parameter(request.sid, data.get('param'), data.get('value'))
+    if isinstance(data, dict):
+        driver.update_parameter(request.sid, data.get('param'), data.get('value'))
+
+
+@socketio.on('update_parameters')
+def handle_update_parameters(data):
+    """Several settings at once: the Config and Detection tabs' Apply."""
+    params = data.get('params') if isinstance(data, dict) else None
+    if isinstance(params, dict) and 0 < len(params) <= 200 and all(isinstance(k, str) for k in params):
+        driver.update_parameters(request.sid, params)
+
+
+@socketio.on('read_settings')
+def handle_read_settings(data):
+    """Read settings from the switch (the Config tab asks for the ones it hasn't got)."""
+    keys = data.get('keys') if isinstance(data, dict) else None
+    if isinstance(keys, list):
+        driver.read_settings(request.sid, [k for k in keys[:200] if isinstance(k, str)])
 
 
 @socketio.on('send_command')

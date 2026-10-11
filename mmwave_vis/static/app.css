@@ -16,6 +16,7 @@
     --accent-soft: rgba(3, 169, 244, 0.12);
     --ok: #4caf50;
     --warn: #f0a63a;
+    --warn-ink: #241500;
     --danger: #ef5350;
     --det: #4db6ac;
     --intf: #e5534b;
@@ -51,6 +52,7 @@
         --accent-soft: rgba(2, 136, 209, 0.1);
         --ok: #2e7d32;
         --warn: #b26a00;
+        --warn-ink: #ffffff;
         --danger: #c62828;
         --det: #00897b;
         --intf: #d32f2f;
@@ -115,7 +117,7 @@ body:not(.stack-zha) .zha-only { display: none !important; }
 .btn.recording { background: var(--danger); border-color: var(--danger); color: #fff; animation: rec-pulse 1.2s ease-in-out infinite; }
 @keyframes rec-pulse { 50% { opacity: 0.75; } }
 
-input[type="number"], input[type="text"], select {
+input[type="number"], input[type="text"], input[type="search"], select {
     height: 32px; padding: 0 8px;
     background: var(--raised); color: var(--text);
     border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
@@ -573,6 +575,92 @@ button.event-row:hover { background: var(--hover); }
 .event-row:hover .go, .event-row:focus-visible .go, .event-row.active .go { opacity: 1; }
 .event-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+/* --- Config tab ------------------------------------------------------------- */
+
+.cfg-top { padding-top: 10px; }
+.cfg-tools { display: flex; align-items: center; gap: 6px; }
+.cfg-tools input[type="search"] { flex: 1; min-width: 0; }
+.cfg-top .check { margin-top: 4px; }
+.cfg-top .empty-line { margin: 8px 0 0; }
+.cfg-top .empty-line:empty { display: none; }
+.cfg-group > summary .count { color: var(--accent); font-weight: 400; font-size: 12px; margin-left: 8px; }
+.cfg-group-help { font-size: 12.5px; color: var(--text-3); line-height: 1.5; margin: 0 0 8px; }
+.cfg-sub { font-size: 12px; font-weight: 500; color: var(--text-2); margin: 12px 0 2px; }
+.cfg-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 40px; font-size: 13.5px; }
+.cfg-row .label-info { position: relative; }
+.cfg-row .label-info label { overflow-wrap: anywhere; }
+.cfg-mark { width: 6px; height: 6px; border-radius: 50%; flex: none; margin-right: 6px; background: transparent; }
+.cfg-mark.on { background: var(--accent); }
+.cfg-mark.queued { background: var(--warn); }
+.cfg-value { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; padding: 4px 0; }
+.cfg-control { display: flex; align-items: center; gap: 8px; }
+.cfg-control select, .cfg-control input[type="number"] { width: 168px; }
+.cfg-readonly { font-size: 13.5px; color: var(--text-2); }
+.cfg-note { font-size: 12px; color: var(--text-3); min-height: 0; text-align: right; }
+.cfg-note:empty { display: none; }
+.cfg-note[data-tone="busy"] { color: var(--text-2); }
+.cfg-note[data-tone="good"] { color: var(--ok); }
+.cfg-note[data-tone="bad"] { color: var(--warn); }
+.cfg-note[data-tone="queued"] { color: var(--warn); }
+.cfg-group > summary .queued-count { color: var(--warn); }
+.cfg-row.cfg-off .label-info, .cfg-row.cfg-off .cfg-control { opacity: 0.5; }
+.queue-line { display: flex; align-items: center; gap: 6px; }
+.queue-line .status-line { margin: 4px 0 0; }
+.cfg-row + .info-panel { margin: 0 0 8px; }
+.cfg-meta { color: var(--text-3); font-size: 12px; }
+.cfg-meta .btn.link { height: auto; padding: 0; margin-left: 2px; font-size: 12px; }
+.cfg-swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line-strong); flex: none; }
+.cfg-swatch.follows { background: repeating-linear-gradient(45deg, var(--text-3) 0 2px, transparent 2px 5px) !important; }
+input[type="range"].hue-range {
+    -webkit-appearance: none; appearance: none; width: 168px; height: 10px; border-radius: 5px; margin: 0; cursor: pointer;
+    background: linear-gradient(90deg, hsl(0 95% 55%), hsl(60 95% 55%), hsl(120 95% 55%), hsl(180 95% 55%), hsl(240 95% 55%), hsl(300 95% 55%), hsl(358 95% 55%) 99%, #fff 99%);
+}
+input[type="range"].hue-range::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--surface); border: 2px solid var(--text); }
+input[type="range"].hue-range::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--surface); border: 2px solid var(--text); }
+
+/* --- Changes waiting for Apply (Config and Detection) ------------------------ */
+
+.btn.apply-btn.has-queue {
+    background: var(--warn); border-color: var(--warn); color: var(--warn-ink); font-weight: 500;
+    animation: apply-glow 1.8s ease-in-out infinite;
+}
+.btn.apply-btn.has-queue:hover { filter: brightness(1.08); background: var(--warn); }
+@keyframes apply-glow {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 50%, transparent); }
+    50% { box-shadow: 0 0 12px 2px color-mix(in srgb, var(--warn) 55%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .btn.apply-btn.has-queue { animation: none; box-shadow: 0 0 8px 1px color-mix(in srgb, var(--warn) 50%, transparent); }
+}
+.status-line[data-tone="queued"] { color: var(--warn); }
+.status-line[data-tone="good"] { color: var(--ok); }
+.apply-bar { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding-top: 10px; }
+.apply-bar .status-line { margin: 0; }
+.apply-row {
+    display: flex; align-items: center; gap: 6px; margin-top: 10px; padding: 6px 6px 6px 12px;
+    border-radius: var(--radius-sm); font-size: 12.5px; color: var(--warn);
+    background: color-mix(in srgb, var(--warn) 9%, transparent);
+}
+.apply-row .grow, .apply-bar .grow, .queue-line .grow { flex: 1; min-width: 0; }
+/* Detection: an orange dot in the margin beside a setting that's waiting */
+.field, .toggle-row { position: relative; }
+.field.queued::before, .toggle-row.queued::before {
+    content: ""; position: absolute; left: -11px; top: 50%; width: 6px; height: 6px; margin-top: -3px;
+    border-radius: 50%; background: var(--warn);
+}
+.field.wide.queued::before { top: 16px; }
+.field.queued select, .field.queued input { border-color: var(--warn); }
+
+/* --- Without the Visualizer's ZHA quirk ---------------------------------------- */
+
+.needs-radar-note { display: none; }
+body.no-radar .needs-radar-note {
+    display: block; margin: 10px 0 0; padding: 8px 12px; border-radius: var(--radius-sm); font-size: 12.5px; line-height: 1.5;
+    color: var(--text-2); background: color-mix(in srgb, var(--warn) 7%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+}
+body.no-radar [data-needs-radar] { opacity: 0.45; filter: grayscale(1); }
+
 /* --- Narrow screens --------------------------------------------------------- */
 
 @media (max-width: 900px) {
@@ -623,6 +711,16 @@ button.event-row:hover { background: var(--hover); }
     .event-row .go { opacity: 1; }
     .map.editing .tester-overlay { top: 10px; }
     input[type="datetime-local"] { font-size: 16px; height: 38px; }
+    input[type="search"] { font-size: 16px; height: 38px; }
+    .cfg-row { grid-template-columns: minmax(0, 1fr) 52%; }
+    .cfg-value { align-items: stretch; }
+    .cfg-control { justify-content: flex-end; }
+    .cfg-control select, .cfg-control input[type="number"], input[type="range"].hue-range { width: 100%; min-width: 0; }
+    .cfg-control input[type="checkbox"].switch { margin-left: auto; }
+    /* Search gets its own line; Refresh Values, Apply and the ⓘ go under it */
+    .cfg-tools { flex-wrap: wrap; }
+    .cfg-tools input[type="search"] { flex-basis: 100%; }
+    .cfg-tools #cfgApply { margin-left: auto; }
 }
 
 @media (max-width: 420px) {

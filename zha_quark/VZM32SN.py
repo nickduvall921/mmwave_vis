@@ -1,7 +1,32 @@
-"""VZM32-SN MMwave Switch/Dimmer Module with explicit entity declarations."""
+"""VZM32-SN mmWave Switch/Dimmer Module.
+
+The entities are the ones ZHA's built-in quirk for this switch creates (zhaquirks
+VZM32SN, Home Assistant 2026.8 and later): the same platforms, unique ids, names and
+options. So switching between the two quirks, either way, keeps every entity with its
+entity id, history and the automations that use it. This quirk adds two entities of
+its own, the mmWave target info report switch and the mmWave stay life number, and
+passes the radar's reports on as zha_events (see __init__.py).
+
+Unique ids are "<ieee>-1-<cluster id>-<attribute>", as ZHA itself made them for
+Inovelli switches before the built-in quirks took over. How to get there depends on
+the zha library Home Assistant runs:
+
+- zha 2.1 and later (Home Assistant 2026.8+): a quirk entity's unique id is
+  "<ieee>-1-<suffix>", so the suffix carries the cluster id, as the built-in quirk does.
+- zha 1.4 to 2.0: the same, but ZHA still makes the entities shared by every Inovelli
+  switch itself, with exactly these unique ids. Declaring them again would clash, so
+  this quirk leaves them to ZHA and adds only the VZM32-SN's own.
+- zha 1.3 and earlier: ZHA puts the cluster id in a quirk entity's unique id itself,
+  so the suffix is the bare attribute name. ZHA makes the shared entities here too.
+"""
+import inspect
+import logging
+
+import zigpy.types as t
 from zigpy.profiles import zha
 from zigpy.quirks.v2 import QuirkBuilder, ReportingConfig
-from zigpy.quirks.v2.homeassistant import EntityType
+from zigpy.quirks.v2.homeassistant import EntityPlatform, EntityType, UnitOfTemperature
+from zigpy.quirks.v2.homeassistant.sensor import SensorDeviceClass, SensorStateClass
 
 from . import (
     INOVELLI_AUTOMATION_TRIGGERS,
@@ -9,408 +34,276 @@ from . import (
     InovelliVZM32SNMMWaveCluster,
 )
 
-# Cluster IDs
-VZM32SN_CLUSTER_ID = 0xFC31
-MMWAVE_CLUSTER_ID = 0xFC32
+_LOGGER = logging.getLogger(__name__)
 
-VZM32SN = (
+VZM32SN_CLUSTER_ID = 0xFC31   # 64561
+MMWAVE_CLUSTER_ID = 0xFC32    # 64562
+
+
+def _zha_makes_shared_entities() -> bool:
+    """Whether this Home Assistant's ZHA makes the shared Inovelli entities itself
+    (zha 2.0 and earlier). If it can't be told, assume it does: a missing entity is
+    better than two entities with one unique id."""
+    try:
+        from zha.application.platforms import number as zha_number
+    except Exception as e:  # noqa: BLE001
+        _LOGGER.warning(
+            "VZM32-SN quirk: couldn't tell whether ZHA makes the Inovelli settings entities "
+            "itself (%r), so it leaves them out; if they're missing, report this to "
+            "nickduvall921/mmwave_vis", e)
+        return True
+    return hasattr(zha_number, "InovelliRemoteDimmingUpSpeed")
+
+
+def _zha_adds_cluster_id() -> bool:
+    """Whether ZHA puts the cluster id in a quirk entity's unique id itself (zha 1.3
+    and earlier, where entities are built from cluster handlers)."""
+    try:
+        from zha.application.platforms import PlatformEntity
+        return "cluster_handlers" in inspect.signature(PlatformEntity.__init__).parameters
+    except Exception as e:  # noqa: BLE001
+        _LOGGER.warning("VZM32-SN quirk: couldn't tell how ZHA builds entity unique ids (%r); "
+                        "assuming Home Assistant 2026.8 or later", e)
+        return False
+
+
+ZHA_MAKES_SHARED_ENTITIES = _zha_makes_shared_entities()
+ZHA_ADDS_CLUSTER_ID = _zha_adds_cluster_id()
+
+
+def _suffix(attribute_name, cluster_id=VZM32SN_CLUSTER_ID):
+    """The unique_id suffix that gives "<ieee>-1-<cluster id>[-<attribute>]"."""
+    if ZHA_ADDS_CLUSTER_ID:
+        return attribute_name
+    return f"{cluster_id}" if attribute_name is None else f"{cluster_id}-{attribute_name}"
+
+
+# --- Options of the select entities, named as in the built-in quirk --------------------
+
+class InovelliOutputMode(t.enum1):
+    """Inovelli output mode."""
+
+    Dimmer = 0x00
+    OnOff = 0x01
+
+
+class InovelliLedScalingMode(t.enum1):
+    """Inovelli led mode."""
+
+    VZM31SN = 0x00
+    LZW31SN = 0x01
+
+
+class InovelliNonNeutralOutput(t.enum1):
+    """Inovelli non neutral output selection."""
+
+    Low = 0x00
+    High = 0x01
+
+
+class InovelliOverheatedState(t.enum8):
+    """Inovelli overheat protection state."""
+
+    Normal = 0x00
+    Overheated = 0x01
+
+
+class InovelliVZM32SwitchType(t.enum8):
+    """Inovelli VZM32-SN switch type."""
+
+    Single_Pole = 0x00
+    Three_Way_AUX = 0x01
+
+
+class InovelliLightOnPresenceBehavior(t.enum8):
+    """Inovelli light on presence behavior."""
+
+    Disabled = 0x00
+    On_When_Occupied_Off_When_Unoccupied = 0x01
+    Off_When_Vacant = 0x02
+    On_When_Occupied = 0x03
+    On_When_Vacant_Off_When_Occupied = 0x04
+    On_When_Vacant = 0x05
+    Off_When_Occupied = 0x06
+
+
+class InovelliMmwaveRoomSizePreset(t.enum8):
+    """Inovelli mmWave room size preset."""
+
+    Custom = 0x00
+    X_Small = 0x01
+    Small = 0x02
+    Medium = 0x03
+    Large = 0x04
+    X_Large = 0x05
+
+
+class InovelliMmwaveSensitivity(t.enum8):
+    """Inovelli mmWave detection sensitivity."""
+
+    Low = 0x00
+    Medium = 0x01
+    High = 0x02
+
+
+class InovelliMmwaveTargetSpeed(t.enum8):
+    """Inovelli mmWave target speed."""
+
+    Low = 0x00
+    Medium = 0x01
+    Fast = 0x02
+
+
+# --- Entity helpers, made as the built-in quirk's InovelliQuirkBuilder makes them -------
+
+def _number(builder, attribute_name, min_value, max_value, fallback_name, cluster_id=VZM32SN_CLUSTER_ID):
+    return builder.number(
+        attribute_name=attribute_name,
+        cluster_id=cluster_id,
+        endpoint_id=1,
+        min_value=min_value,
+        max_value=max_value,
+        unique_id_suffix=_suffix(attribute_name, cluster_id),
+        translation_key=attribute_name,
+        fallback_name=fallback_name,
+    )
+
+
+def _switch(builder, attribute_name, fallback_name, translation_key=None, cluster_id=VZM32SN_CLUSTER_ID):
+    return builder.switch(
+        attribute_name=attribute_name,
+        cluster_id=cluster_id,
+        endpoint_id=1,
+        unique_id_suffix=_suffix(attribute_name, cluster_id),
+        translation_key=translation_key or attribute_name,
+        fallback_name=fallback_name,
+    )
+
+
+def _select(builder, attribute_name, enum_class, fallback_name, cluster_id=VZM32SN_CLUSTER_ID):
+    return builder.enum(
+        attribute_name=attribute_name,
+        enum_class=enum_class,
+        cluster_id=cluster_id,
+        endpoint_id=1,
+        unique_id_suffix=_suffix(attribute_name, cluster_id),
+        translation_key=attribute_name,
+        fallback_name=fallback_name,
+    )
+
+
+# Entities every Inovelli switch shares on 0xFC31. ZHA made these itself before
+# Home Assistant 2026.8, with the same unique ids.
+SHARED_NUMBERS = (
+    ("dimming_speed_up_remote", 0, 126, "Remote dimming up speed"),
+    ("dimming_speed_up_local", 0, 127, "Local dimming up speed"),
+    ("dimming_speed_down_remote", 0, 127, "Remote dimming down speed"),
+    ("dimming_speed_down_local", 0, 127, "Local dimming down speed"),
+    ("ramp_rate_off_to_on_remote", 0, 127, "Remote ramp rate off to on"),
+    ("ramp_rate_off_to_on_local", 0, 127, "Local ramp rate off to on"),
+    ("ramp_rate_on_to_off_remote", 0, 127, "Remote ramp rate on to off"),
+    ("ramp_rate_on_to_off_local", 0, 127, "Local ramp rate on to off"),
+    ("button_delay", 0, 9, "Button delay"),
+    ("minimum_level", 1, 254, "Minimum load dimming level"),
+    ("maximum_level", 2, 255, "Maximum load dimming level"),
+    ("auto_off_timer", 0, 32767, "Automatic switch shutoff timer"),
+    ("default_level_local", 0, 255, "Local default dimming level"),
+    ("default_level_remote", 0, 255, "Remote default dimming level"),
+    ("state_after_power_restored", 0, 255, "Start-up default dimming level"),
+    ("load_level_indicator_timeout", 0, 11, "Load level indicator timeout"),
+    ("led_color_when_on", 0, 255, "Default all LED on color"),
+    ("led_color_when_off", 0, 255, "Default all LED off color"),
+    ("led_intensity_when_on", 0, 100, "Default all LED on intensity"),
+    ("led_intensity_when_off", 0, 100, "Default all LED off intensity"),
+    ("double_tap_up_level", 2, 254, "Double tap up level"),
+    ("double_tap_down_level", 0, 254, "Double tap down level"),
+)
+SHARED_SWITCHES = (
+    ("invert_switch", "Invert switch", None),
+    ("smart_bulb_mode", "Smart bulb mode", None),
+    ("double_tap_up_enabled", "Double tap up enabled", None),
+    ("double_tap_down_enabled", "Double tap down enabled", None),
+    ("aux_switch_scenes", "Aux switch scenes", None),
+    ("binding_off_to_on_sync_level", "Binding off to on sync level", None),
+    ("local_protection", "Local protection", None),
+    ("on_off_led_mode", "Only 1 LED mode", "one_led_mode"),
+    ("firmware_progress_led", "Firmware progress LED", None),
+    ("disable_clear_notifications_double_tap", "Disable config 2x tap to clear notifications", None),
+)
+SHARED_SELECTS = (
+    ("output_mode", InovelliOutputMode, "Output mode"),
+    ("led_scaling_mode", InovelliLedScalingMode, "LED scaling mode"),
+    ("increased_non_neutral_output", InovelliNonNeutralOutput, "Increased non-neutral output"),
+)
+MMWAVE_NUMBERS = (
+    ("mmwave_height_minimum_floor", -600, 600, "mmWave height minimum (floor)"),
+    ("mmwave_height_maximum_ceiling", -600, 600, "mmWave height maximum (ceiling)"),
+    ("mmwave_width_minimum_left", -600, 600, "mmWave width minimum (left)"),
+    ("mmwave_width_maximum_right", -600, 600, "mmWave width maximum (right)"),
+    ("mmwave_depth_minimum_near", 0, 600, "mmWave depth minimum (near)"),
+    ("mmwave_depth_maximum_far", 0, 600, "mmWave depth maximum (far)"),
+    ("mmwave_hold_time", 0, 4294967295, "mmWave hold time"),
+)
+
+
+builder = (
     QuirkBuilder("Inovelli", "VZM32-SN")
     .replaces_endpoint(1, device_type=zha.DeviceType.DIMMABLE_LIGHT)
     .replace_cluster_occurrences(InovelliVZM32SNMMWaveCluster)
     .replace_cluster_occurrences(InovelliVZM32SNCluster)
     .device_automation_triggers(INOVELLI_AUTOMATION_TRIGGERS)
-    # Number entities for VZM32SN cluster
-    .number(
-        "dimming_speed_up_local",
-        VZM32SN_CLUSTER_ID,
-        min_value=0,
-        max_value=127,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="dimming_speed_up_local",
-        fallback_name="Local dimming up speed",
+)
+
+if not ZHA_MAKES_SHARED_ENTITIES:
+    for name, low, high, label in SHARED_NUMBERS:
+        builder = _number(builder, name, low, high, label)
+    for name, label, key in SHARED_SWITCHES:
+        builder = _switch(builder, name, label, translation_key=key)
+    for name, enum_class, label in SHARED_SELECTS:
+        builder = _select(builder, name, enum_class, label)
+    builder = builder.sensor(
+        attribute_name="internal_temp_monitor",
+        cluster_id=VZM32SN_CLUSTER_ID,
+        endpoint_id=1,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        unit=UnitOfTemperature.CELSIUS,
+        entity_type=EntityType.DIAGNOSTIC,
+        unique_id_suffix=_suffix(None),
+        translation_key="internal_temp_monitor",
+        fallback_name="Internal temperature",
     )
-    .number(
-        "ramp_rate_off_to_on_local",
-        VZM32SN_CLUSTER_ID,
-        min_value=0,
-        max_value=127,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="ramp_rate_off_to_on_local",
-        fallback_name="Local ramp rate off to on",
+    builder = builder.enum(
+        attribute_name="overheated",
+        enum_class=InovelliOverheatedState,
+        cluster_id=VZM32SN_CLUSTER_ID,
+        endpoint_id=1,
+        entity_platform=EntityPlatform.SENSOR,
+        entity_type=EntityType.DIAGNOSTIC,
+        unique_id_suffix=_suffix("overheated"),
+        translation_key="overheated",
+        fallback_name="Overheat protection",
     )
-    .number(
-        "dimming_speed_down_local",
-        VZM32SN_CLUSTER_ID,
-        min_value=0,
-        max_value=127,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="dimming_speed_down_local",
-        fallback_name="Local dimming down speed",
-    )
-    .number(
-        "ramp_rate_on_to_off_local",
-        VZM32SN_CLUSTER_ID,
-        min_value=0,
-        max_value=127,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="ramp_rate_on_to_off_local",
-        fallback_name="Local ramp rate on to off",
-    )
-    .number(
-        "default_level_local",
-        VZM32SN_CLUSTER_ID,
-        min_value=0,
-        max_value=255,  # 255 = return to the level used before turning off
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="default_level_local",
-        fallback_name="Local default dimming level",
-    )
-    .number(
-        "load_level_indicator_timeout",
-        VZM32SN_CLUSTER_ID,
-        min_value=0,
-        max_value=11,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="load_level_indicator_timeout",
-        fallback_name="Load level indicator timeout",
-    )
-    .number(
-        "button_delay",
-        VZM32SN_CLUSTER_ID,
-        min_value=0,
-        max_value=9,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="button_delay",
-        fallback_name="Button delay",
-    )
-    .number(
-        "double_tap_up_level",
-        VZM32SN_CLUSTER_ID,
-        min_value=2,
-        max_value=255,  # 255 = send an ON command instead of a level
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="double_tap_up_level",
-        fallback_name="Double tap up level",
-    )
-    .number(
-        "double_tap_down_level",
-        VZM32SN_CLUSTER_ID,
-        min_value=0,
-        max_value=255,  # 255 = send an OFF command instead of a level
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="double_tap_down_level",
-        fallback_name="Double tap down level",
-    )
-    # LED color and intensity sliders
-    .number(
-        "led_color_when_on",
-        VZM32SN_CLUSTER_ID,
-        min_value=0,
-        max_value=255,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="led_color_when_on",
-        fallback_name="Default all LED on color",
-    )
-    .number(
-        "led_color_when_off",
-        VZM32SN_CLUSTER_ID,
-        min_value=0,
-        max_value=255,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="led_color_when_off",
-        fallback_name="Default all LED off color",
-    )
-    .number(
-        "led_intensity_when_on",
-        VZM32SN_CLUSTER_ID,
-        min_value=0,
-        max_value=100,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="led_intensity_when_on",
-        fallback_name="Default all LED on intensity",
-    )
-    .number(
-        "led_intensity_when_off",
-        VZM32SN_CLUSTER_ID,
-        min_value=0,
-        max_value=100,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="led_intensity_when_off",
-        fallback_name="Default all LED off intensity",
-    )
-    # Auto-off timer
-    .number(
-        "auto_off_timer",
-        VZM32SN_CLUSTER_ID,
-        min_value=0,
-        max_value=32767,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="auto_off_timer",
-        fallback_name="Automatic switch shutoff timer",
-    )
-    # Min/max levels
-    .number(
-        "minimum_level",
-        VZM32SN_CLUSTER_ID,
-        min_value=1,
-        max_value=254,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="minimum_level",
-        fallback_name="Minimum load dimming level",
-    )
-    .number(
-        "maximum_level",
-        VZM32SN_CLUSTER_ID,
-        min_value=2,
-        max_value=255,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="maximum_level",
-        fallback_name="Maximum load dimming level",
-    )
-    # MMWave room size preset
-    .number(
-        "mmwave_room_size_preset",
-        VZM32SN_CLUSTER_ID,
-        min_value=0,
-        max_value=3,  # 0=Custom, 1=Small, 2=Medium, 3=Large
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="mmwave_room_size_preset",
-        fallback_name="mmWave room size preset",
-    )
-    .number(
-        "light_on_presence_behavior",
-        VZM32SN_CLUSTER_ID,
-        min_value=0,
-        max_value=6,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="light_on_presence_behavior",
-        fallback_name="Light on presence behavior",
-    )
-    # Switch entities for VZM32SN cluster
-    .switch(
-        "invert_switch",
-        VZM32SN_CLUSTER_ID,
-        off_value=0,
-        on_value=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="invert_switch",
-        fallback_name="Invert switch",
-    )
-    .switch(
-        "smart_bulb_mode",
-        VZM32SN_CLUSTER_ID,
-        off_value=0,
-        on_value=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="smart_bulb_mode",
-        fallback_name="Smart bulb mode",
-    )
-    .switch(
-        "double_tap_up_enabled",
-        VZM32SN_CLUSTER_ID,
-        off_value=0,
-        on_value=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="double_tap_up_enabled",
-        fallback_name="Double tap up enabled",
-    )
-    .switch(
-        "double_tap_down_enabled",
-        VZM32SN_CLUSTER_ID,
-        off_value=0,
-        on_value=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="double_tap_down_enabled",
-        fallback_name="Double tap down enabled",
-    )
-    .switch(
-        "aux_switch_scenes",
-        VZM32SN_CLUSTER_ID,
-        off_value=0,
-        on_value=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="aux_switch_scenes",
-        fallback_name="Aux switch scenes",
-    )
-    .switch(
-        "binding_off_to_on_sync_level",
-        VZM32SN_CLUSTER_ID,
-        off_value=0,
-        on_value=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="binding_off_to_on_sync_level",
-        fallback_name="Binding off to on sync level",
-    )
-    .switch(
-        "local_protection",
-        VZM32SN_CLUSTER_ID,
-        off_value=0,
-        on_value=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="local_protection",
-        fallback_name="Local protection",
-    )
-    .switch(
-        "remote_protection",
-        VZM32SN_CLUSTER_ID,
-        off_value=0,
-        on_value=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="remote_protection",
-        fallback_name="Remote protection",
-    )
-    .switch(
-        "on_off_led_mode",
-        VZM32SN_CLUSTER_ID,
-        off_value=0,
-        on_value=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="on_off_led_mode",
-        fallback_name="Only 1 LED mode",
-    )
-    .switch(
-        "firmware_progress_led",
-        VZM32SN_CLUSTER_ID,
-        off_value=0,
-        on_value=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="firmware_progress_led",
-        fallback_name="Firmware progress LED",
-    )
-    .switch(
-        "relay_click_in_on_off_mode",
-        VZM32SN_CLUSTER_ID,
-        off_value=0,
-        on_value=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="relay_click_in_on_off_mode",
-        fallback_name="Disable relay click in on off mode",
-    )
-    .switch(
-        "disable_clear_notifications_double_tap",
-        VZM32SN_CLUSTER_ID,
-        off_value=0,
-        on_value=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="disable_clear_notifications_double_tap",
-        fallback_name="Disable config 2x tap to clear notifications",
-    )
-    .switch(
-        "output_mode",
-        VZM32SN_CLUSTER_ID,
-        off_value=0,  # Dimmer
-        on_value=1,   # OnOff
-        entity_type=EntityType.CONFIG,
-        translation_key="output_mode",
-        fallback_name="Output mode",
-    )
-    .switch(
-        "increased_non_neutral_output",
-        VZM32SN_CLUSTER_ID,
-        off_value=0,  # Low
-        on_value=1,   # High
-        entity_type=EntityType.CONFIG,
-        translation_key="increased_non_neutral_output",
-        fallback_name="Non neutral output",
-    )
-    .switch(
-        "led_scaling_mode",
-        VZM32SN_CLUSTER_ID,
-        off_value=0,  # VZM31SN
-        on_value=1,   # LZW31SN
-        entity_type=EntityType.CONFIG,
-        translation_key="led_scaling_mode",
-        fallback_name="Led scaling mode",
-    )
-    # MMWave cluster entities
-    .number(
-        "mmwave_height_minimum_floor",
-        MMWAVE_CLUSTER_ID,
-        min_value=-600,
-        max_value=600,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="mmwave_height_minimum_floor",
-        fallback_name="mmWave Height Minimum (Floor)",
-    )
-    .number(
-        "mmwave_height_maximum_ceiling",
-        MMWAVE_CLUSTER_ID,
-        min_value=-600,
-        max_value=600,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="mmwave_height_maximum_ceiling",
-        fallback_name="mmWave Height Maximum (Ceiling)",
-    )
-    .number(
-        "mmwave_width_minimum_left",
-        MMWAVE_CLUSTER_ID,
-        min_value=-600,
-        max_value=600,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="mmwave_width_minimum_left",
-        fallback_name="mmWave Width Minimum (Left)",
-    )
-    .number(
-        "mmwave_width_maximum_right",
-        MMWAVE_CLUSTER_ID,
-        min_value=-600,
-        max_value=600,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="mmwave_width_maximum_right",
-        fallback_name="mmWave Width Maximum (Right)",
-    )
-    .number(
-        "mmwave_depth_minimum_near",
-        MMWAVE_CLUSTER_ID,
-        min_value=0,
-        max_value=600,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="mmwave_depth_minimum_near",
-        fallback_name="mmWave Depth Minimum (Near)",
-    )
-    .number(
-        "mmwave_depth_maximum_far",
-        MMWAVE_CLUSTER_ID,
-        min_value=0,
-        max_value=600,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="mmwave_depth_maximum_far",
-        fallback_name="mmWave Depth Maximum (Far)",
-    )
-    .number(
-        "mmwave_detect_sensitivity",
-        MMWAVE_CLUSTER_ID,
-        min_value=0,
-        max_value=2,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="mmwave_detect_sensitivity",
-        fallback_name="mmWave detect sensitivity",
-    )
+
+# The VZM32-SN's own settings on 0xFC31
+builder = _switch(builder, "remote_protection", "Remote protection")
+builder = _select(builder, "switch_type", InovelliVZM32SwitchType, "Switch type")
+builder = _select(builder, "light_on_presence_behavior", InovelliLightOnPresenceBehavior,
+                  "Light on presence behavior")
+builder = _select(builder, "mmwave_room_size_preset", InovelliMmwaveRoomSizePreset, "mmWave room size preset")
+
+# The mmWave cluster (0xFC32)
+for name, low, high, label in MMWAVE_NUMBERS:
+    builder = _number(builder, name, low, high, label, cluster_id=MMWAVE_CLUSTER_ID)
+builder = _select(builder, "mmwave_detect_sensitivity", InovelliMmwaveSensitivity, "mmWave sensitivity",
+                  cluster_id=MMWAVE_CLUSTER_ID)
+builder = _select(builder, "mmwave_detect_trigger", InovelliMmwaveTargetSpeed, "mmWave target speed",
+                  cluster_id=MMWAVE_CLUSTER_ID)
+
+# This quirk's own two. Their unique ids stay as they've always been
+# ("<ieee>-1-mmwave_stay_life"), so the Visualizer and existing automations keep them.
+VZM32SN = (
+    builder
     .number(
         "mmwave_stay_life",
         MMWAVE_CLUSTER_ID,
@@ -421,29 +314,9 @@ VZM32SN = (
         translation_key="mmwave_stay_life",
         fallback_name="mmWave stay life",
     )
-    .number(
-        "mmwave_detect_trigger",
-        MMWAVE_CLUSTER_ID,
-        min_value=0,
-        max_value=2,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="mmwave_detect_trigger",
-        fallback_name="mmWave detect trigger",
-    )
-    .number(
-        "mmwave_hold_time",
-        MMWAVE_CLUSTER_ID,
-        min_value=0,
-        max_value=4294967295,
-        step=1,
-        entity_type=EntityType.CONFIG,
-        translation_key="mmwave_hold_time",
-        fallback_name="mmWave hold time",
-    )
-    # Enable live target position/area reports from the mmWave sensor (up to 1s interval)
-    # reporting_config causes ZHA to treat this cluster as reportable, which forces
-    # ClusterHandler.BIND = True and triggers the ZDP Bind_req during reconfigure.
+    # Live target position/area reports from the mmWave sensor (up to 1 s interval).
+    # reporting_config makes ZHA treat this cluster as reportable, which forces
+    # ClusterHandler.BIND = True and so a ZDP Bind_req during reconfigure.
     .switch(
         "mmwave_target_info_report",
         MMWAVE_CLUSTER_ID,

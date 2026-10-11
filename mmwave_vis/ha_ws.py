@@ -18,7 +18,12 @@ CACHE_TTL_S = 300
 
 
 class HAError(RuntimeError):
-    pass
+    """Home Assistant refused a command, or the connection to it failed."""
+
+
+class HAConnectionError(HAError):
+    """The connection itself failed (couldn't connect or authenticate, lost it, or HA
+    stopped answering): unlike a refused command, nothing more can be sent on it."""
 
 
 def ws_url(ha_url):
@@ -39,7 +44,7 @@ class HAConnection:
 
     def __enter__(self):
         if not self.token:
-            raise HAError("No Home Assistant token")
+            raise HAConnectionError("No Home Assistant token")
         try:
             # max_size=None: registry lists pass 1 MiB on big installs (issue #53)
             self._ctx = ws_connect(self.url, additional_headers={"Authorization": f"Bearer {self.token}"},
@@ -48,15 +53,15 @@ class HAConnection:
         except HAError:
             raise
         except Exception as e:
-            raise HAError(f"Couldn't reach Home Assistant ({e})") from None
+            raise HAConnectionError(f"Couldn't reach Home Assistant ({e})") from None
         try:
             msg = self._recv(time.time() + self.timeout)
             if msg.get("type") != "auth_required":
-                raise HAError(f"Unexpected first message from Home Assistant: {msg.get('type')}")
+                raise HAConnectionError(f"Unexpected first message from Home Assistant: {msg.get('type')}")
             self._ws.send(json.dumps({"type": "auth", "access_token": self.token}))
             msg = self._recv(time.time() + self.timeout)
             if msg.get("type") != "auth_ok":
-                raise HAError("Home Assistant rejected the addon's token")
+                raise HAConnectionError("Home Assistant rejected the addon's token")
         except BaseException:
             self.__exit__(None, None, None)
             raise
@@ -74,15 +79,15 @@ class HAConnection:
     def _recv(self, deadline):
         remaining = deadline - time.time()
         if remaining <= 0:
-            raise HAError("Timed out waiting for Home Assistant")
+            raise HAConnectionError("Timed out waiting for Home Assistant")
         try:
             return json.loads(self._ws.recv(timeout=remaining))
         except TimeoutError:
-            raise HAError("Timed out waiting for Home Assistant") from None
+            raise HAConnectionError("Timed out waiting for Home Assistant") from None
         except HAError:
             raise
         except Exception as e:
-            raise HAError(f"Lost the connection to Home Assistant ({e})") from None
+            raise HAConnectionError(f"Lost the connection to Home Assistant ({e})") from None
 
     def request(self, type_, **fields):
         """Send one command and return its result; raises HAError on failure."""
@@ -91,7 +96,7 @@ class HAConnection:
         try:
             self._ws.send(json.dumps({"id": req_id, "type": type_, **fields}))
         except Exception as e:
-            raise HAError(f"Lost the connection to Home Assistant ({e})") from None
+            raise HAConnectionError(f"Lost the connection to Home Assistant ({e})") from None
         deadline = time.time() + self.timeout
         while True:
             msg = self._recv(deadline)
