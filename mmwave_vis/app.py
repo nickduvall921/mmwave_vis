@@ -20,6 +20,7 @@ Debug mode (debug: true in config):
 
 import json
 import os
+import queue
 import signal
 import sys
 import traceback
@@ -822,8 +823,10 @@ class ZHADriver:
         self._settings = {}    # ieee → {setting: (value, when read)} from the switch, for the Config tab
         self._reading = {}     # ieee → settings being read now
         self._again = {}       # ieee → {setting: topic} to read again when the read under way ends
-        self._unsupported = {} # ieee → settings the switch's quirk doesn't define (from device_info)
+        self._unsupported = {} # ieee → settings the switch's quirk doesn't define
         self._settings_lock = threading.Lock()
+        self._writes = queue.Queue()   # Applies waiting to be written, one after another in order
+        self._writer = None
 
     def start(self):
         self._zha.start()
@@ -988,24 +991,17 @@ class ZHADriver:
             errors.append('Home Assistant is not connected, so nothing was sent.')
             bad.extend(good)
             good = {}
+        for key in [k for k in good if not settings_catalog.zha_address(k)]:
+            errors.append(f"{settings_catalog.setting(key)['title']} can't be changed through ZHA.")
+            bad.append(key)
+            del good[key]
         if good:
             ieee = self._target_session_device(sid, list(good))
-            with self._settings_lock:
-                lacking = self._unsupported.get(ieee) or set()
-            # zigpy accepts a write to an attribute the quirk doesn't define and drops it
-            for key in [k for k in good if k in lacking]:
-                errors.append(f"The ZHA quirk running this switch can't change {settings_catalog.setting(key)['title']}.")
-                bad.append(key)
-                del good[key]
-            for key in [k for k in good if not settings_catalog.zha_address(k)]:
-                errors.append(f"{settings_catalog.setting(key)['title']} can't be changed through ZHA.")
-                bad.append(key)
-                del good[key]
-            if ieee and good:
+            if ieee:
                 with session_topics_lock:
                     topic = session_topics.get(sid)
                 if HA_TOKEN:
-                    threading.Thread(target=self._write_settings, args=(sid, ieee, topic, good), daemon=True).start()
+                    self._queue_write(sid, ieee, topic, good)
                 else:
                     for key, value in good.items():
                         self._zha.update_parameter(key, value)
@@ -1015,33 +1011,76 @@ class ZHADriver:
         if bad:
             socketio.emit('command_error', {'error': ' '.join(errors), 'params': bad}, to=sid)
 
+    def _queue_write(self, sid, ieee, topic, values):
+        """Write an Apply after the ones before it. One writer, so two Applies of the
+        same setting reach the switch in the order they were made."""
+        with self._settings_lock:
+            if self._writer is None:
+                self._writer = threading.Thread(target=self._write_loop, name="zha-settings-writer", daemon=True)
+                self._writer.start()
+        self._writes.put((sid, ieee, topic, values))
+
+    def _write_loop(self):
+        while True:
+            job = self._writes.get()
+            try:
+                self._write_settings(*job)
+            except Exception:
+                traceback.print_exc()
+
+    def _lacking(self, ha, ieee):
+        """Settings the switch's quirk doesn't define. device_info normally finds out;
+        if it hasn't yet, ask ZHA now (no radio traffic) on connection `ha`."""
+        with self._settings_lock:
+            known = self._unsupported.get(ieee)
+        if known is not None:
+            return known
+        defined = self._defined_attributes(ha, ieee)
+        if defined is None:
+            return set()
+        known = set(device_info.unsupported_settings(defined))
+        with self._settings_lock:
+            self._unsupported[ieee] = known
+        return known
+
     def _write_settings(self, sid, ieee, topic, values):
-        """Write each setting and wait for ZHA to have sent it, then read them all back:
+        """Write each setting and wait for ZHA to have sent it, then read them back:
         ZHA doesn't report changes, and a read before the write has gone out would
-        return the old value. A write ZHA refuses is reported with its setting."""
-        failed, why = [], ''
+        return the old value. Anything not written is reported with its setting."""
+        written, refused, errors = [], [], []
         try:
             with ha_ws.HAConnection(HA_TOKEN, HA_WS_URL) as ha:
+                lacking = self._lacking(ha, ieee)
                 for key, value in values.items():
+                    title = settings_catalog.setting(key)['title']
+                    if key in lacking:
+                        # zigpy accepts a write to an attribute the quirk doesn't define and drops it
+                        refused.append(key)
+                        errors.append(f"The ZHA quirk running this switch can't change {title}.")
+                        continue
                     try:
                         settings_catalog.write_zha(ha.request, ieee, key, value)
+                    except ha_ws.HAConnectionError:
+                        raise
                     except ha_ws.HAError as e:
-                        if 'Lost the connection' in str(e) or 'timed out' in str(e).lower():
-                            raise
-                        failed.append(key)
-                        why = str(e)
+                        refused.append(key)
+                        errors.append(f"Couldn't change {title}: {e}")
+                        continue
+                    written.append(key)
         except ha_ws.HAError as e:
-            failed = [k for k in values if k not in failed] + failed
-            why = str(e)
-        sent = [k for k in values if k not in failed]
-        if sent:
-            socketio.emit('command_ack', {'params': sent, 'status': 'sent'}, to=sid)
-        # All of them: a write that timed out may still have reached the switch
+            # The connection failed: what wasn't written by then wasn't sent
+            lost = [k for k in values if k not in written and k not in refused]
+            if lost:
+                refused.extend(lost)
+                titles = ', '.join(settings_catalog.setting(k)['title'] for k in lost)
+                errors.append(f"Couldn't change {titles}: {e}")
+        if written:
+            socketio.emit('command_ack', {'params': written, 'status': 'sent'}, to=sid)
+        # Every one: a write the connection dropped during may still have reached the switch
         self._read_settings_later(ieee, topic, list(values), 0.3)
-        if failed:
-            print(f"ZHA: writing {', '.join(failed)} to {ieee} failed: {why}", flush=True)
-            titles = ', '.join(settings_catalog.setting(k)['title'] for k in failed)
-            socketio.emit('command_error', {'error': f"Couldn't change {titles}: {why}", 'params': failed}, to=sid)
+        if refused:
+            print(f"ZHA: writing {', '.join(refused)} to {ieee} failed: {' '.join(errors)}", flush=True)
+            socketio.emit('command_error', {'error': ' '.join(errors), 'params': refused}, to=sid)
 
     def read_settings(self, sid, keys):
         """Read settings from the switch for the Config tab, in the background."""
@@ -1102,7 +1141,13 @@ class ZHADriver:
         failed = list(keys)
         try:
             with ha_ws.HAConnection(HA_TOKEN, HA_WS_URL) as ha:
-                _, failed = settings_catalog.read_zha(ha.request, ieee, keys, on_value=got, on_failed=done)
+                # Asked for before device_info found out what the quirk lacks: nothing to read
+                lacking = [k for k in keys if k in self._lacking(ha, ieee)]
+                for key in lacking:
+                    done(key)
+                readable = [k for k in keys if k not in lacking]
+                _, failed = settings_catalog.read_zha(ha.request, ieee, readable, on_value=got, on_failed=done)
+                failed = lacking + failed
         except ha_ws.HAError as e:
             print(f"ZHA: couldn't read settings from {ieee}: {e}", flush=True)
         finally:

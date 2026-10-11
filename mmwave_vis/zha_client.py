@@ -82,6 +82,14 @@ _ENTITY_SUFFIX_MAP = {
     "light_on_presence_behavior": (_REVERSE_WIRED_DEVICE, "mmwaveControlWiredDevice"),
 }
 
+# entity_id endings that differ from the attribute name, for matching without the entity
+# registry: the quirk names these entities "mmWave sensitivity" and "mmWave target speed",
+# so Home Assistant makes "..._mmwave_sensitivity" and "..._mmwave_target_speed"
+_ENTITY_ID_ALIASES = {
+    "mmwave_sensitivity":  "mmwave_detect_sensitivity",
+    "mmwave_target_speed": "mmwave_detect_trigger",
+}
+
 
 # ---------------------------------------------------------------------------
 # Target accumulator
@@ -1021,7 +1029,8 @@ class ZHAClient:
             # By unique_id when the registry gave one (works for any quirk and survives a
             # renamed entity), else by the entity_id's ending (this repo's quirk)
             suffix = by_entity.get(entity_id) or next(
-                (s for s in _ENTITY_SUFFIX_MAP if entity_id.endswith(f"_{s}")), None)
+                (s for s in _ENTITY_SUFFIX_MAP if entity_id.endswith(f"_{s}")), None) or next(
+                (attr for alias, attr in _ENTITY_ID_ALIASES.items() if entity_id.endswith(f"_{alias}")), None)
             if suffix is None:
                 continue
             reverse_map, param_name = _ENTITY_SUFFIX_MAP[suffix]

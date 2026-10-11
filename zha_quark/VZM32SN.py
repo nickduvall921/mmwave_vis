@@ -20,6 +20,7 @@ the zha library Home Assistant runs:
   so the suffix is the bare attribute name. ZHA makes the shared entities here too.
 """
 import inspect
+import logging
 
 import zigpy.types as t
 from zigpy.profiles import zha
@@ -33,6 +34,8 @@ from . import (
     InovelliVZM32SNMMWaveCluster,
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 VZM32SN_CLUSTER_ID = 0xFC31   # 64561
 MMWAVE_CLUSTER_ID = 0xFC32    # 64562
 
@@ -43,7 +46,11 @@ def _zha_makes_shared_entities() -> bool:
     better than two entities with one unique id."""
     try:
         from zha.application.platforms import number as zha_number
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        _LOGGER.warning(
+            "VZM32-SN quirk: couldn't tell whether ZHA makes the Inovelli settings entities "
+            "itself (%r), so it leaves them out; if they're missing, report this to "
+            "nickduvall921/mmwave_vis", e)
         return True
     return hasattr(zha_number, "InovelliRemoteDimmingUpSpeed")
 
@@ -54,7 +61,9 @@ def _zha_adds_cluster_id() -> bool:
     try:
         from zha.application.platforms import PlatformEntity
         return "cluster_handlers" in inspect.signature(PlatformEntity.__init__).parameters
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        _LOGGER.warning("VZM32-SN quirk: couldn't tell how ZHA builds entity unique ids (%r); "
+                        "assuming Home Assistant 2026.8 or later", e)
         return False
 
 

@@ -445,7 +445,7 @@ tabs.forEach((tab, i) => {
         next.focus();
     });
 });
-// The Detection tab was called Switch before 4.2
+// The Detection tab used to be called Switch
 const savedTab = prefs.get('activeTab') === 'tab-switch' ? 'tab-detection' : prefs.get('activeTab');
 selectTab(tabs.some(t => t.id === savedTab) ? savedTab : 'tab-zones');
 

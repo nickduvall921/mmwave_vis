@@ -540,6 +540,23 @@ def test_entity_sync_maps_the_built_in_quirks_entities_by_unique_id():
         "mmWaveDetectSensitivity": "Medium", "mmWaveHoldTime": 45}
 
 
+def test_entity_sync_without_registry_knows_the_new_entity_names():
+    # Without registry data, entities are matched by entity_id; the quirk's sensitivity and
+    # trigger speed dropdowns are named "mmWave sensitivity" and "mmWave target speed"
+    client = ZHAClient("http://supervisor", "token", MagicMock())
+    client._topic = "zha/kitchen"
+    client.device_list = {"kitchen": {"ha_device_id": "dev-k"}}
+    client._rest_get = lambda path: [
+        {"entity_id": "select.kitchen_mmwave_sensitivity", "state": "Medium",
+         "attributes": {"options": ["Low", "Medium", "High"]}},
+        {"entity_id": "select.kitchen_mmwave_target_speed", "state": "Fast",
+         "attributes": {"options": ["Low", "Medium", "Fast"]}},
+    ]
+    client._sync_entity_states("dev-k", None)
+    assert client.socketio.emit.call_args[0][1]["payload"] == {
+        "mmWaveDetectSensitivity": "Medium", "mmWaveDetectTrigger": "Fast (0.2s, default)"}
+
+
 def test_setting_entities_skips_entries_without_a_matching_unique_id():
     found = ZHAClient._setting_entities([
         {"entity_id": "select.a", "unique_id": "x-1-64562-mmwave_room_size_preset"},

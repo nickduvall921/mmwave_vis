@@ -134,7 +134,7 @@ function buildRow(s) {
     meta.push(`Parameter ${s.param}, ${s.key}.`);
     const info = h('div', { class: 'info-panel', id: infoId, hidden: true },
         s.help.split('\n\n').map(p => h('p', null, p)),
-        s.quirkUpdate ? h('p', { class: 'zha-only' }, 'With the Visualizer\'s ZHA quirk this needs version 4.2 or later of it; ZHA\'s built-in quirk has it.') : null,
+        s.quirkUpdate ? h('p', { class: 'zha-only' }, 'Older copies of the Visualizer\'s ZHA quirk don\'t have this: copy the current files over them. ZHA\'s built-in quirk has it.') : null,
         h('p', { class: 'cfg-meta' }, meta.join(' '), reset ? ' ' : null, reset));
     const r = { s, row, info, infoBtn, control, note, mark, swatch, flash: null,
         text: `${s.title} ${s.sub || ''} ${s.help} ${s.key}`.toLowerCase() };

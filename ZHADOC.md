@@ -38,7 +38,7 @@ The addon tells you which quirk is running: the Config tab's switch details show
 
 #### Updating from an earlier version of this quirk
 
-Versions of this quirk before the addon's 4.2 release registered their entities differently. After updating, once:
+Copies of this quirk from before the addon had a Config tab registered their entities differently. After updating, once:
 
 - **Most entity IDs change.** The settings come back as new entities (sensitivity, trigger speed, room size, presence behaviour, output mode, LED scaling and non-neutral output are now dropdowns), and the old ones stay behind as `unavailable` / `restored: true`, many of them ending in `_2`. If you still have entities left over from before Home Assistant 2026.8 (without the `_2`), they come back to life with their old IDs. Update automations that used the `_2` IDs, then delete the unavailable leftovers.
 - **New entities:** remote dimming speeds and ramp rates, remote and power-on default level, switch type, internal temperature and overheat protection.
