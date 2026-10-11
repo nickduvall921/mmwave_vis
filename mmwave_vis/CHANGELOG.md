@@ -16,13 +16,15 @@
 ### Changed
 - The Switch tab is now called Detection: target reporting, sensitivity and timing, the hold time and sit-still tests, room size and whether presence controls the light. The switch's details (firmware, radar version, signal, updates) moved to the top of the Config tab.
 - Every setting the addon writes is checked against the same catalogue the Config tab is built from, instead of a short list of mmWave settings.
-- Room size presets are labelled with their sizes: Zigbee2MQTT's Small, Medium and Large are Inovelli's extra small (2 × 2 m), small and medium presets. On ZHA the Config tab also offers Inovelli's large and extra large presets.
+- Room size presets are labelled with their sizes: Zigbee2MQTT's Small, Medium and Large are Inovelli's extra small (2 × 2 m), small and medium presets. On ZHA the Detection and Config tabs also offer Inovelli's large and extra large presets.
 - Stay life goes up to 72000 (1 hour), so Inovelli's suggested 15 to 30 minutes for bedrooms can be set.
 - ZHA: settings are read from entities by their registry ID, so the built-in quirk's entities (and renamed ones) are recognised, including its own select labels.
 - ZHA: reading settings from a switch that has stopped answering gives up after three failed reads in a row instead of waiting out every setting.
 
-### Fixed
-- Detection tab: the room preset showed blank when a ZHA switch was set to Inovelli's large or extra large size.
+## [4.1.3] - 2026-10-10
+
+### Added
+- An ⓘ next to the target count explains why a target can stay on the map after the room clears: the switch often stops sending positions without clearing the last one. Go by the Occupied/Clear status and the area chips instead.
 
 ## [4.1.2] - 2026-10-09
 

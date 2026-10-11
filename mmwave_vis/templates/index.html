@@ -93,7 +93,11 @@
                 <span class="chip">Area 1</span><span class="chip">Area 2</span><span class="chip">Area 3</span><span class="chip">Area 4</span>
             </span>
             <span>Light <strong class="num" id="illuminance">–</strong></span>
-            <span>Targets <strong class="num" id="targetCount">0</strong></span>
+            <span>Targets <strong class="num" id="targetCount">0</strong><button class="info-btn" type="button" aria-label="About the targets" aria-expanded="false" aria-controls="targetsInfo" data-info="targetsInfo"></button></span>
+        </div>
+        <div class="info-panel" id="targetsInfo" hidden>
+            <p>When everyone leaves, the switch often stops sending positions without clearing the last one, so a target can stay frozen on the map and in the table. That's normal: it's the last reading, not someone still there.</p>
+            <p>Go by the Occupied/Clear status and the area chips. If they say clear, ignore a leftover target. It goes away with the next report once someone walks in.</p>
         </div>
 
         <div class="map" id="map">
