@@ -38,6 +38,30 @@ export function shown(key) {
     return known(key);
 }
 
+// --- The controls both tabs use ---------------------------------------------------------
+
+// What a control holds. On/off switches carry the switch's own values in data-on / data-off.
+export const controlValue = c => (c.type === 'checkbox' ? c.dataset[c.checked ? 'on' : 'off'] : c.value);
+
+// Show `value` in a control. `force`: also overwrite a field that has focus (putting back a
+// refused value); otherwise a field being typed in is left alone.
+export function showControlValue(c, value, force = false) {
+    const missing = value === undefined || value === null;
+    if (c.type === 'checkbox') {
+        c.checked = value === c.dataset.on;
+        c.indeterminate = missing;
+    } else if (c.tagName === 'SELECT') {
+        const v = missing ? '' : String(value);
+        if (v && ![...c.options].some(o => o.value === v)) {
+            // A value this page doesn't list (newer firmware?); show it rather than a blank
+            c.append(h('option', { value: v, dataset: { extra: '1' } }, v));
+        }
+        c.value = v;
+    } else if (force || document.activeElement !== c) {
+        c.value = missing ? (c.type === 'range' ? c.min : '') : String(value);
+    }
+}
+
 // A value the switch can take (numbers as numbers), or null after saying what's allowed
 export function check(key, value) {
     const s = byKey.get(key);
@@ -74,7 +98,9 @@ export async function apply(keys = [...queued.keys()]) {
     if (risky.length) {
         const what = keys.length === 1 ? 'this change' : `these ${keys.length} changes`;
         if (!await confirmAction(`${risky.map(s => s.risky).join(' ')} Apply ${what}?`, { confirm: 'Apply', danger: true })) return false;
+        // Another switch may have been chosen meanwhile, which empties the queue
         keys = keys.filter(k => queued.has(k));
+        if (!keys.length || !state.device) return false;
     }
     const params = {};
     for (const key of keys) {

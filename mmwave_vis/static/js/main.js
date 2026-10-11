@@ -249,6 +249,7 @@ function resetDeviceView() {
     history.deviceChanged();
     namesFromServer(null);              // the addon sends this switch's names right after change_device
     clearDeviceInfo();
+    renderUnsupported();
     renderAreaChips();
     recorder.stopRecording();
     if (state.arranging) setArranging(false);
@@ -257,7 +258,10 @@ function resetDeviceView() {
     emptyRow('No targets yet');
     for (const key of ['targetReport', 'quirk', 'binding', 'stayFlip']) clearNotice(key);
     changes.reset();
-    for (const input of paramInputs) showParam(input, undefined, true);
+    for (const input of paramInputs) {
+        showParam(input, undefined, true);
+        input.querySelectorAll('option[data-extra]').forEach(o => o.remove());
+    }
     state.quirk = null;
     state.radarReports = true;
     applyRadarAvailability();
@@ -295,29 +299,14 @@ $('#btnSync').addEventListener('click', () => {
 // Changes wait in a queue (changes.js), marked orange, until Apply sends them; the
 // Config tab shows the same settings and shares the queue.
 
-// On/off switches carry the switch's own values for each position in data-on / data-off
-const paramValue = input => input.type === 'checkbox' ? input.dataset[input.checked ? 'on' : 'off'] : input.value;
-
-// `force`: also overwrite a field being typed in (putting back a refused value)
-function showParam(input, value, force = false) {
-    const missing = value === undefined || value === null;
-    if (input.type === 'checkbox') input.checked = value === input.dataset.on;
-    else if (input.tagName === 'SELECT') {
-        const v = missing ? '' : String(value);
-        if (v && ![...input.options].some(o => o.value === v)) {
-            // A value this page doesn't list (newer firmware?); show it rather than a blank
-            input.append(h('option', { value: v, dataset: { extra: '1' } }, v));
-        }
-        input.value = v;
-    } else if (force || document.activeElement !== input) input.value = missing ? '' : value;
-}
+const showParam = changes.showControlValue;
 
 const paramInputs = $$('[data-param]');
 const detectionKeys = paramInputs.map(input => input.dataset.param);
 paramInputs.forEach(input => {
     input.addEventListener('change', () => {
         const param = input.dataset.param;
-        const value = changes.check(param, paramValue(input));
+        const value = changes.check(param, changes.controlValue(input));
         if (value === null || !state.device) {
             if (!state.device) toast('Choose a switch first.', 'error');
             showParam(input, changes.shown(param), true);
@@ -330,7 +319,9 @@ paramInputs.forEach(input => {
 // Room sizes 4 and 5 only exist on ZHA; Zigbee2MQTT doesn't know them
 for (const option of $$('option.zha-only')) option.disabled = option.hidden = state.stack !== 'zha';
 
-function renderQueued() {
+// `keys`: the settings that changed (all when empty). Only those are put back by force, so a
+// field being typed in isn't overwritten because another setting was saved.
+function renderQueued(keys = []) {
     for (const input of paramInputs) {
         const param = input.dataset.param;
         const box = input.closest('.field, .toggle-row');
@@ -339,15 +330,16 @@ function renderQueued() {
             box.classList.toggle('queued', queued);
             box.title = queued ? 'Changed here, not applied yet' : '';
         }
-        showParam(input, changes.shown(param), true);
+        showParam(input, changes.shown(param), !keys.length || keys.includes(param));
     }
     renderStayLife();
 }
-on('queue', renderQueued);
-on('pending', renderQueued);
+on('queue', keys => renderQueued(keys));
+on('pending', ({ key }) => renderQueued([key]));
 
 // Settings the switch's ZHA quirk doesn't have can't be changed
-on('device-info', () => {
+on('device-info', renderUnsupported);
+function renderUnsupported() {
     const info = state.deviceInfo;
     const unsupported = new Set(info && info.topic === state.device ? info.unsupported_settings || [] : []);
     for (const input of paramInputs) {
@@ -355,7 +347,7 @@ on('device-info', () => {
         input.disabled = off;
         input.title = off ? 'The ZHA quirk running this switch can\'t change this' : '';
     }
-});
+}
 
 changes.bindApplyBar({ button: $('#detApply'), discardButton: $('#detDiscard'), status: $('#detQueued'), scope: detectionKeys });
 // An Apply row at the end of each group of settings

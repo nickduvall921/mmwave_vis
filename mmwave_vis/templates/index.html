@@ -25,6 +25,8 @@
     <link rel="modulepreload" href="{{ ingress_path }}/assets/js/switchinfo.js">
     <link rel="modulepreload" href="{{ ingress_path }}/assets/js/config.js">
     <link rel="modulepreload" href="{{ ingress_path }}/assets/js/changes.js">
+    <!-- The Config tab's settings catalogue: fetched alongside the modules, not after them -->
+    <link rel="preload" href="{{ ingress_path }}/assets/settings.json?v={{ version }}" as="fetch" crossorigin="anonymous">
 </head>
 <body class="stack-{{ zigbee_stack }}" data-ingress="{{ ingress_path }}" data-catalog="{{ ingress_path }}/assets/settings.json?v={{ version }}">
 

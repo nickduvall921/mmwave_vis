@@ -14,11 +14,7 @@ import settings_catalog
 # catalogue (static/settings.json), which lists what each one accepts.
 # ---------------------------------------------------------------------------
 
-VALID_PARAMETERS = {
-    'mmwave_detection_areas':    {'type': 'zone_composite'},
-    'mmwave_interference_areas': {'type': 'zone_composite'},
-    'mmwave_stay_areas':         {'type': 'zone_composite'},
-}
+ZONE_PARAMETERS  = {'mmwave_detection_areas', 'mmwave_interference_areas', 'mmwave_stay_areas'}
 
 VALID_ZONE_KEYS  = {'width_min', 'width_max', 'depth_min', 'depth_max', 'height_min', 'height_max'}
 ZONE_COORD_RANGE = (-10000, 10000)
@@ -28,34 +24,30 @@ def validate_parameter(param, value):
     """Validate a parameter name and value before anything is sent to a switch.
     Returns (is_valid: bool, error_message: str | None).
     """
-    if param not in VALID_PARAMETERS:
+    if param not in ZONE_PARAMETERS:
         return settings_catalog.validate(param, value)
 
-    ptype = VALID_PARAMETERS[param]['type']
-
-    if ptype == 'zone_composite':
-        if not isinstance(value, dict):
-            return False, f"Parameter {param} expects a dict, got: {type(value).__name__}"
-        for area_key, area_val in value.items():
-            if not area_key.startswith('area') or not area_key[4:].isdigit():
-                return False, f"Invalid area key: {area_key}"
-            if int(area_key[4:]) < 1 or int(area_key[4:]) > 4:
-                return False, f"Area number out of range: {area_key}"
-            if not isinstance(area_val, dict):
-                return False, f"Area {area_key} value must be a dict"
-            unknown = set(area_val.keys()) - VALID_ZONE_KEYS
-            if unknown:
-                return False, f"Unknown zone keys in {area_key}: {unknown}"
-            for coord_key, coord_val in area_val.items():
-                try:
-                    v = int(coord_val)
-                except (ValueError, TypeError):
-                    return False, f"Zone coordinate {coord_key} must be an integer"
-                if v < ZONE_COORD_RANGE[0] or v > ZONE_COORD_RANGE[1]:
-                    return False, f"Zone coordinate {coord_key}={v} out of range"
-        return True, None
-
-    return False, f"Unknown parameter type: {ptype}"
+    # A zone write: {"area1": {"width_min": ..., ...}, ...}
+    if not isinstance(value, dict):
+        return False, f"Parameter {param} expects a dict, got: {type(value).__name__}"
+    for area_key, area_val in value.items():
+        if not area_key.startswith('area') or not area_key[4:].isdigit():
+            return False, f"Invalid area key: {area_key}"
+        if int(area_key[4:]) < 1 or int(area_key[4:]) > 4:
+            return False, f"Area number out of range: {area_key}"
+        if not isinstance(area_val, dict):
+            return False, f"Area {area_key} value must be a dict"
+        unknown = set(area_val.keys()) - VALID_ZONE_KEYS
+        if unknown:
+            return False, f"Unknown zone keys in {area_key}: {unknown}"
+        for coord_key, coord_val in area_val.items():
+            try:
+                v = int(coord_val)
+            except (ValueError, TypeError):
+                return False, f"Zone coordinate {coord_key} must be an integer"
+            if v < ZONE_COORD_RANGE[0] or v > ZONE_COORD_RANGE[1]:
+                return False, f"Zone coordinate {coord_key}={v} out of range"
+    return True, None
 
 
 LAYOUT_COORD_RANGE = ZONE_COORD_RANGE[1]   # cm, same bound as zone coordinates

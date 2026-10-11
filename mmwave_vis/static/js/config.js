@@ -6,7 +6,7 @@
 
 import { state, on } from './state.js';
 import * as prefs from './prefs.js';
-import { $, h, setText, duration, infoButton } from './ui.js';
+import { $, h, setText, duration, infoButton, toast } from './ui.js';
 import * as changes from './changes.js';
 
 const SAVED_MS = 2500;
@@ -142,7 +142,7 @@ function buildRow(s) {
     if (control.type === 'range') {
         control.addEventListener('input', () => renderNote(r, Number(control.value)));
     }
-    if (!s.readOnly) control.addEventListener('change', () => edit(r, controlValue(r)));
+    if (!s.readOnly) control.addEventListener('change', () => edit(r, changes.controlValue(control)));
     rows.set(s.key, r);
     return [row, info];
 }
@@ -186,31 +186,11 @@ function build() {
 
 // --- Showing values ---------------------------------------------------------------------------
 
-function controlValue(r) {
-    const c = r.control;
-    if (c.type === 'checkbox') return c.dataset[c.checked ? 'on' : 'off'];
-    return c.value;
-}
-
 // `force`: also overwrite a field that has focus (putting back a refused value)
 function showValue(r, value, force = false) {
-    const c = r.control;
     const missing = value === undefined || value === null;
-    if (r.s.readOnly) {
-        setText(c, missing ? '–' : describe(r.s, value) || String(value));
-    } else if (c.type === 'checkbox') {
-        c.checked = value === c.dataset.on;
-        c.indeterminate = missing;
-    } else if (c.tagName === 'SELECT') {
-        const v = missing ? '' : String(value);
-        if (v && ![...c.options].some(o => o.value === v)) {
-            // A value this page doesn't know (newer firmware?); show it rather than a blank
-            c.append(h('option', { value: v, dataset: { extra: '1' } }, v));
-        }
-        c.value = v;
-    } else if (force || document.activeElement !== c) {
-        c.value = missing ? (c.type === 'range' ? c.min : '') : String(value);
-    }
+    if (r.s.readOnly) setText(r.control, missing ? '–' : describe(r.s, value) || String(value));
+    else changes.showControlValue(r.control, value, force);
 }
 
 function renderNote(r, value) {
@@ -313,7 +293,7 @@ function applyFilter() {
 
 function readMissing(keys) {
     if (!state.device || !catalog) return;
-    const want = keys.filter(k => !has(k) && !requested.has(k));
+    const want = keys.filter(k => !has(k) && !requested.has(k) && !unsupported.has(k));
     if (!want.length) return;
     want.forEach(k => requested.add(k));
     socket().emit('read_settings', { keys: want });
@@ -341,7 +321,8 @@ function notRead(keys) {
 
 function readAll() {
     if (!state.device) return;
-    const keys = [...rows.keys()];
+    // Not what the switch's quirk lacks: ZHA would only waste a radio read on it
+    const keys = [...rows.keys()].filter(k => !unsupported.has(k));
     keys.forEach(k => { requested.add(k); unread.delete(k); });
     for (const k of keys) renderNote(rows.get(k), changes.shown(k));
     socket().emit('read_settings', { keys });
@@ -397,6 +378,7 @@ function stateArrived(late = false) {
 // The person changed a control: queue it (or put the control back if it can't take that)
 function edit(r, value) {
     const key = r.s.key;
+    if (!state.device) toast('Choose a switch first.', 'error');
     if (!state.device || unavailable(r.s)) { render(r, true); return; }
     const v = changes.check(key, value);
     if (v === null) { render(r, true); return; }

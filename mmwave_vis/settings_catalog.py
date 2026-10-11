@@ -46,17 +46,21 @@ def _as_int(value):
     return None
 
 
-def validate(key, value):
-    """(ok, error) for writing `value` (as Zigbee2MQTT names it) to setting `key`."""
+def validate(key, value, stack=None):
+    """(ok, error) for writing `value` (as Zigbee2MQTT names it) to setting `key`.
+    With stack 'z2m', values only ZHA can write (zhaOnly options) are refused too."""
     s = setting(key)
     if s is None:
         return False, f"Unknown parameter: {key}"
     if s.get('readOnly'):
         return False, f"{s['title']} can't be changed; the switch only reports it"
     if s.get('options'):
-        if not isinstance(value, str) or _option(s, value=value) is None:
+        option = _option(s, value=value) if isinstance(value, str) else None
+        if option is None:
             allowed = [o['value'] for o in s['options']]
             return False, f"Invalid value '{value}' for {key}. Allowed: {allowed}"
+        if stack == 'z2m' and option.get('zhaOnly'):
+            return False, f"Zigbee2MQTT can't set {s['title']} to {option.get('label', value)}"
         return True, None
     n = _as_int(value)
     if n is None:
@@ -124,6 +128,17 @@ def zha_keys(keys=None):
     wanted = None if keys is None else set(keys)
     return [s['key'] for s in CATALOG['settings']
             if s.get('zha') is not False and (wanted is None or s['key'] in wanted)]
+
+
+def write_zha(request, ieee, key, value):
+    """Write one setting through ZHA and wait for it: the call_service result only comes
+    back once ZHA has sent the write to the switch, so a read afterwards sees it.
+    `request` is an ha_ws.HAConnection.request; raises like it does."""
+    cluster, attr = zha_address(key)
+    request('call_service', domain='zha', service='set_zigbee_cluster_attribute', service_data={
+        'ieee': ieee, 'endpoint_id': 1, 'cluster_id': cluster, 'cluster_type': 'in',
+        'attribute': attr, 'value': to_raw(key, value), 'manufacturer': MANUFACTURER,
+    })
 
 
 GIVE_UP_AFTER = 3   # reads in a row that fail: the switch isn't answering, so stop asking

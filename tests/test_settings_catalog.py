@@ -202,6 +202,25 @@ def test_read_zha_reads_each_attribute_and_reports_failures():
                   'attribute': 0x0B, 'manufacturer': 0x122F}
 
 
+def test_zha_only_values_are_refused_on_zigbee2mqtt():
+    assert sc.validate('mmWaveRoomSizePreset', 'Preset 4')[0]
+    assert sc.validate('mmWaveRoomSizePreset', 'Preset 4', stack='zha')[0]
+    ok, error = sc.validate('mmWaveRoomSizePreset', 'Preset 4', stack='z2m')
+    assert not ok and 'Zigbee2MQTT' in error
+    assert sc.validate('mmWaveRoomSizePreset', 'Large', stack='z2m')[0]
+
+
+def test_write_zha_sends_the_raw_value_and_waits():
+    calls = []
+    sc.write_zha(lambda kind, **kw: calls.append((kind, kw)), 'aa:bb', 'mmWaveDetectSensitivity', 'Medium')
+    kind, kw = calls[0]
+    assert kind == 'call_service'
+    assert kw['domain'] == 'zha' and kw['service'] == 'set_zigbee_cluster_attribute'
+    cluster, attr = sc.zha_address('mmWaveDetectSensitivity')
+    assert kw['service_data'] == {'ieee': 'aa:bb', 'endpoint_id': 1, 'cluster_id': cluster, 'cluster_type': 'in',
+                                  'attribute': attr, 'value': 1, 'manufacturer': 0x122F}
+
+
 def test_read_zha_stops_asking_a_switch_that_doesnt_answer():
     calls = []
 
