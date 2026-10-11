@@ -17,6 +17,7 @@ import * as history from './history.js';
 import { initTester, stopTests, STAY_LIFE_STEP_S } from './tester.js';
 import { initSwitchInfo, deviceInfoFromServer, clearDeviceInfo } from './switchinfo.js';
 import * as config from './config.js';
+import * as changes from './changes.js';
 
 const ingress = document.body.dataset.ingress || '';
 const socket = io({ path: ingress + '/socket.io' });
@@ -255,16 +256,31 @@ function resetDeviceView() {
     radar.setTargets([], {});
     emptyRow('No targets yet');
     for (const key of ['targetReport', 'quirk', 'binding', 'stayFlip']) clearNotice(key);
+    changes.reset();
+    for (const input of paramInputs) showParam(input, undefined, true);
+    state.quirk = null;
+    state.radarReports = true;
+    applyRadarAvailability();
     fitAfterLayout = true;
     display.layoutFromServer(null);     // the addon sends this switch's layout right after change_device
     emit('device');
     renderStatus();
 }
 
-deviceSelect.addEventListener('change', () => {
+deviceSelect.addEventListener('change', async () => {
     const opt = deviceSelect.options[deviceSelect.selectedIndex];
+    const topic = deviceSelect.value;
+    const name = opt ? opt.textContent : '';
+    if (changes.queued.size) {
+        const n = changes.queued.size;
+        deviceSelect.value = state.device;
+        const what = n === 1 ? 'a change that hasn\'t' : `${n} changes that haven't`;
+        if (!await confirmAction(`This switch has ${what} been applied. Switch anyway and discard ${n === 1 ? 'it' : 'them'}?`,
+            { confirm: 'Discard', danger: true })) return;
+        deviceSelect.value = topic;
+    }
     resubscribe = false;
-    selectDevice(deviceSelect.value, opt ? opt.textContent : '');
+    selectDevice(topic, name);
 });
 
 $('#btnSync').addEventListener('click', () => {
@@ -276,22 +292,81 @@ $('#btnSync').addEventListener('click', () => {
 
 // --- Settings sent to the switch -----------------------------------------------
 
+// Changes wait in a queue (changes.js), marked orange, until Apply sends them; the
+// Config tab shows the same settings and shares the queue.
+
 // On/off switches carry the switch's own values for each position in data-on / data-off
 const paramValue = input => input.type === 'checkbox' ? input.dataset[input.checked ? 'on' : 'off'] : input.value;
 
-function showParam(input, value) {
+// `force`: also overwrite a field being typed in (putting back a refused value)
+function showParam(input, value, force = false) {
+    const missing = value === undefined || value === null;
     if (input.type === 'checkbox') input.checked = value === input.dataset.on;
-    else if (document.activeElement !== input) input.value = value;   // don't overwrite a field being typed in
+    else if (input.tagName === 'SELECT') {
+        const v = missing ? '' : String(value);
+        if (v && ![...input.options].some(o => o.value === v)) {
+            // A value this page doesn't list (newer firmware?); show it rather than a blank
+            input.append(h('option', { value: v, dataset: { extra: '1' } }, v));
+        }
+        input.value = v;
+    } else if (force || document.activeElement !== input) input.value = missing ? '' : value;
 }
 
 const paramInputs = $$('[data-param]');
+const detectionKeys = paramInputs.map(input => input.dataset.param);
 paramInputs.forEach(input => {
     input.addEventListener('change', () => {
-        const value = paramValue(input);
-        socket.emit('update_parameter', { param: input.dataset.param, value });
-        if (input.dataset.param === 'mmWaveTargetInfoReport') targetReportNotice(value);
+        const param = input.dataset.param;
+        const value = changes.check(param, paramValue(input));
+        if (value === null || !state.device) {
+            if (!state.device) toast('Choose a switch first.', 'error');
+            showParam(input, changes.shown(param), true);
+            return;
+        }
+        changes.queue(param, value);
     });
 });
+
+// Room sizes 4 and 5 only exist on ZHA; Zigbee2MQTT doesn't know them
+for (const option of $$('option.zha-only')) option.disabled = option.hidden = state.stack !== 'zha';
+
+function renderQueued() {
+    for (const input of paramInputs) {
+        const param = input.dataset.param;
+        const box = input.closest('.field, .toggle-row');
+        const queued = changes.queued.has(param);
+        if (box) {
+            box.classList.toggle('queued', queued);
+            box.title = queued ? 'Changed here, not applied yet' : '';
+        }
+        showParam(input, changes.shown(param), true);
+    }
+    renderStayLife();
+}
+on('queue', renderQueued);
+on('pending', renderQueued);
+
+// Settings the switch's ZHA quirk doesn't have can't be changed
+on('device-info', () => {
+    const info = state.deviceInfo;
+    const unsupported = new Set(info && info.topic === state.device ? info.unsupported_settings || [] : []);
+    for (const input of paramInputs) {
+        const off = unsupported.has(input.dataset.param);
+        input.disabled = off;
+        input.title = off ? 'The ZHA quirk running this switch can\'t change this' : '';
+    }
+});
+
+changes.bindApplyBar({ button: $('#detApply'), discardButton: $('#detDiscard'), status: $('#detQueued'), scope: detectionKeys });
+// An Apply row at the end of each group of settings
+for (const section of $$('#panel-detection .section')) {
+    const keys = $$('[data-param]', section).map(input => input.dataset.param);
+    if (!keys.length) continue;
+    const row = changes.applyRow(keys);
+    const tester = $('.tester', section);
+    if (tester) section.insertBefore(row, tester);
+    else section.append(row);
+}
 
 // Stay life is in 50 ms steps; show what the number means
 function renderStayLife() {
@@ -307,14 +382,16 @@ function renderStayLife() {
 $('#mmWaveStayLife').addEventListener('input', renderStayLife);
 on('device-settings', renderStayLife);
 
+// The notice's Turn on button: a deliberate click, so it's sent straight away
 function enableTargetReporting() {
-    $('#mmWaveTargetInfoReport').checked = true;
-    socket.emit('update_parameter', { param: 'mmWaveTargetInfoReport', value: 'Enable' });
+    changes.queue('mmWaveTargetInfoReport', 'Enable');
+    changes.apply(['mmWaveTargetInfoReport']);
     clearNotice('targetReport');
 }
 
+// Not without the Visualizer's quirk: then nothing passes the positions on anyway
 function targetReportNotice(value) {
-    if (value === 'Enable') clearNotice('targetReport');
+    if (value === 'Enable' || !state.radarReports) clearNotice('targetReport');
     else setNotice('targetReport', {
         tone: 'warning', title: 'Target reporting is off,', text: 'so people won\'t show up on the map.',
         action: { label: 'Turn on', onClick: enableTargetReporting },
@@ -478,17 +555,47 @@ socket.on('mqtt_status', data => {
 
 socket.on('stack_info', data => applyStack(data.stack));
 
+// Which ZHA quirk runs the switch. Only the Visualizer's passes the radar's reports on, so
+// with any other the map, zones, recorder, tests and heat map are greyed out
+const QUIRK_INSTALL = 'https://github.com/nickduvall921/mmwave_vis/blob/main/ZHADOC.md#1-install-the-custom-quirk';
+const QUIRK_NOTICES = {
+    builtin: {
+        title: 'Home Assistant\'s built-in quirk runs this switch, not the Visualizer\'s.',
+        text: 'Its settings work in the Detection and Config tabs, but it doesn\'t pass the radar\'s reports on, so live targets, area occupancy and zones need the Visualizer\'s quirk. Install it, restart Home Assistant, then reconfigure the switch in ZHA.',
+    },
+    custom: {
+        title: 'Another ZHA quirk runs this switch, not the Visualizer\'s.',
+        text: 'Probably Inovelli\'s own. Settings it knows still work, but live targets, area occupancy and zones need the Visualizer\'s quirk: copy its files over the ones in your custom quirks folder, restart Home Assistant, then reconfigure the switch.',
+    },
+    none: {
+        title: 'No ZHA quirk is loaded for this switch.',
+        text: 'Without one, ZHA can\'t change the switch\'s settings or pass its radar reports on. If you\'ve installed the Visualizer\'s quirk, check custom_quirks_path in configuration.yaml and look for quirk errors in the Home Assistant log.',
+    },
+    unknown: {
+        title: 'The Visualizer\'s ZHA quirk isn\'t loaded.',
+        text: 'Live targets, area occupancy and zones need it, even on Home Assistant 2026.8 and later: ZHA\'s built-in VZM32-SN support doesn\'t pass the radar reports on. After installing it, reconfigure the device in ZHA and press Sync.',
+    },
+};
+
+function applyRadarAvailability() {
+    const off = !state.radarReports;
+    document.body.classList.toggle('no-radar', off);
+    if (off) clearNotice('targetReport');
+    for (const el of $$('[data-needs-radar]')) el.inert = off;
+    emit('radar-reports', state.radarReports);
+}
+
 socket.on('zha_device_info', data => {
-    if (state.stack === 'zha' && data.quirk_ok === false) {
-        setNotice('quirk', {
-            tone: 'danger',
-            title: 'The Visualizer\'s ZHA quirk isn\'t loaded.',
-            text: 'Live targets, area occupancy and zones need it, even on Home Assistant 2026.8 and later: ZHA\'s built-in VZM32-SN support doesn\'t pass the radar reports on. After installing it, reconfigure the device in ZHA and press Sync.',
-            link: { href: 'https://github.com/nickduvall921/mmwave_vis/blob/main/ZHADOC.md#why-the-custom-quirk-is-still-needed', label: 'Why and how' },
-        });
+    if (state.stack !== 'zha' || !data) return;
+    state.quirk = data.quirk || null;
+    state.radarReports = data.quirk_ok !== false;
+    if (!state.radarReports) {
+        const n = QUIRK_NOTICES[data.quirk] || QUIRK_NOTICES.unknown;
+        setNotice('quirk', { tone: 'danger', ...n, link: { href: QUIRK_INSTALL, label: 'How to install' } });
     } else {
         clearNotice('quirk');
     }
+    applyRadarAvailability();
 });
 
 socket.on('zha_binding_warning', data => {
@@ -574,9 +681,10 @@ socket.on('device_config', msg => {
     for (const input of paramInputs) {
         const param = input.dataset.param;
         if (!(param in c)) continue;
-        showParam(input, c[param]);
         if (state.settings[param] !== c[param]) settingsChanged = true;
         state.settings[param] = c[param];
+        changes.reported(param, c[param]);
+        showParam(input, changes.shown(param));
     }
     if (settingsChanged) emit('device-settings');
     emit('device-config', c);           // the Config tab keeps every other setting
@@ -649,6 +757,7 @@ initBackup();
 display.initDisplay(radar);
 initZwave(ingress);
 initUndo();
+changes.initChanges();
 initTester();
 initSwitchInfo();
 history.initHistory(radar);

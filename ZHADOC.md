@@ -32,6 +32,8 @@ Home Assistant 2026.8 added built-in ZHA support for the VZM32-SN, and the gener
 
 A quirk in `custom_quirks_path` takes priority over the built-in one, so you don't need to turn anything off: install this one as below and it wins. Details in [#54](https://github.com/nickduvall921/mmwave_vis/issues/54).
 
+The addon tells you which quirk is running: the Config tab's switch details show it, and with any other quirk the page says so, links here and greys out what needs the radar reports (live targets, zones, the movement recorder, the tests and the heat map). The switch's settings still work with the built-in quirk, in the Detection and Config tabs, stay life included.
+
 Things to know when you switch quirks (either way):
 
 - **Some entity IDs change.** The two quirks register entities differently, so after switching you'll see leftovers marked `restored: true` / unavailable and new entities with `_2` on the end. Delete the leftovers once nothing uses them, and check automations that used the old IDs.
@@ -208,7 +210,11 @@ HA Core wasn't fully ready when the addon started. The addon will retry automati
 
 ### Settings (sensitivity, hold time, etc.) not showing correct values after selecting a device
 
-Click the **Sync** button. This triggers a fresh read of all settings from the device and populates the sidebar.
+Click the **Sync** button. This triggers a fresh read of the mmWave settings from the device. In the Config tab, **Refresh Values** reads every setting from the switch again.
+
+### Some settings are greyed out in the Config tab
+
+The quirk running the switch doesn't have them, so ZHA can't change them (it would accept the change and drop it). The switch details at the top of the Config tab say how many. With an older copy of this repo's quirk that's quick start time and brightness: copy the current `__init__.py` and `VZM32SN.py` over it, delete `__pycache__` and restart Home Assistant.
 
 ### Stay zone coordinates invert after being set
 

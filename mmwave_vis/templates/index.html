@@ -24,6 +24,7 @@
     <link rel="modulepreload" href="{{ ingress_path }}/assets/js/tester.js">
     <link rel="modulepreload" href="{{ ingress_path }}/assets/js/switchinfo.js">
     <link rel="modulepreload" href="{{ ingress_path }}/assets/js/config.js">
+    <link rel="modulepreload" href="{{ ingress_path }}/assets/js/changes.js">
 </head>
 <body class="stack-{{ zigbee_stack }}" data-ingress="{{ ingress_path }}" data-catalog="{{ ingress_path }}/assets/settings.json?v={{ version }}">
 
@@ -158,9 +159,10 @@
                 <span class="grow">Last change: <span id="undoLabel"></span></span>
                 <button class="btn small" type="button" id="btnUndo" title="Undo (Ctrl+Z)">Undo</button>
             </div>
-            <div id="zoneGroups"></div>
+            <p class="needs-radar-note">Zones need the Visualizer's ZHA quirk: the quirk running this switch doesn't pass its zone reports on, so they can't be read or confirmed. <a href="https://github.com/nickduvall921/mmwave_vis/blob/main/ZHADOC.md#1-install-the-custom-quirk" target="_blank" rel="noopener">How to install</a></p>
+            <div id="zoneGroups" data-needs-radar></div>
 
-            <div class="editor" id="zoneEditor" hidden>
+            <div class="editor" id="zoneEditor" data-needs-radar hidden>
                 <div class="slot-pick" id="slotPick" hidden><span>Slot</span><span class="seg" id="slotSeg"></span></div>
                 <div class="range-row name-row"><span>Name</span><input type="text" id="editName" maxlength="40" autocomplete="off" spellcheck="false" aria-label="Zone name (optional)"><button class="info-btn" type="button" aria-label="About editing zones" aria-expanded="false" aria-controls="editorInfo" data-info="editorInfo"></button></div>
                 <div class="info-panel" id="editorInfo" hidden>
@@ -179,7 +181,7 @@
                 </div>
             </div>
 
-            <details class="section" id="recorderSection">
+            <details class="section" id="recorderSection" data-needs-radar>
                 <summary>Movement recorder</summary>
                 <div class="tool-row"><span>Slot</span><span class="seg" id="recSlots"></span></div>
                 <div class="tool-row">
@@ -196,7 +198,7 @@
                 <div class="tool-row"><span id="recSummary">No recordings yet.</span><button class="btn link danger-text" type="button" id="btnClearSlot">Clear slot</button></div>
             </details>
 
-            <section class="section">
+            <section class="section" data-needs-radar>
                 <div class="section-head"><span class="label-info"><h2>Zone tools</h2><button class="info-btn" type="button" aria-label="About the zone tools" aria-expanded="false" aria-controls="zoneToolsInfo" data-info="zoneToolsInfo"></button></span></div>
                 <div class="info-panel info-under-head" id="zoneToolsInfo" hidden>
                     <p>Detect automatically asks the switch to find fans, vents and curtains and add interference areas around them.</p>
@@ -221,7 +223,13 @@
 
         <!-- Detection: how the radar detects people, and tests of it -->
         <div class="tab-panel" role="tabpanel" id="panel-detection" aria-labelledby="tab-detection" hidden>
-            <section class="section">
+            <div class="apply-bar">
+                <span class="grow status-line" id="detQueued"></span>
+                <button class="btn link" type="button" id="detDiscard" hidden>Discard</button>
+                <button class="btn small apply-btn" type="button" id="detApply" disabled>Apply</button>
+            </div>
+            <p class="needs-radar-note">Target reporting and the tests need the Visualizer's ZHA quirk. The settings below still work. <a href="https://github.com/nickduvall921/mmwave_vis/blob/main/ZHADOC.md#1-install-the-custom-quirk" target="_blank" rel="noopener">How to install</a></p>
+            <section class="section" data-needs-radar>
                 <div class="toggle-row">
                     <label class="toggle-title" for="mmWaveTargetInfoReport">Target reporting</label>
                     <button class="info-btn" type="button" aria-label="About target reporting" aria-expanded="false" aria-controls="targetReportInfo" data-info="targetReportInfo">
@@ -276,7 +284,7 @@
                     <p>How long the switch keeps counting someone in a stay area after they stop moving. It's in steps of 50 ms: 20 is 1 second and 300 (the default) is 15 seconds.</p>
                 </div>
 
-                <div class="tester">
+                <div class="tester" data-needs-radar>
                     <div class="button-row">
                         <button class="btn small" type="button" id="btnTestHold">Test hold time</button>
                         <button class="btn small" type="button" id="btnTestStill">Sit still test</button>
@@ -294,7 +302,7 @@
             <section class="section">
                 <div class="section-head"><span class="label-info"><h2>Room and light</h2><button class="info-btn" type="button" aria-label="About these settings" aria-expanded="false" aria-controls="systemInfo" data-info="systemInfo"></button></span></div>
                 <div class="info-panel info-under-head" id="systemInfo" hidden>
-                    <p>Changes are sent to the switch as soon as you make them. Every other setting, from dimming speeds to the LED bar, is in the Config tab.</p>
+                    <p>Changes wait, marked with an orange dot, until you press Apply. Every other setting, from dimming speeds to the LED bar, is in the Config tab.</p>
                     <p class="zha-only">If settings look out of date, open the device in ZHA and choose Reconfigure to restore the cluster binding.</p>
                 </div>
                 <label class="field"><span>Room preset</span>
@@ -303,6 +311,8 @@
                         <option value="Small">Extra small (2 × 2 m)</option>
                         <option value="Medium">Small (3.2 × 2.8 m)</option>
                         <option value="Large">Medium (4.2 × 3.6 m)</option>
+                        <option value="Preset 4" class="zha-only">Large (5.2 × 4 m)</option>
+                        <option value="Preset 5" class="zha-only">Extra large (6.2 × 4.6 m)</option>
                     </select>
                 </label>
                 <label class="field wide"><span>Presence controls the light</span>
@@ -329,14 +339,19 @@
                 <div class="cfg-tools">
                     <input type="search" id="cfgSearch" placeholder="Search settings or p13" aria-label="Search settings" autocomplete="off" spellcheck="false">
                     <button class="btn small" type="button" id="cfgRead">Refresh Values</button>
+                    <button class="btn small apply-btn" type="button" id="cfgApply" disabled>Apply</button>
                     <button class="info-btn" type="button" aria-label="About the Config tab" aria-expanded="false" aria-controls="configInfo" data-info="configInfo"></button>
                 </div>
                 <div class="info-panel" id="configInfo" hidden>
-                    <p>Every setting on the switch, each with an ⓘ. Changes are sent straight away and show Saved once the switch confirms. Risky ones ask first.</p>
+                    <p>Every setting on the switch, each with an ⓘ. Changes wait until you press Apply, then show Saved once the switch confirms. Risky ones ask first.</p>
                     <p>Search by name, or type p and a parameter number (p13) to jump to that parameter.</p>
-                    <p>Blue dot indicates value not at default.</p>
+                    <p>Blue dot indicates value not at default. Orange dot indicates a change not applied yet.</p>
                     <p class="zha-only">On ZHA, settings are read from the switch when you open a group, one at a time over Zigbee, so a large group takes a few seconds. "Refresh Values" pulls all values from the switch again.</p>
                     <p class="z2m-only">Values from Zigbee2MQTT. "Refresh Values" pulls all values from the switch again.</p>
+                </div>
+                <div class="queue-line">
+                    <span class="grow status-line" id="cfgQueued"></span>
+                    <button class="btn link" type="button" id="cfgDiscard" hidden>Discard</button>
                 </div>
                 <label class="check"><input type="checkbox" id="cfgChanged"><span>Only settings changed from default</span></label>
                 <p class="status-line" id="cfgStatus"></p>
@@ -370,7 +385,8 @@
                 <p class="status-line" id="historyStatus"></p>
             </section>
 
-            <section class="section" id="historyView">
+            <p class="needs-radar-note">The heat map needs the Visualizer's ZHA quirk, which passes the switch's positions on. The timeline still records occupancy and the light. <a href="https://github.com/nickduvall921/mmwave_vis/blob/main/ZHADOC.md#1-install-the-custom-quirk" target="_blank" rel="noopener">How to install</a></p>
+            <section class="section" id="historyView" data-needs-radar>
                 <div class="section-head"><h2>Heat map</h2></div>
                 <div class="seg range-seg" id="heatRanges" role="group" aria-label="Time range">
                     <button type="button" data-range="10m">10 min</button>

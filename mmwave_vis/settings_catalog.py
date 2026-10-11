@@ -126,26 +126,43 @@ def zha_keys(keys=None):
             if s.get('zha') is not False and (wanted is None or s['key'] in wanted)]
 
 
-def read_zha(request, ieee, keys, on_value=None):
+GIVE_UP_AFTER = 3   # reads in a row that fail: the switch isn't answering, so stop asking
+
+
+def read_zha(request, ieee, keys, on_value=None, on_failed=None):
     """Read settings from a switch through ZHA, one attribute per request.
 
     `request(type, **fields)` is an ha_ws.HAConnection.request. Each value read is
     passed to on_value(key, value) as it arrives (so a page can fill in while the rest
-    is read). Returns ({key: value}, [keys that couldn't be read]).
+    is read), and each key that couldn't be to on_failed(key). After GIVE_UP_AFTER
+    failed requests in a row the rest count as failed without asking: each one would
+    wait for ZHA's timeout. Returns ({key: value}, [keys that couldn't be read]).
     """
     values, failed = {}, []
+    in_a_row = 0
+
+    def fail(key):
+        failed.append(key)
+        if on_failed:
+            on_failed(key)
+
     for key in zha_keys(keys):
+        if in_a_row >= GIVE_UP_AFTER:
+            fail(key)
+            continue
         cluster, attr = zha_address(key)
         try:
             raw = request('zha/devices/clusters/attributes/value', ieee=ieee, endpoint_id=1,
                           cluster_id=cluster, cluster_type='in', attribute=attr,
                           manufacturer=MANUFACTURER)
         except Exception:
-            failed.append(key)
+            in_a_row += 1
+            fail(key)
             continue
+        in_a_row = 0
         value = from_raw(key, raw)
         if value is None:
-            failed.append(key)
+            fail(key)
             continue
         values[key] = value
         if on_value:

@@ -1,5 +1,5 @@
 {
- "about": "Settings of the Inovelli VZM32-SN, for the Config tab and the addon's checks. Each value is the one Zigbee2MQTT uses; raw is the attribute value ZHA reads and writes. Ids, ranges and option values follow zigbee-herdsman-converters (src/lib/inovelli.ts); titles, help and defaults come from Inovelli's documentation, the forum and readings from real switches. A setting with riskyTo asks for confirmation only when changed to one of those values. tests/test_settings_catalog.py checks it.",
+ "about": "Settings of the Inovelli VZM32-SN, for the Config tab and the addon's checks. Each value is the one Zigbee2MQTT uses; raw is the attribute value ZHA reads and writes. Ids, ranges and option values follow zigbee-herdsman-converters (src/lib/inovelli.ts); titles, help and defaults come from Inovelli's documentation, the forum and readings from real switches. A setting with riskyTo asks for confirmation only when changed to one of those values; one with needsRadar is only useful with the Visualizer's ZHA quirk on ZHA. tests/test_settings_catalog.py checks it.",
  "groups": [
   {
    "id": "presence",
@@ -214,6 +214,7 @@
    "control": "toggle",
    "on": "Enable",
    "default": "Disable (default)",
+   "needsRadar": true,
    "help": "Sends live positions, up to four people about once a second, so they show up on the map and in the History heat map. Whether each area is occupied is reported either way.\n\nTurn it off when you don't need it. Leaving it on can slow a larger Zigbee network down significantly: every switch with it on sends a report about once a second while anyone is in view, and that traffic can delay commands to your other devices."
   },
   {

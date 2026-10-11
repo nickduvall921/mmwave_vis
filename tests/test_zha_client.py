@@ -515,6 +515,49 @@ def test_entity_sync_without_registry_falls_back_to_suffix_match():
     assert client.socketio.emit.call_args[0][1]["payload"] == {"mmWaveHoldTime": 45}
 
 
+def test_entity_sync_maps_the_built_in_quirks_entities_by_unique_id():
+    # ZHA's built-in quirk names entities after its own labels ("Mmwave sensitivity"),
+    # so the entity_id doesn't end with the attribute name, but the unique_id does
+    client = ZHAClient("http://supervisor", "token", MagicMock())
+    client._topic = "zha/kitchen"
+    client.device_list = {"kitchen": {
+        "ha_device_id": "dev-k",
+        "entity_ids": ["select.kitchen_mmwave_sensitivity", "number.kitchen_mmwave_hold"],
+        "setting_entities": ZHAClient._setting_entities([
+            {"entity_id": "select.kitchen_mmwave_sensitivity", "unique_id": "0c:2a-1-64562-mmwave_detect_sensitivity"},
+            {"entity_id": "number.kitchen_mmwave_hold", "unique_id": "0c:2a-1-64562-mmwave_hold_time"},
+            {"entity_id": "light.kitchen", "unique_id": "0c:2a-1"},
+        ]),
+    }}
+    client._rest_get = lambda path: [
+        # The built-in quirk's select labels are enum names, in raw-value order
+        {"entity_id": "select.kitchen_mmwave_sensitivity", "state": "Medium",
+         "attributes": {"options": ["Low", "Medium", "High"]}},
+        {"entity_id": "number.kitchen_mmwave_hold", "state": "45"},
+    ]
+    client._sync_entity_states("dev-k", None)
+    assert client.socketio.emit.call_args[0][1]["payload"] == {
+        "mmWaveDetectSensitivity": "Medium", "mmWaveHoldTime": 45}
+
+
+def test_setting_entities_skips_entries_without_a_matching_unique_id():
+    found = ZHAClient._setting_entities([
+        {"entity_id": "select.a", "unique_id": "x-1-64562-mmwave_room_size_preset"},
+        {"entity_id": "sensor.b", "unique_id": "x-1-1030"},
+        {"unique_id": "x-1-mmwave_hold_time"},          # no entity_id
+        "junk",
+    ])
+    assert found == {"select.a": "mmwave_room_size_preset"}
+
+
+def test_translate_state_uses_the_option_position_for_other_labels():
+    # "High" isn't Z2M's "High (default)", but it's the third option: raw 2
+    assert translate("High", _REVERSE_SENSITIVITY, ["Low", "Medium", "High"]) == "High (default)"
+    assert translate("X Small", _REVERSE_ROOM_SIZE, ["Custom", "X Small", "Small", "Medium", "Large", "X Large"]) == "Small"
+    # Options that don't line up with the catalogue aren't guessed at
+    assert translate("High", _REVERSE_SENSITIVITY, ["High"]) is None
+
+
 # ===========================================================================
 # Re-reading zones after a write (ZHA never reports zone changes on its own)
 # ===========================================================================

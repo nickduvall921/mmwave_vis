@@ -31,6 +31,7 @@ from collections import deque
 from websockets.sync.client import connect as ws_connect
 
 import settings_catalog
+from device_info import quirk_kind, QUIRK_VISUALIZER, QUIRK_BUILTIN
 from ha_ws import entity_roles, rest_json
 from utils import layout_key
 
@@ -245,14 +246,19 @@ class ZHAClient:
         self.socketio.emit("zha_device_info", {
             "ieee":     ieee,
             "quirk_ok": dev.get("quirk_ok", True),
+            "quirk":    dev.get("quirk"),
         }, **emit_kwargs)
         self._emit_entity_states(ieee, sid)
 
         self.query_areas()
 
         # Start binding timeout — if no data arrives within the window,
-        # warn the user that the 0xFC32 binding may be missing.
-        self._start_binding_timer()
+        # warn the user that the 0xFC32 binding may be missing. Not when another
+        # quirk runs the switch: then that's why, and the quirk notice says so.
+        if dev.get("quirk_ok", True):
+            self._start_binding_timer()
+        else:
+            self._cancel_binding_timer()
 
     def query_areas(self):
         """Send control_id=2 to make the device report all zone configs."""
@@ -345,6 +351,7 @@ class ZHAClient:
         self.socketio.emit("zha_device_info", {
             "ieee":     self._ieee,
             "quirk_ok": dev.get("quirk_ok", True),
+            "quirk":    dev.get("quirk"),
         }, **emit_kwargs)
 
         # 3. Request fresh zone data from the device
@@ -626,15 +633,24 @@ class ZHAClient:
             entities = ent_registry.get(ha_device_id) if ha_device_id else None
             entity_ids = [e["entity_id"] for e in (entities or []) if e.get("entity_id")]
             roles = entity_roles(entities)
+            kind = quirk_kind(dev.get("quirk_applied"), dev.get("quirk_class"),
+                              self._has_visualizer_entity(entities))
             facts = {
-                "roles":       roles,
-                "sw_version":  reg_entry.get("sw_version") or dev.get("sw_version"),
-                "lqi":         dev.get("lqi"),
-                "rssi":        dev.get("rssi"),
-                "quirk_class": dev.get("quirk_class"),
+                "roles":            roles,
+                "sw_version":       reg_entry.get("sw_version") or dev.get("sw_version"),
+                "lqi":              dev.get("lqi"),
+                "rssi":             dev.get("rssi"),
+                "quirk_class":      dev.get("quirk_class"),
+                "quirk":            kind,
+                "setting_entities": self._setting_entities(entities),
             }
-            quirk_ok = self._check_quirk_ok(dev, entities)
-            if not quirk_ok:
+            # Unknown (no registry to look at): give the quirk the benefit of the doubt
+            quirk_ok = kind == QUIRK_VISUALIZER or (kind is None and self._check_quirk_ok(dev, entities))
+            if kind == QUIRK_BUILTIN:
+                print(f"ZHA: {ieee} runs ZHA's built-in VZM32-SN quirk. Its settings work, but it "
+                      "doesn't pass the radar's reports on: no live targets, area occupancy or "
+                      "zones. Install this repo's quirk for those; see ZHADOC.md.", flush=True)
+            elif not quirk_ok:
                 if self._legacy_quirk_ok(dev):
                     # Some quirk is applied / 0xFC32 is in the signature, but
                     # the Visualizer-only entity is missing — almost always the
@@ -970,11 +986,10 @@ class ZHAClient:
         Read current HA entity states and emit the translated values as
         device_config so the sidebar dropdowns/sliders populate correctly.
 
-        We GET /api/states and match entities by entity_id suffix against
-        the known attribute names in _ENTITY_SUFFIX_MAP. Filtering by
-        device_id is not reliable (it's not exposed in /api/states attributes),
-        so we rely on suffix matching alone, which is sufficient since all
-        VZM32-SN entities have unique suffix names.
+        We GET /api/states and match this switch's entities to the attribute
+        names in _ENTITY_SUFFIX_MAP: by registry unique_id when discovery found
+        one (both this repo's quirk and ZHA's built-in one end it with the
+        attribute name), else by the entity_id's ending.
         """
         try:
             states = self._rest_get("/states")
@@ -988,9 +1003,11 @@ class ZHAClient:
         # Only this switch's own entities: with two VZM32-SN switches the suffixes
         # match both, and the other switch's values would win half the time.
         own = None
+        by_entity = {}
         for dev in self.device_list.values():
             if ha_device_id and dev.get("ha_device_id") == ha_device_id and dev.get("entity_ids"):
                 own = set(dev["entity_ids"])
+                by_entity = dev.get("setting_entities") or {}
 
         config_payload = {}
         for state in states:
@@ -1001,12 +1018,17 @@ class ZHAClient:
             if raw_state in (None, "unavailable", "unknown"):
                 continue
 
-            for suffix, (reverse_map, param_name) in _ENTITY_SUFFIX_MAP.items():
-                if entity_id.endswith(f"_{suffix}"):
-                    translated = self._translate_state(raw_state, reverse_map)
-                    if translated is not None:
-                        config_payload[param_name] = translated
-                    break
+            # By unique_id when the registry gave one (works for any quirk and survives a
+            # renamed entity), else by the entity_id's ending (this repo's quirk)
+            suffix = by_entity.get(entity_id) or next(
+                (s for s in _ENTITY_SUFFIX_MAP if entity_id.endswith(f"_{s}")), None)
+            if suffix is None:
+                continue
+            reverse_map, param_name = _ENTITY_SUFFIX_MAP[suffix]
+            options = (state.get("attributes") or {}).get("options")
+            translated = self._translate_state(raw_state, reverse_map, options)
+            if translated is not None:
+                config_payload[param_name] = translated
 
         if config_payload:
             payload = {"topic": self._topic, "payload": config_payload}
@@ -1014,6 +1036,22 @@ class ZHAClient:
                 self.socketio.emit("device_config", payload, to=sid)
             else:
                 self.socketio.emit("device_config", payload)
+
+    @staticmethod
+    def _setting_entities(entities: list | None) -> dict:
+        """entity_id → attribute name for the settings in _ENTITY_SUFFIX_MAP, from the
+        entity registry. Both quirks end the unique_id with the attribute name: this
+        repo's "<ieee>-1-mmwave_hold_time", ZHA's built-in "<ieee>-1-64562-mmwave_hold_time"."""
+        found = {}
+        for entry in entities or []:
+            if not isinstance(entry, dict) or not entry.get("entity_id"):
+                continue
+            uid = (entry.get("unique_id") or "").lower()
+            for name in _ENTITY_SUFFIX_MAP:
+                if uid.endswith(f"-{name}"):
+                    found[entry["entity_id"]] = name
+                    break
+        return found
 
     # Entity created only by the Visualizer quirk's 0xFC32 declarations.
     # Neither the official Inovelli quirk nor a quirk-less device has it,
@@ -1087,13 +1125,14 @@ class ZHAClient:
         return bool(dev.get("quirk_applied", False))
 
     @staticmethod
-    def _translate_state(raw_state: str, reverse_map: dict | None):
+    def _translate_state(raw_state: str, reverse_map: dict | None, options: list | None = None):
         """Convert a raw HA state string to the value the frontend expects.
 
         ZHA number entities return integer strings ("0", "1", ...).
-        ZHA select entities return display strings ("Disable (default)", "Enable", ...).
+        ZHA select entities return display strings ("Disable (default)", "Enable", ...),
+        or with ZHA's built-in quirk its own labels ("High", "X Small"), which are
+        matched by position in the entity's options.
         ZHA switch entities (the quirk's target info report) return "on" / "off".
-        All three are handled here.
         """
         if raw_state in ("on", "off") and reverse_map is _REVERSE_TARGET_INFO:
             raw_state = "1" if raw_state == "on" else "0"
@@ -1102,6 +1141,10 @@ class ZHAClient:
             # Check for an exact match among the known display values.
             if raw_state in reverse_map.values():
                 return raw_state
+            # ZHA lists an enum's options in definition order, and these enums count
+            # 0, 1, 2...: a label's position is its raw value
+            if isinstance(options, list) and raw_state in options and len(options) == len(reverse_map):
+                return reverse_map.get(options.index(raw_state))
         try:
             int_val = int(float(raw_state))
         except (ValueError, TypeError):

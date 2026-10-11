@@ -19,7 +19,7 @@ Decodes Zigbee2MQTT payloads to visualize real-time MQTT data and configure dete
 ZHA support has just been added experimentally. Requires a custom Quark that I have built to be installed in ZHA.
 [ZHA DOC HERE](ZHADOC.md)
 
-> **ZHA on Home Assistant 2026.8 or later:** keep (or install) this repo's quirk even though ZHA now supports the VZM32-SN on its own. The built-in support doesn't pass the switch's radar reports on to Home Assistant, so without this quirk the Visualizer shows nothing. [Why](ZHADOC.md#why-the-custom-quirk-is-still-needed)
+> **ZHA on Home Assistant 2026.8 or later:** keep (or install) this repo's quirk even though ZHA now supports the VZM32-SN on its own. The built-in support doesn't pass the switch's radar reports on to Home Assistant, so without this quirk the Visualizer shows no targets, areas or zones (the switch's settings still work). [Why](ZHADOC.md#why-the-custom-quirk-is-still-needed)
 
 ## Features
 
@@ -33,8 +33,8 @@ ZHA support has just been added experimentally. Requires a custom Quark that I h
 - Name zones ("Couch", "Desk"); the names show on the map, in the zone list and in backups. Each detection area shows its Home Assistant entity, or on ZHA a ready-made sensor to copy.
 - History (off until you turn it on): a heat map of where people spent time over the last 10 minutes, hour, 6 hours, day, week or any range, and a timeline of when occupancy and the light changed, each with a replay of what the radar saw.
 - Hold time and sit-still tests that time how the switch behaves and suggest what to change.
-- Config tab: every setting on the switch in one place (presence, brightness, fade speeds, paddle and buttons, the LED bar and each LED, wiring, bindings and power reporting), each with an ⓘ explaining what it does, its default and a reset button. Search them by name or parameter number (p13), or show only the ones you've changed. Settings that could stop the light working ask before changing.
-- Switch details at the top of the Config tab: firmware, mmWave module version, Zigbee signal and firmware updates.
+- Config tab: every setting on the switch in one place (presence, brightness, fade speeds, paddle and buttons, the LED bar and each LED, wiring, bindings and power reporting), each with an ⓘ explaining what it does, its default and a reset button. Search them by name or parameter number (p13), or show only the ones you've changed. Changes wait (orange dot) until you press Apply, so nothing is sent while you're still adjusting. Settings that could stop the light working ask before changing.
+- Switch details at the top of the Config tab: firmware, mmWave module version, Zigbee signal, firmware updates and, on ZHA, which quirk runs the switch.
 - Download diagnostics from the ⋮ menu to attach to a bug report (passwords and tokens are removed).
 - Occupancy, per-area occupancy and light level as they change.
 - Works on phones, follows your light or dark system theme, and saves the map as an image from the ⋮ menu.
@@ -183,7 +183,7 @@ Before starting the add-on, go to the **Configuration** tab and connect it to yo
 
 5. To auto-detect interference, clear the room, turn on whatever moves (fan, vent and so on) and press Detect automatically under Zone tools. Any interference zones the switch finds show up hatched in red.
 
-How the radar detects people (sensitivity, trigger speed, hold time, stay life) is in the Detection tab, with tests that time how the switch behaves. Every other setting, and the switch's firmware and signal, is in the Config tab. Changes are sent as soon as you make them.
+How the radar detects people (sensitivity, trigger speed, hold time, stay life) is in the Detection tab, with tests that time how the switch behaves. Every other setting, and the switch's firmware and signal, is in the Config tab. Changes wait until you press Apply.
 
 ## Understanding the Zones
 

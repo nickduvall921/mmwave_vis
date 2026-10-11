@@ -51,6 +51,8 @@ export const state = {
     targetCount: 0,           // targets in the latest report
     settings: {},             // the switch's latest reported settings (mmWaveHoldTime, ...)
     deviceInfo: null,         // firmware, link quality and HA entities (device_info event)
+    radarReports: true,       // false when a ZHA quirk other than the Visualizer's runs the switch: no targets, areas or zones
+    quirk: null,              // on ZHA: 'visualizer' | 'builtin' | 'custom' | 'none' | null (unknown)
     pending: {},              // "category:area" → saved zone (or null for a delete) the switch hasn't confirmed yet
     edit: null,               // { category, area, draft, isNew } while a zone is being edited
     arranging: false,         // room layout mode

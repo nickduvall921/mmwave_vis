@@ -90,9 +90,14 @@ def test_the_detection_tab_and_the_catalogue_agree():
     for key in ('mmWaveDetectSensitivity', 'mmWaveDetectTrigger', 'mmWaveRoomSizePreset', 'mmwaveControlWiredDevice'):
         block = re.search(rf'<select id="{key}" data-param="{key}">(.*?)</select>', html, re.S).group(1)
         labels = {o['value']: o.get('label', o['value']) for o in SETTINGS[key]['options']}
-        for value, label in re.findall(r'<option value="([^"]+)">([^<]*)</option>', block):
+        options = re.findall(r'<option value="([^"]+)"( class="zha-only")?>([^<]*)</option>', block)
+        for value, zha_only, label in options:
             assert sc.validate(key, value)[0], (key, value)
             assert label == labels[value], (key, value, label)
+            # Options Zigbee2MQTT doesn't know are hidden there
+            assert bool(zha_only) == bool(SETTINGS[key]['options'][[o['value'] for o in SETTINGS[key]['options']].index(value)].get('zhaOnly')), (key, value)
+        # Every value the switch can report has an option
+        assert {v for v, _, _ in options} == set(labels), key
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +200,28 @@ def test_read_zha_reads_each_attribute_and_reports_failures():
     assert kind == 'zha/devices/clusters/attributes/value'
     assert kw == {'ieee': 'aa:bb', 'endpoint_id': 1, 'cluster_id': 0xFC31, 'cluster_type': 'in',
                   'attribute': 0x0B, 'manufacturer': 0x122F}
+
+
+def test_read_zha_stops_asking_a_switch_that_doesnt_answer():
+    calls = []
+
+    def request(kind, **kw):
+        calls.append(kw['attribute'])
+        raise TimeoutError('no answer')
+
+    keys = sc.zha_keys()[:10]
+    reported = []
+    values, failed = sc.read_zha(request, 'aa:bb', keys, on_failed=reported.append)
+    assert values == {}
+    assert len(calls) == sc.GIVE_UP_AFTER
+    assert failed == keys and reported == keys
+
+
+def test_read_zha_keeps_going_past_a_few_unknown_attributes():
+    # "None" (an attribute the switch doesn't have) isn't the switch going quiet
+    keys = sc.zha_keys()[:6]
+    values, failed = sc.read_zha(lambda kind, **kw: 'None', 'aa:bb', keys)
+    assert failed == keys
 
 
 # ---------------------------------------------------------------------------

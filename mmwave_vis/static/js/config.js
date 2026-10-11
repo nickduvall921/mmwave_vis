@@ -1,36 +1,52 @@
 // Config tab: every setting the switch has, grouped, each with an ⓘ explaining it.
 // It's built from the settings catalogue (assets/settings.json), which the addon also
 // checks every write against. Values are the ones Zigbee2MQTT uses; on ZHA the addon
-// converts them. Changes go to the switch at once (risky ones after a confirmation)
-// and count as saved when the switch reports the new value back.
+// converts them. Changes are queued (orange dot) and sent with Apply (changes.js);
+// a change counts as saved when the switch reports the new value back.
 
 import { state, on } from './state.js';
 import * as prefs from './prefs.js';
-import { $, h, setText, toast, confirmAction, duration, infoButton } from './ui.js';
+import { $, h, setText, duration, infoButton } from './ui.js';
+import * as changes from './changes.js';
 
-const CONFIRM_MS = { z2m: 10000, zha: 15000 };   // ZHA reads the value back after 1.5 s, one radio read at a time
 const SAVED_MS = 2500;
+const UNCONFIRMED_MS = 8000;
 const READ_GIVE_UP_MS = 30000;   // Zigbee2MQTT says nothing about a setting it couldn't read
+const STATE_WAIT_MS = 5000;      // how long to wait for the switch's state before asking for settings
 
 let catalog = null;
-let catalogKeys = new Set();
+let loadError = '';
 let tabOpen = false;
-const rows = new Map();        // key → { s, row, info, control, note, mark, text }
-const groups = [];             // { g, el, count, keys }
-const pending = new Map();     // key → { value, timer }
-const requested = new Set();   // settings asked from this switch since it was selected
-const unread = new Set();      // settings the switch didn't answer (ZHA)
-let reading = null;            // { left: Set, total } while "Refresh Values" runs
-let stateArrived = false;      // the switch's state has come in since it was selected
-let readWhenState = false;     // the tab opened before that, so read what's missing once it has
-let stateTimer = 0;
-const STATE_WAIT_MS = 5000;
+const rows = new Map();          // key → { s, row, info, infoBtn, control, note, mark, swatch, text, flash }
+const groups = [];               // { g, el, count, queuedCount, keys }
+const requested = new Set();     // settings asked from this switch since it was selected
+const unread = new Set();        // settings the switch didn't answer
+const giveUps = new Set();       // give-up timers for those reads
+let reading = null;              // { left: Set, total } while "Refresh Values" runs on ZHA
+let waitingForState = false;     // a switch was selected and its state isn't in yet
+let stateWait = 0;
+let unsupported = new Set();     // settings the switch's ZHA quirk doesn't define
+
+// Groups the person has open, kept here too so a page without storage still remembers
+const savedOpen = prefs.get('configOpen');
+const openSet = new Set(savedOpen === null ? ['presence'] : savedOpen.split(',').filter(Boolean));
 
 const socket = () => state.socket;
 const known = key => state.settings[key];
 const has = key => known(key) !== undefined && known(key) !== null;
 const usable = s => !(state.stack === 'zha' && s.zha === false);
 const optionsFor = s => (s.options || []).filter(o => !(o.zhaOnly && state.stack !== 'zha'));
+const isDefault = (s, value) => s.default === undefined || String(value) === String(s.default);
+// The switch's value isn't the default (the blue dot)
+const isChanged = (s, value) => !s.readOnly && value !== undefined && value !== null && !isDefault(s, value);
+
+// Why a setting can't be changed here, or '' if it can
+function unavailable(s) {
+    if (s.readOnly) return '';
+    if (unsupported.has(s.key)) return 'The ZHA quirk running this switch can\'t change this';
+    if (s.needsRadar && !state.radarReports) return 'Needs the Visualizer\'s ZHA quirk';
+    return '';
+}
 
 // --- What a value means ------------------------------------------------------------------
 
@@ -77,39 +93,40 @@ function describe(s, value) {
     }
 }
 
-const isDefault = (s, value) => s.default === undefined || String(value) === String(s.default);
-
 // --- Building the tab -----------------------------------------------------------------------
 
-function makeControl(s, id) {
-    if (s.readOnly) return h('output', { id, class: 'cfg-readonly' }, '–');
+function makeControl(s, id, label) {
+    if (s.readOnly) return h('span', { id, class: 'cfg-readonly' }, '–');
     if (s.control === 'toggle') {
         const off = s.options.find(o => o.value !== s.on);
-        return h('input', { type: 'checkbox', role: 'switch', class: 'switch', id, dataset: { on: s.on, off: off.value } });
+        return h('input', { type: 'checkbox', role: 'switch', class: 'switch', id, 'aria-label': label, dataset: { on: s.on, off: off.value } });
     }
     if (s.control === 'select') {
-        return h('select', { id },
+        return h('select', { id, 'aria-label': label },
             h('option', { value: '', disabled: true }, '–'),
             optionsFor(s).map(o => h('option', { value: o.value }, o.label || o.value)));
     }
     if (s.format === 'hue' || s.format === 'ledHue') {
-        return h('input', { type: 'range', id, min: s.min, max: s.max, step: 1, class: 'hue-range' });
+        return h('input', { type: 'range', id, min: s.min, max: s.max, step: 1, class: 'hue-range', 'aria-label': label });
     }
-    return h('input', { type: 'number', id, min: s.min, max: s.max, step: 1, inputmode: 'numeric', placeholder: '–' });
+    return h('input', { type: 'number', id, min: s.min, max: s.max, step: 1, inputmode: 'numeric', placeholder: '–', 'aria-label': label });
 }
 
 function buildRow(s) {
     const id = `cfg-${s.key}`;
     const infoId = `${id}-info`;
-    const control = makeControl(s, id);
+    const label = changes.titleOf(s.key);
+    const control = makeControl(s, id, label);
     const note = h('span', { class: 'cfg-note' });
     const mark = h('span', { class: 'cfg-mark', 'aria-hidden': 'true' });
     const swatch = (s.format === 'hue' || s.format === 'ledHue') ? h('span', { class: 'cfg-swatch', 'aria-hidden': 'true' }) : null;
-    const row = h('div', { class: 'cfg-row', dataset: { key: s.key } },
-        h('span', { class: 'label-info' }, mark, h('label', { for: id }, s.title), infoButton(infoId, `About ${s.title.toLowerCase()}`)),
+    const infoBtn = infoButton(infoId, `About ${label}`);
+    const title = s.readOnly ? h('span', null, s.title) : h('label', { for: id }, s.title);
+    const row = h('div', { class: 'cfg-row' },
+        h('span', { class: 'label-info' }, mark, title, infoBtn),
         h('span', { class: 'cfg-value' }, h('span', { class: 'cfg-control' }, swatch, control), note));
     const reset = !s.readOnly && s.default !== undefined
-        ? h('button', { class: 'btn link', type: 'button', onclick: () => change(r, s.default) }, 'Reset to default')
+        ? h('button', { class: 'btn link', type: 'button', onclick: () => edit(r, s.default) }, 'Reset to default')
         : null;
     const meta = [];
     if (!s.readOnly && s.default !== undefined) meta.push(`Default: ${describe(s, s.default) || s.default}${s.options ? '' : ` (${s.default})`}.`);
@@ -117,14 +134,15 @@ function buildRow(s) {
     meta.push(`Parameter ${s.param}, ${s.key}.`);
     const info = h('div', { class: 'info-panel', id: infoId, hidden: true },
         s.help.split('\n\n').map(p => h('p', null, p)),
-        s.quirkUpdate ? h('p', { class: 'zha-only' }, 'On ZHA this needs the quirk from Visualizer 4.2 or later; older copies of the quirk don\'t know this setting.') : null,
+        s.quirkUpdate ? h('p', { class: 'zha-only' }, 'With the Visualizer\'s ZHA quirk this needs version 4.2 or later of it; ZHA\'s built-in quirk has it.') : null,
         h('p', { class: 'cfg-meta' }, meta.join(' '), reset ? ' ' : null, reset));
-    const r = { s, row, info, control, note, mark, swatch, text: `${s.title} ${s.sub || ''} ${s.help} ${s.key}`.toLowerCase() };
+    const r = { s, row, info, infoBtn, control, note, mark, swatch, flash: null,
+        text: `${s.title} ${s.sub || ''} ${s.help} ${s.key}`.toLowerCase() };
 
-    if (control.tagName === 'INPUT' && control.type === 'range') {
+    if (control.type === 'range') {
         control.addEventListener('input', () => renderNote(r, Number(control.value)));
     }
-    if (!s.readOnly) control.addEventListener('change', () => change(r, controlValue(r)));
+    if (!s.readOnly) control.addEventListener('change', () => edit(r, controlValue(r)));
     rows.set(s.key, r);
     return [row, info];
 }
@@ -132,7 +150,9 @@ function buildRow(s) {
 function buildGroup(g) {
     const settings = catalog.settings.filter(s => s.group === g.id && usable(s));
     if (!settings.length) return null;
+    const keys = settings.map(s => s.key);
     const count = h('span', { class: 'count' });
+    const queuedCount = h('span', { class: 'count queued-count' });
     const body = [];
     let sub = null;
     for (const s of settings) {
@@ -140,30 +160,27 @@ function buildGroup(g) {
         sub = s.sub;
         body.push(...buildRow(s));
     }
-    const el = h('details', { class: 'section cfg-group', dataset: { group: g.id } },
-        h('summary', null, h('span', null, g.title, count)),
+    const el = h('details', { class: 'section cfg-group' },
+        h('summary', null, h('span', null, g.title, count, queuedCount)),
         g.help ? h('p', { class: 'cfg-group-help' }, g.help) : null,
-        body);
-    el.open = openGroups().includes(g.id);
+        body, changes.applyRow(keys));
+    el.open = openSet.has(g.id);
     el.addEventListener('toggle', () => {
-        if (filtering()) return;            // opened by the search, not the person
-        const open = new Set(openGroups());
-        if (el.open) open.add(g.id); else open.delete(g.id);
-        prefs.set('configOpen', [...open].join(','));
-        if (el.open && tabOpen) readMissing(settings.map(s => s.key));
+        // Remember what the person opened, not what the search opened
+        if (!filtering()) {
+            if (el.open) openSet.add(g.id); else openSet.delete(g.id);
+            prefs.set('configOpen', [...openSet].join(','));
+        }
+        if (el.open && tabOpen) readOnOpen();
     });
-    const entry = { g, el, count, keys: settings.map(s => s.key) };
-    groups.push(entry);
+    groups.push({ g, el, count, queuedCount, keys });
     return el;
 }
 
-const openGroups = () => (prefs.get('configOpen') || 'presence').split(',').filter(Boolean);
-
 function build() {
-    const root = $('#cfgGroups');
     rows.clear();
     groups.length = 0;
-    root.replaceChildren(...catalog.groups.map(buildGroup).filter(Boolean));
+    $('#cfgGroups').replaceChildren(...catalog.groups.map(buildGroup).filter(Boolean));
     renderAll();
 }
 
@@ -175,7 +192,8 @@ function controlValue(r) {
     return c.value;
 }
 
-function showValue(r, value) {
+// `force`: also overwrite a field that has focus (putting back a refused value)
+function showValue(r, value, force = false) {
     const c = r.control;
     const missing = value === undefined || value === null;
     if (r.s.readOnly) {
@@ -184,29 +202,34 @@ function showValue(r, value) {
         c.checked = value === c.dataset.on;
         c.indeterminate = missing;
     } else if (c.tagName === 'SELECT') {
-        let v = missing ? '' : String(value);
+        const v = missing ? '' : String(value);
         if (v && ![...c.options].some(o => o.value === v)) {
             // A value this page doesn't know (newer firmware?); show it rather than a blank
-            c.append(h('option', { value: v, dataset: { extra: '1' } }, `${v}`));
+            c.append(h('option', { value: v, dataset: { extra: '1' } }, v));
         }
         c.value = v;
-    } else if (document.activeElement !== c) {
+    } else if (force || document.activeElement !== c) {
         c.value = missing ? (c.type === 'range' ? c.min : '') : String(value);
     }
-    renderNote(r, value);
 }
 
 function renderNote(r, value) {
     const s = r.s;
-    const p = pending.get(s.key);
+    const key = s.key;
+    const why = unavailable(s);
+    const queued = changes.queued.has(key);
     let text = '';
     let tone = '';
-    if (p) { text = 'Saving…'; tone = 'busy'; }
-    else if (r.saved) { text = 'Saved'; tone = 'good'; }
-    else if (r.failed) { text = r.failed; tone = 'bad'; }
-    else if (value === undefined || value === null) {
-        text = unread.has(s.key) ? 'Couldn\'t read' : (requested.has(s.key) ? 'Reading…' : '');
-        tone = unread.has(s.key) ? 'bad' : '';
+    if (why) text = why;
+    else if (changes.pending.has(key)) { text = 'Saving…'; tone = 'busy'; }
+    else if (r.flash) ({ text, tone } = r.flash);
+    else if (queued) {
+        const d = !s.options && s.format ? describe(s, value) : '';
+        text = d ? `${d} · not applied` : 'Not applied yet';
+        tone = 'queued';
+    } else if (value === undefined || value === null) {
+        text = unread.has(key) ? 'Couldn\'t read' : (requested.has(key) ? 'Reading…' : '');
+        tone = unread.has(key) ? 'bad' : '';
     } else if (!s.options && s.format && !s.readOnly) text = describe(s, value);
     setText(r.note, text);
     r.note.dataset.tone = tone;
@@ -216,22 +239,34 @@ function renderNote(r, value) {
         r.swatch.style.background = Number.isFinite(n) && value !== undefined && value !== null && !follows ? hueColor(n) : 'transparent';
         r.swatch.classList.toggle('follows', follows);
     }
-    const changed = !s.readOnly && value !== undefined && value !== null && !isDefault(s, value);
-    r.mark.classList.toggle('on', changed);
-    r.mark.title = changed ? 'Changed from the default' : '';
+    const changed = isChanged(s, known(key));
+    r.mark.classList.toggle('queued', queued);
+    r.mark.classList.toggle('on', !queued && changed);
+    r.mark.title = queued ? 'Changed here, not applied yet' : changed ? 'Not at its default' : '';
+}
+
+function render(r, force = false) {
+    const value = changes.shown(r.s.key);
+    showValue(r, value, force);
+    const off = !!unavailable(r.s);
+    if (!r.s.readOnly) r.control.disabled = off;
+    r.row.classList.toggle('cfg-off', off);
+    renderNote(r, value);
 }
 
 function renderAll() {
-    for (const r of rows.values()) showValue(r, pending.has(r.s.key) ? pending.get(r.s.key).value : known(r.s.key));
+    for (const r of rows.values()) render(r);
     renderCounts();
     applyFilter();
 }
 
 function renderCounts() {
-    for (const { el, count, keys } of groups) {
-        const changed = keys.filter(k => { const r = rows.get(k); return !r.s.readOnly && has(k) && !isDefault(r.s, known(k)); }).length;
+    for (const { el, count, queuedCount, keys } of groups) {
+        const changed = keys.filter(k => isChanged(rows.get(k).s, known(k))).length;
+        const q = keys.filter(k => changes.queued.has(k)).length;
         setText(count, changed ? `${changed} changed` : '');
-        el.classList.toggle('has-changes', changed > 0);
+        setText(queuedCount, q ? `${q} not applied` : '');
+        el.classList.toggle('queued', q > 0);
     }
 }
 
@@ -247,15 +282,17 @@ const matchesWord = (r, w) => (/^p\d+$/.test(w) ? r.s.param === Number(w.slice(1
 function applyFilter() {
     const q = search().value.trim().toLowerCase();
     const onlyChanged = changedOnly().checked;
-    const open = openGroups();
     for (const { g, el, keys } of groups) {
         let any = false;
         for (const key of keys) {
             const r = rows.get(key);
             const match = (!q || q.split(/\s+/).every(w => matchesWord(r, w))) &&
-                (!onlyChanged || (!r.s.readOnly && has(key) && !isDefault(r.s, known(key))));
+                (!onlyChanged || isChanged(r.s, known(key)) || changes.queued.has(key));
             r.row.hidden = !match;
-            if (!match) r.info.hidden = true;
+            if (!match && !r.info.hidden) {
+                r.info.hidden = true;
+                r.infoBtn.setAttribute('aria-expanded', 'false');
+            }
             any = any || match;
         }
         for (const subhead of el.querySelectorAll('.cfg-sub')) {
@@ -265,17 +302,18 @@ function applyFilter() {
             subhead.hidden = !visible;
         }
         el.hidden = !any;
-        el.open = filtering() ? any : open.includes(g.id);
+        el.open = filtering() ? any : openSet.has(g.id);
     }
     const shown = [...rows.values()].filter(r => !r.row.hidden).length;
     setText($('#cfgEmpty'), filtering() && !shown ? 'No settings match.' : '');
+    // Groups the search opens are read by their toggle event
 }
 
 // --- Reading from the switch --------------------------------------------------------------------
 
 function readMissing(keys) {
     if (!state.device || !catalog) return;
-    const want = keys.filter(k => !has(k) && !requested.has(k) && usable(rows.get(k).s));
+    const want = keys.filter(k => !has(k) && !requested.has(k));
     if (!want.length) return;
     want.forEach(k => requested.add(k));
     socket().emit('read_settings', { keys: want });
@@ -284,27 +322,28 @@ function readMissing(keys) {
 }
 
 function giveUpLater(keys) {
-    const device = state.device;
-    setTimeout(() => {
-        if (state.device !== device) return;
+    const timer = setTimeout(() => {
+        giveUps.delete(timer);
         const missing = keys.filter(k => !has(k) && !unread.has(k));
         if (missing.length) notRead(missing);
     }, state.stack === 'zha' ? READ_GIVE_UP_MS + keys.length * 1000 : READ_GIVE_UP_MS);
+    giveUps.add(timer);
 }
 
 function notRead(keys) {
     for (const key of keys) {
         unread.add(key);
         const r = rows.get(key);
-        if (r) renderNote(r, known(key));
+        if (r) renderNote(r, changes.shown(key));
     }
     gotValues(keys);
 }
 
 function readAll() {
-    if (!state.device) { toast('Choose a switch first.', 'error'); return; }
+    if (!state.device) return;
     const keys = [...rows.keys()];
     keys.forEach(k => { requested.add(k); unread.delete(k); });
+    for (const k of keys) renderNote(rows.get(k), changes.shown(k));
     socket().emit('read_settings', { keys });
     // ZHA sends each setting as it's read. Zigbee2MQTT sends its whole state with every
     // message, so there's no telling a fresh answer from the old one
@@ -318,8 +357,10 @@ function readAll() {
 }
 
 function renderReading() {
-    let text = '';
-    if (reading) {
+    // One read of everything at a time: a second would only wait for the first
+    $('#cfgRead').disabled = !!(reading && reading.left.size);
+    let text = loadError;
+    if (!text && reading) {
         const done = reading.total - reading.left.size;
         text = reading.left.size
             ? `Reading settings from the switch… ${done} of ${reading.total}`
@@ -334,59 +375,32 @@ function gotValues(keys) {
     renderReading();
 }
 
+// Opening the tab (or a group) asks for whatever the open groups are missing, once the
+// switch's state is in: on Z2M it usually has everything already; on ZHA each setting
+// is a radio read, so only open groups.
+function readOnOpen() {
+    if (waitingForState || !catalog) return;
+    readMissing(groups.filter(x => x.el.open || state.stack === 'z2m').flatMap(x => x.keys));
+}
+
+// `late`: nothing came in time. Zigbee2MQTT then has nothing for the switch (it's
+// offline, or new), so asking it to read every setting would only queue up timeouts;
+// Refresh Values still can. ZHA has no state to send without the Visualizer's quirk.
+function stateArrived(late = false) {
+    clearTimeout(stateWait);
+    waitingForState = false;
+    if (tabOpen && !(late && state.stack === 'z2m')) readOnOpen();
+}
+
 // --- Changing a setting ----------------------------------------------------------------------------
 
-async function change(r, value) {
-    const s = r.s;
-    if (!state.device) { toast('Choose a switch first.', 'error'); showValue(r, known(s.key)); return; }
-    if (s.control === 'number') {
-        const n = Number(value);
-        if (value === '' || !Number.isInteger(n) || n < s.min || n > s.max) {
-            toast(`${s.title} takes a whole number from ${s.min} to ${s.max}.`, 'error');
-            showValue(r, known(s.key));
-            return;
-        }
-        value = n;
-    }
-    if (has(s.key) && String(value) === String(known(s.key)) && !pending.has(s.key)) {
-        showValue(r, known(s.key));
-        return;
-    }
-    // Ask first, but only in the direction that can cause trouble (switching smart bulb mode
-    // or the paddle lock off again is always fine)
-    if (s.risky && (!s.riskyTo || s.riskyTo.includes(String(value)))) {
-        const to = describe(s, value) || value;
-        if (!await confirmAction(`${s.risky} Change ${s.title.toLowerCase()} to ${to}?`, { confirm: 'Change', danger: true })) {
-            showValue(r, known(s.key));
-            return;
-        }
-    }
-    send(r, value);
-}
-
-function send(r, value) {
+// The person changed a control: queue it (or put the control back if it can't take that)
+function edit(r, value) {
     const key = r.s.key;
-    clearPending(key);
-    r.saved = false;
-    r.failed = '';
-    const device = state.device;
-    const timer = setTimeout(() => {
-        if (state.device !== device || !pending.has(key)) return;
-        pending.delete(key);
-        r.failed = 'Not confirmed';
-        showValue(r, known(key));
-        toast(`The switch didn't confirm ${r.s.title.toLowerCase()}. Press Refresh Values to see what it has.`, 'error', 6000);
-        setTimeout(() => { r.failed = ''; renderNote(r, known(key)); }, 8000);
-    }, CONFIRM_MS[state.stack] || 12000);
-    pending.set(key, { value: String(value), timer });
-    showValue(r, value);
-    socket().emit('update_parameter', { param: key, value });
-}
-
-function clearPending(key) {
-    const p = pending.get(key);
-    if (p) clearTimeout(p.timer);
-    pending.delete(key);
+    if (!state.device || unavailable(r.s)) { render(r, true); return; }
+    const v = changes.check(key, value);
+    if (v === null) { render(r, true); return; }
+    changes.queue(key, v);
 }
 
 // A device_config message: the switch's state, or part of it. Z2M sends the whole state with
@@ -398,112 +412,112 @@ function fromSwitch(payload) {
         Object.assign(early, payload);
         return;
     }
-    const keys = [];
     const present = [];
+    let changed = false;
     for (const [key, value] of Object.entries(payload)) {
-        if (!catalogKeys.has(key)) continue;
-        present.push(key);
-        const wasUnread = unread.delete(key);
-        if (last.has(key) && last.get(key) === value && !pending.has(key) && !wasUnread) continue;
-        last.set(key, value);
         const r = rows.get(key);
-        state.settings[key] = value;
-        keys.push(key);
         if (!r) continue;
-        const p = pending.get(key);
-        if (p && String(value) === p.value) {
-            clearPending(key);
-            r.saved = true;
-            setTimeout(() => { r.saved = false; renderNote(r, known(key)); }, SAVED_MS);
-        }
-        // While a change is on its way, Z2M can still re-send the old state; keep showing the new value
-        showValue(r, pending.has(key) ? pending.get(key).value : value);
+        present.push(key);
+        state.settings[key] = value;
+        changes.reported(key, value);
+        const wasUnread = unread.delete(key);
+        if (last.has(key) && last.get(key) === value && !wasUnread) continue;
+        last.set(key, value);
+        changed = true;
+        render(r);
     }
-    if (keys.length) {
+    if (changed) {
         renderCounts();
         if (changedOnly().checked) applyFilter();
     }
     if (present.length) {
         gotValues(present);
-        if (!stateArrived) stateIn();
+        if (waitingForState) stateArrived();
     }
 }
 
-function stateIn() {
-    clearTimeout(stateTimer);
-    stateArrived = true;
-    if (readWhenState) {
-        readWhenState = false;
-        readOnOpen();
-    }
+function flash(r, text, tone, ms) {
+    r.flash = { text, tone };
+    clearTimeout(r.flashTimer);
+    r.flashTimer = setTimeout(() => { r.flash = null; renderNote(r, changes.shown(r.s.key)); }, ms);
 }
 
-function refused(data) {
-    const key = data && data.param;
-    const r = key && rows.get(key);
-    if (!r || !pending.has(key)) return;
-    clearPending(key);
-    showValue(r, known(key));
+function onPending({ key, result }) {
+    const r = rows.get(key);
+    if (!r) return;
+    if (result === 'saved') flash(r, 'Saved', 'good', SAVED_MS);
+    else if (result === 'unconfirmed') flash(r, 'Not confirmed', 'bad', UNCONFIRMED_MS);
+    render(r, result !== 'saving');
+}
+
+function onQueue(keys) {
+    for (const key of keys.length ? keys : rows.keys()) {
+        const r = rows.get(key);
+        if (r) render(r, true);
+    }
+    renderCounts();
+    if (changedOnly().checked) applyFilter();
 }
 
 function deviceChanged() {
     early = {};
     last.clear();
-    clearTimeout(stateTimer);
-    stateArrived = false;
-    readWhenState = false;
-    if (state.device) stateTimer = setTimeout(stateIn, STATE_WAIT_MS);
-    for (const key of [...pending.keys()]) clearPending(key);
+    for (const t of giveUps) clearTimeout(t);
+    giveUps.clear();
+    clearTimeout(stateWait);
+    waitingForState = !!state.device;
+    if (waitingForState) stateWait = setTimeout(() => stateArrived(true), STATE_WAIT_MS);
     requested.clear();
     unread.clear();
+    unsupported = new Set();
     reading = null;
     renderReading();
-    for (const r of rows.values()) { r.saved = false; r.failed = ''; }
     if (catalog) {
-        for (const r of rows.values()) r.control.querySelectorAll('option[data-extra]').forEach(o => o.remove());
+        for (const r of rows.values()) {
+            r.flash = null;
+            r.control.querySelectorAll('option[data-extra]').forEach(o => o.remove());
+        }
         renderAll();
-        if (tabOpen) readOnOpen();
     }
 }
 
-// Opening the tab asks for whatever the open groups are missing, once the switch's state
-// is in: on Z2M it usually has everything already; on ZHA each setting is a radio read,
-// so only open groups.
-function readOnOpen() {
-    if (!stateArrived) {
-        readWhenState = true;
-        return;
-    }
-    const keys = groups.filter(x => x.el.open || state.stack === 'z2m').flatMap(x => x.keys);
-    readMissing(keys);
+function deviceInfo() {
+    const info = state.deviceInfo;
+    unsupported = new Set(info && info.topic === state.device ? info.unsupported_settings || [] : []);
+    if (catalog) renderAll();
 }
 
 export function tabShown(open) {
     tabOpen = open;
-    if (open && catalog) readOnOpen();
+    if (open) readOnOpen();
 }
 
 export async function initConfig() {
     on('device-config', fromSwitch);
     on('device', deviceChanged);
+    on('queue', keys => catalog && onQueue(keys));
+    on('pending', p => catalog && onPending(p));
+    on('device-info', deviceInfo);
+    on('radar-reports', () => catalog && renderAll());
     if (state.device) deviceChanged();
-    const url = document.body.dataset.catalog;
     try {
-        const res = await fetch(url);
+        const res = await fetch(document.body.dataset.catalog);
         if (!res.ok) throw new Error(res.status);
         catalog = await res.json();
-        catalogKeys = new Set(catalog.settings.map(s => s.key));
     } catch (e) {
-        setText($('#cfgStatus'), 'Couldn\'t load the list of settings. Reload the page to try again.');
+        loadError = 'Couldn\'t load the list of settings. Reload the page to try again.';
+        renderReading();
         return;
     }
+    changes.setCatalog(catalog.settings);
     build();
     fromSwitch(early);
     early = {};
+    deviceInfo();
     $('#cfgSearch').addEventListener('input', applyFilter);
     $('#cfgChanged').addEventListener('change', applyFilter);
     $('#cfgRead').addEventListener('click', readAll);
-    socket().on('command_error', refused);
+    changes.bindApplyBar({ button: $('#cfgApply'), discardButton: $('#cfgDiscard'), status: $('#cfgQueued') });
     socket().on('settings_unread', msg => {
         if (msg && msg.topic === state.device && Array.isArray(msg.keys)) notRead(msg.keys);
     });
