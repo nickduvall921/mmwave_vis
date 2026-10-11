@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [Unreleased]
+## [4.2.0] - 2026-10-11
 
 ### Added
 - Config tab: all 91 settings of the switch, grouped (Presence, On/off and brightness, Fade and dimming speeds, Paddle and buttons, LED bar, Individual LEDs, Wiring and load, Bindings and fan control, Power reporting, Status, Advanced). Each setting has an ⓘ explaining it in plain words, from Inovelli's documentation, Zigbee2MQTT's definitions and what people have found on the forum, with its default, range, parameter number and a Reset to default button.
