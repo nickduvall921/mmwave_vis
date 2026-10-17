@@ -22,6 +22,7 @@ import json
 import os
 import queue
 import signal
+import ssl
 import sys
 import traceback
 import time
@@ -235,12 +236,12 @@ class Z2MDriver:
         self._tls_error = None
         if MQTT_USE_TLS:
             try:
-                if MQTT_TLS_CA_CERT:
-                    self._client.tls_set(ca_certs=MQTT_TLS_CA_CERT)
-                else:
-                    self._client.tls_set()
-                if MQTT_TLS_INSECURE:
-                    self._client.tls_insecure_set(True)
+                # tls_insecure_set() alone only skips the hostname check, so a
+                # self-signed broker would still fail; CERT_NONE skips both.
+                self._client.tls_set(
+                    ca_certs=MQTT_TLS_CA_CERT or None,
+                    cert_reqs=ssl.CERT_NONE if MQTT_TLS_INSECURE else ssl.CERT_REQUIRED,
+                )
             except Exception as e:
                 # A mistyped CA path would otherwise stop the whole app at startup.
                 self._tls_error = f"{e} (mqtt_tls_ca_cert: {MQTT_TLS_CA_CERT or 'not set'})"
