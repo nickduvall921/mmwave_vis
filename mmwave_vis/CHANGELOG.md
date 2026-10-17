@@ -1,6 +1,12 @@
 # Changelog
 
 
+## [4.2.1] - 2026-10-17
+
+### Fixed
+- The add-on's Configuration tab now has the MQTT TLS options (`mqtt_use_tls`, `mqtt_tls_insecure`, `mqtt_tls_ca_cert`) that only the Docker image could use before; Home Assistant dropped them when they were typed in by hand ([#65](https://github.com/nickduvall921/mmwave_vis/issues/65)). The add-on can read Home Assistant's `/ssl` folder for a custom CA certificate.
+- A CA certificate path that can't be read no longer stops the app at startup; the log says what went wrong and MQTT stays disconnected.
+
 ## [4.2.0] - 2026-10-11
 
 ### Added

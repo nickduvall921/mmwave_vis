@@ -90,7 +90,8 @@ HA_URL          = _cfg('ha_url',          'HA_URL',          'http://supervisor'
 # mapped volume in the standalone Docker setup).
 DATA_DIR        = os.environ.get('DATA_DIR', '/data')
 
-# MQTT TLS/SSL (for standalone Docker users with TLS-enabled brokers)
+# MQTT TLS/SSL for TLS-enabled brokers (addon options or Docker env vars).
+# The addon maps Home Assistant's /ssl folder read-only for a custom CA.
 MQTT_USE_TLS      = _as_bool(_cfg('mqtt_use_tls',      'MQTT_USE_TLS',      False))
 MQTT_TLS_INSECURE = _as_bool(_cfg('mqtt_tls_insecure', 'MQTT_TLS_INSECURE', False))
 MQTT_TLS_CA_CERT  = _cfg('mqtt_tls_ca_cert',           'MQTT_TLS_CA_CERT',  '')
@@ -231,13 +232,18 @@ class Z2MDriver:
         self._client = mqtt.Client()
         if MQTT_USERNAME and MQTT_PASSWORD:
             self._client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+        self._tls_error = None
         if MQTT_USE_TLS:
-            if MQTT_TLS_CA_CERT:
-                self._client.tls_set(ca_certs=MQTT_TLS_CA_CERT)
-            else:
-                self._client.tls_set()
-            if MQTT_TLS_INSECURE:
-                self._client.tls_insecure_set(True)
+            try:
+                if MQTT_TLS_CA_CERT:
+                    self._client.tls_set(ca_certs=MQTT_TLS_CA_CERT)
+                else:
+                    self._client.tls_set()
+                if MQTT_TLS_INSECURE:
+                    self._client.tls_insecure_set(True)
+            except Exception as e:
+                # A mistyped CA path would otherwise stop the whole app at startup.
+                self._tls_error = f"{e} (mqtt_tls_ca_cert: {MQTT_TLS_CA_CERT or 'not set'})"
         self._client.on_connect    = self._on_connect
         self._client.on_disconnect = self._on_disconnect
         self._client.on_message    = self._on_message
@@ -245,11 +251,14 @@ class Z2MDriver:
     # --- Lifecycle ---
 
     def start(self):
-        try:
-            self._client.connect(MQTT_BROKER, MQTT_PORT, 60)
-            self._client.loop_start()
-        except Exception as e:
-            print(f"MQTT Connection Failed: {e}", flush=True)
+        if self._tls_error:
+            print(f"MQTT TLS setup failed, not connecting: {self._tls_error}", flush=True)
+        else:
+            try:
+                self._client.connect(MQTT_BROKER, MQTT_PORT, 60)
+                self._client.loop_start()
+            except Exception as e:
+                print(f"MQTT Connection Failed: {e}", flush=True)
 
         threading.Thread(target=self._cleanup_loop, daemon=True).start()
 
