@@ -1,6 +1,6 @@
 name: "Inovelli mmWave Visualizer"
 description: "Live 2D tracking for Inovelli mmWave switches via MQTT-Z2M or ZHA"
-version: "4.2.0"
+version: "4.2.1"
 slug: "mmwave_viz"
 init: false
 arch:
@@ -8,6 +8,8 @@ arch:
   - amd64
 map:
   - config:rw
+  # /ssl holds certificates (e.g. a CA for mqtt_tls_ca_cert)
+  - ssl:ro
 hassio_api: true
 hassio_role: default
 homeassistant_api: true
@@ -23,6 +25,9 @@ options:
   mqtt_username: ""
   mqtt_password: ""
   mqtt_base_topic: "zigbee2mqtt"
+  mqtt_use_tls: false
+  mqtt_tls_insecure: false
+  mqtt_tls_ca_cert: ""
   ha_url: "http://supervisor"
   ha_token: ""
 schema:
@@ -33,6 +38,9 @@ schema:
   mqtt_username: str
   mqtt_password: str
   mqtt_base_topic: str
+  mqtt_use_tls: bool
+  mqtt_tls_insecure: bool
+  mqtt_tls_ca_cert: str
   ha_url: str
   ha_token: str
 

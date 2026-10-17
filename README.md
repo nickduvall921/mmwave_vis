@@ -159,8 +159,13 @@ Before starting the add-on, go to the **Configuration** tab and connect it to yo
 | `mqtt_username` | MQTT username (if applicable) | `""` |
 | `mqtt_password` | MQTT password (if applicable) | `""` |
 | `mqtt_base_topic` | Base topic for Zigbee2MQTT | `zigbee2mqtt` |
+| `mqtt_use_tls` | Connect over TLS (set `mqtt_port` to the broker's TLS port, usually `8883`) | `false` |
+| `mqtt_tls_insecure` | Skip certificate verification (not recommended) | `false` |
+| `mqtt_tls_ca_cert` | Path to a CA certificate for a self-signed broker certificate, e.g. `/ssl/ca.crt` (the add-on can read Home Assistant's `/ssl` folder) | `""` |
 
 > **Note:** If you use the standard Home Assistant Mosquitto broker add-on, the defaults should work out of the box.
+
+> **TLS with the Mosquitto add-on:** the certificate has to be valid for the name in `mqtt_broker`. A certificate issued for your own domain won't match `core-mosquitto`, so put that domain in `mqtt_broker` instead (it must resolve to your Home Assistant host), or point `mqtt_tls_ca_cert` at the CA that signed a certificate for `core-mosquitto`.
 
 ## Switch Setup (Required)(Z2M)
 
