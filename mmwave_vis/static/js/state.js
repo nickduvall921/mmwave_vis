@@ -41,7 +41,8 @@ export const state = {
     socket: null,
     stack: null,              // 'z2m' | 'zha' | null
     device: '',               // selected device topic
-    deviceName: '',           // its friendly name
+    deviceName: '',           // what the switch list calls it
+    devices: [],              // the switch list from the addon (device_list)
     zones: emptyZones(),
     zoneReportAt: freshReportTimes(),
     zoneNames: {},            // "category:area" → name (display only, saved by the addon)

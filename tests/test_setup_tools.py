@@ -22,7 +22,8 @@ import device_info
 import diagnostics
 import ha_ws
 import logtap
-from utils import normalize_zone_names, is_fresh_target_frame, target_frame_mark
+from utils import (normalize_zone_names, normalize_switch_name, is_address_name, is_fresh_target_frame,
+                   target_frame_mark)
 
 IEEE_ZHA = "0c:2a:6f:ff:fe:aa:39:2b"
 IEEE_Z2M = "0x0c2a6ffffef6f6a7"
@@ -250,6 +251,24 @@ def test_zone_names():
     assert normalize_zone_names(None) == (None, None)
     assert normalize_zone_names({}) == (None, None)
     assert normalize_zone_names([1])[1]
+
+
+def test_switch_names():
+    assert normalize_switch_name("  Kitchen\n island\x07 ") == ("Kitchen island", None)
+    assert normalize_switch_name("K" * 80) == ("K" * 60, None)
+    assert normalize_switch_name("   ") == (None, None)
+    assert normalize_switch_name(None) == (None, None)
+    assert normalize_switch_name(5)[1]
+
+
+def test_address_names():
+    # Zigbee2MQTT's default name; such a switch is listed by its Z2M description (#67)
+    assert is_address_name(IEEE_Z2M)
+    assert is_address_name("upstairs/0x0C2A6FFFFEF6F6A7")
+    assert not is_address_name("Kitchen")
+    assert not is_address_name(IEEE_Z2M[:-1])
+    assert not is_address_name(IEEE_Z2M + " kitchen")
+    assert not is_address_name(None)
 
 
 def test_fresh_target_frames():

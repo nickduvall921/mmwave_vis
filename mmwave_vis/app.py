@@ -156,6 +156,7 @@ session_topics_lock = threading.Lock()
 from utils import (
     validate_parameter, safe_int, decode_raw_targets, decode_raw_zones,
     normalize_layout, layout_key, normalize_zone_names, is_fresh_target_frame, target_frame_mark,
+    normalize_switch_name, is_address_name, clean_name, MAX_SWITCH_NAME,
 )
 from layout_store import LayoutStore
 import device_info
@@ -167,6 +168,8 @@ from history import History
 layout_store = LayoutStore(os.path.join(DATA_DIR, 'layouts.json'))
 zone_name_store = LayoutStore(os.path.join(DATA_DIR, 'zone_names.json'),
                               normalize=normalize_zone_names, label='Zone names')
+switch_name_store = LayoutStore(os.path.join(DATA_DIR, 'switch_names.json'),
+                                normalize=normalize_switch_name, label='Switch names')
 
 HA_WS_URL = ha_ws.ws_url(HA_URL)
 registry = ha_ws.RegistryCache(HA_TOKEN, HA_WS_URL)
@@ -209,6 +212,32 @@ def emit_to_topic_subscribers(event, data, topic, skip_sid=None):
     for sid in get_sessions_for_topic(topic):
         if sid != skip_sid:
             socketio.emit(event, data, to=sid)
+
+
+def _layout_key(topic):
+    # By IEEE address when known, so a layout survives renaming the switch
+    return layout_key(topic, driver.ieee_for_topic(topic))
+
+
+def _per_switch(store, topic):
+    value = store.get(_layout_key(topic))
+    # Saved before Z2M told us the switch's IEEE address, so under its topic
+    return value if value is not None else store.get(topic)
+
+
+def device_list_payload():
+    """The switches for the page's list. Each gets `name`, the one given in the
+    Visualizer (or None), and `label`, what the list shows: that name, else its
+    Zigbee2MQTT description, else the switch's own name."""
+    devices = driver.get_device_list_snapshot()
+    for d in devices:
+        d['name'] = _per_switch(switch_name_store, d.get('topic'))
+        d['label'] = d['name'] or d.get('description') or d.get('friendly_name') or d.get('topic')
+    return devices
+
+
+def emit_device_list():
+    socketio.emit('device_list', device_list_payload())
 
 
 # ===========================================================================
@@ -267,7 +296,12 @@ class Z2MDriver:
 
     def get_device_list_snapshot(self):
         with self.device_list_lock:
-            return [dict(d) for d in self.device_list.values()]
+            devices = [dict(d) for d in self.device_list.values()]
+            for d in devices:
+                # A switch Zigbee2MQTT knows only by its address is listed by its Z2M description (#67)
+                entry = self._bridge_entries.get(d['friendly_name']) or {}
+                d['description'] = entry.get('description') if is_address_name(d['friendly_name']) else None
+            return devices
 
     def _remember_ieee(self, devices):
         # Friendly names can be changed in Z2M; the IEEE address can't, so room
@@ -287,9 +321,14 @@ class Z2MDriver:
             if 'VZM32' in model.upper():
                 entries[d['friendly_name']] = {k: d.get(k) for k in (
                     'ieee_address', 'software_build_id', 'date_code', 'model_id', 'power_source')}
+                entries[d['friendly_name']]['description'] = clean_name(d.get('description'), MAX_SWITCH_NAME) or None
         with self.device_list_lock:
+            changed = names != self._ieee_by_name or entries != self._bridge_entries
             self._ieee_by_name = names
             self._bridge_entries = entries
+        if changed:
+            # Switch names are kept by IEEE address, and the list can show Z2M descriptions
+            emit_device_list()
 
     def history_key_for(self, fname, topic):
         with self.device_list_lock:
@@ -587,7 +626,7 @@ class Z2MDriver:
                             else:
                                 self.device_list[fname]['last_seen'] = time.time()
                         if is_new:
-                            socketio.emit('device_list', self.get_device_list_snapshot())
+                            emit_device_list()
             except Exception as e:
                 print(f"Z2M: device discovery error for {topic}: {e}", flush=True)
 
@@ -814,7 +853,7 @@ class Z2MDriver:
                 for key in stale:
                     del self.device_list[key]
             if stale:
-                socketio.emit('device_list', self.get_device_list_snapshot())
+                emit_device_list()
 
 
 # ===========================================================================
@@ -827,7 +866,7 @@ class ZHADriver:
     def __init__(self):
         from zha_client import ZHAClient
         self._zha = ZHAClient(HA_URL, HA_TOKEN, socketio, debug=DEBUG, history=history,
-                              history_key=history_key)
+                              history_key=history_key, on_device_list=emit_device_list)
         self._attrs = {}       # ieee → attributes read from the switch (cached; they're radio reads)
         self._attrs_lock = threading.Lock()
         self._settings = {}    # ieee → {setting: (value, when read)} from the switch, for the Config tab
@@ -1296,7 +1335,7 @@ def handle_connect(auth=None):
     # via a mqtt_status emit if the WebSocket is actually down.
     is_connected = True if ZIGBEE_STACK == 'zha' else driver.mqtt_connected
     emit('mqtt_status', {'connected': is_connected})
-    emit('device_list', driver.get_device_list_snapshot())
+    emit('device_list', device_list_payload())
     emit('stack_info',  {'stack': ZIGBEE_STACK})
 
 
@@ -1308,23 +1347,15 @@ def handle_disconnect():
 
 @socketio.on('request_devices')
 def handle_request_devices():
-    emit('device_list', driver.get_device_list_snapshot())
-
-
-def _layout_key(topic):
-    # By IEEE address when known, so a layout survives renaming the switch
-    return layout_key(topic, driver.ieee_for_topic(topic))
+    emit('device_list', device_list_payload())
 
 
 def _get_layout(topic):
-    layout = layout_store.get(_layout_key(topic))
-    # A layout saved before Z2M told us the switch's IEEE address is under its topic
-    return layout if layout is not None else layout_store.get(topic)
+    return _per_switch(layout_store, topic)
 
 
 def _get_zone_names(topic):
-    names = zone_name_store.get(_layout_key(topic))
-    return names if names is not None else zone_name_store.get(topic)
+    return _per_switch(zone_name_store, topic)
 
 
 _device_info_cache = {}
@@ -1374,6 +1405,29 @@ def handle_change_device(new_topic):
 def handle_refresh_device_info(topic):
     if isinstance(topic, str) and topic:
         socketio.start_background_task(_send_device_info, request.sid, topic, True)
+
+
+@socketio.on('save_switch_name')
+def handle_save_switch_name(data):
+    """The name the switch list shows (display only). A null name removes it.
+    The return value is the acknowledgement; every page gets the new list."""
+    if not isinstance(data, dict) or not isinstance(data.get('topic'), str) or not data['topic']:
+        return {'error': 'The name needs a switch'}
+    topic = data['topic']
+    name, error = normalize_switch_name(data.get('name'))
+    if error:
+        return {'error': error}
+    key = _layout_key(topic)
+    error = switch_name_store.set(key, name)
+    if error:
+        return {'error': error}
+    if key != topic and switch_name_store.get(topic) is not None:
+        switch_name_store.set(topic, None)   # moved to the IEEE key
+    emit_device_list()
+    ack = {'ok': True, 'name': name}
+    if switch_name_store.write_error:
+        ack['warning'] = switch_name_store.write_error
+    return ack
 
 
 @socketio.on('save_zone_names')

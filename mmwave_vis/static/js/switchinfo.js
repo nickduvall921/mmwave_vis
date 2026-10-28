@@ -1,10 +1,14 @@
-// The selected switch's firmware, mmWave module version, Zigbee signal and
-// firmware updates (top of the Config tab, and a line in the status popover).
+// The selected switch's name in the switch list, firmware, mmWave module version,
+// Zigbee signal and firmware updates (top of the Config tab, and a line in the
+// status popover).
 
-import { state, emit } from './state.js';
+import { state, on, emit } from './state.js';
 import { $, h, setText, toast, copyText, shortDateTime } from './ui.js';
+import { cleanName } from './names.js';
 
 const WEAK_LQI = 80;
+const MAX_NAME = 60;
+const nameInput = $('#switchName');
 
 // Which ZHA quirk runs the switch (device_info.quirk_kind)
 const QUIRKS = {
@@ -111,6 +115,46 @@ function refresh() {
     toast('Reading the switch\'s details again…', 'info', 2500);
 }
 
+// --- Name in the switch list (display only; the addon keeps it for every browser) ---
+
+const listEntry = () => state.devices.find(d => d.topic === state.device) || null;
+
+function renderName() {
+    const d = listEntry();
+    nameInput.disabled = !d;
+    if (document.activeElement !== nameInput) nameInput.value = (d && d.name) || '';
+    nameInput.placeholder = d ? d.description || d.friendly_name : '';
+    let hint = '';
+    if (d) {
+        hint = 'Shown in the switch list. Leave it empty to use ' + (state.stack === 'zha' ? 'its name in Home Assistant.'
+            : d.description ? 'its description in Zigbee2MQTT.' : 'its name in Zigbee2MQTT.');
+    }
+    setText($('#switchNameHint'), hint);
+}
+
+function saveName() {
+    const d = listEntry();
+    if (!d) return;
+    const name = cleanName(nameInput.value, MAX_NAME);
+    nameInput.value = name;
+    if (name === (d.name || '')) return;
+    state.socket.emit('save_switch_name', { topic: d.topic, name: name || null }, ack => {
+        if (ack && ack.error) toast(`The name wasn't saved: ${ack.error}`, 'error', 6000);
+        else if (ack && ack.warning) toast(`Name saved for now. ${ack.warning}`, 'error', 8000);
+    });
+}
+
 export function initSwitchInfo() {
     render();
+    nameInput.addEventListener('change', saveName);
+    nameInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') nameInput.blur();
+        else if (e.key === 'Escape') {
+            nameInput.value = (listEntry() || {}).name || '';
+            nameInput.blur();
+        }
+    });
+    on('device', renderName);
+    on('devices', renderName);
+    renderName();
 }

@@ -164,7 +164,7 @@ class ZHAClient:
     RECONNECT_DELAY_MAX_S = 60   # exponential backoff ceiling
 
     def __init__(self, ha_url: str, ha_token: str, socketio, debug: bool = False, history=None,
-                 history_key=None):
+                 history_key=None, on_device_list=None):
         """
         ha_url   : HA base URL, e.g. "http://supervisor". The WebSocket
                    proxy URL (ws://supervisor/core/websocket) is always used
@@ -176,6 +176,9 @@ class ZHAClient:
                    occupancy (whether or not a page is watching it), or None.
         history_key : callable(topic, ieee) → history key; app.py's version also
                    remembers the topic so live timeline events reach its pages.
+        on_device_list : callable() that sends the switch list to every page, or
+                   None to send device_list as it is. app.py's adds the names
+                   given in the Visualizer.
         """
         self.ha_url   = ha_url.rstrip("/")
         self.ha_token = ha_token
@@ -183,6 +186,7 @@ class ZHAClient:
         self.debug    = debug
         self.history  = history
         self._history_key_fn = history_key or layout_key
+        self._on_device_list = on_device_list
 
         # Currently monitored device
         self._ieee  = None   # IEEE address string
@@ -703,7 +707,10 @@ class ZHAClient:
                 found.append(self.device_list[ieee])
 
         if found:
-            self.socketio.emit("device_list", list(self.device_list.values()))
+            if self._on_device_list:
+                self._on_device_list()
+            else:
+                self.socketio.emit("device_list", list(self.device_list.values()))
 
     # -----------------------------------------------------------------------
     # Internal: Incoming message routing

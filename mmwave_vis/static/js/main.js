@@ -607,14 +607,18 @@ socket.on('command_ack', data => console.log('Command acknowledged:', data));
 
 socket.on('device_list', devices => {
     if (!Array.isArray(devices)) return;
+    // `label` is the name given in the Visualizer, a Zigbee2MQTT description, or the switch's own name
+    devices.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' }));
+    state.devices = devices;
     const present = !!state.device && devices.some(d => d.topic === state.device);
     deviceSelect.replaceChildren(
         h('option', { value: '', disabled: true }, devices.length ? 'Choose a switch' : 'No switches found'),
-        ...devices.map(d => h('option', { value: d.topic }, d.friendly_name)),
+        ...devices.map(d => h('option', { value: d.topic, title: d.label === d.friendly_name ? null : d.friendly_name }, d.label)),
         // Keep showing the switch this page is on while the addon hasn't (re)discovered it
         state.device && !present ? h('option', { value: state.device }, `${state.deviceName} (not found)`) : null);
     deviceSelect.value = state.device;
-    for (const d of devices) if (d.topic === state.device) state.deviceName = d.friendly_name;
+    for (const d of devices) if (d.topic === state.device) state.deviceName = d.label;
+    emit('devices');
 
     if (state.stack === 'zha' && devices.length === 0) {
         setNotice('zhaSetup', {
@@ -640,7 +644,7 @@ socket.on('device_list', devices => {
         const pick = devices.find(d => d.topic === last) || (!last && devices.length === 1 ? devices[0] : null);
         if (pick) {
             deviceSelect.value = pick.topic;
-            selectDevice(pick.topic, pick.friendly_name);
+            selectDevice(pick.topic, pick.label);
         }
     }
 });
