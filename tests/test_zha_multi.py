@@ -56,6 +56,31 @@ def test_other_switch_targets_are_recorded_but_not_sent():
     assert sent["topic"] == f"zha/{A}" and sent["payload"]["targets"][0]["id"] == 2
 
 
+def test_device_list_goes_through_the_app_callback():
+    # app.py's callback adds the names given in the Visualizer before sending the list
+    send = MagicMock()
+    c = ZHAClient("http://supervisor", "token", MagicMock(), on_device_list=send)
+    c._fetch_area_map = lambda ws: {}
+    c._fetch_device_registry = lambda ws: {}
+    c._fetch_entity_registry = lambda ws: {}
+    c._ws_fetch = lambda ws, kind: [{"ieee": A, "manufacturer": "Inovelli", "model": "VZM32-SN"}]
+    c._discover_devices(None)
+    send.assert_called_once_with()
+    assert emitted(c, "device_list") == []
+    assert c.device_list[A]["topic"] == f"zha/{A}"
+
+
+def test_device_list_is_still_sent_when_the_app_callback_fails():
+    # A naming error must not take the ZHA connection down with it
+    c = ZHAClient("http://supervisor", "token", MagicMock(), on_device_list=MagicMock(side_effect=KeyError("x")))
+    c.device_list = {A: {"topic": f"zha/{A}", "ieee": A, "friendly_name": "Hall"}}
+    c._send_device_list()
+    (sent,) = emitted(c, "device_list")
+    assert sent == [{"topic": f"zha/{A}", "ieee": A, "friendly_name": "Hall",
+                     "name": None, "default_label": "Hall", "label": "Hall"}]
+    assert "name" not in c.device_list[A]   # labelled copies, not the cache
+
+
 def test_history_key_callback_is_used():
     # app.py passes its own history_key, which also remembers the topic for live timeline events
     seen = []

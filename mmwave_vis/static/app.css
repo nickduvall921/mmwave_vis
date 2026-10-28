@@ -513,6 +513,7 @@ dialog .button-row { justify-content: flex-end; margin: 0; }
 .facts dt.wide { grid-column: 1 / -1; }
 .facts dd.wide { grid-column: 1 / -1; justify-content: space-between; text-align: left; margin-top: -3px; }
 .facts .btn.link { height: 24px; padding: 0 6px; font-size: 12px; }
+.switch-name-hint { margin: 2px 0 10px; }
 #switchInfo .button-row { margin-top: 10px; }
 
 .tester { margin-top: 6px; }

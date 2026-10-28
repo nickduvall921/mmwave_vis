@@ -35,6 +35,7 @@ ZHA support has just been added experimentally. Requires a custom Quark that I h
 - Hold time and sit-still tests that time how the switch behaves and suggest what to change.
 - Config tab: every setting on the switch in one place (presence, brightness, fade speeds, paddle and buttons, the LED bar and each LED, wiring, bindings and power reporting), each with an ⓘ explaining what it does, its default and a reset button. Search them by name or parameter number (p13), or show only the ones you've changed. Changes wait (orange dot) until you press Apply, so nothing is sent while you're still adjusting. Settings that could stop the light working ask before changing.
 - Switch details at the top of the Config tab: firmware, mmWave module version, Zigbee signal, firmware updates and, on ZHA, which quirk runs the switch.
+- Name a switch for the switch list (Config tab, This switch), handy when Zigbee2MQTT knows it by its address. A switch Zigbee2MQTT knows only by its address (0x…) is listed by its Zigbee2MQTT description when it has one.
 - Download diagnostics from the ⋮ menu to attach to a bug report (passwords and tokens are removed).
 - Occupancy, per-area occupancy and light level as they change.
 - Works on phones, follows your light or dark system theme, and saves the map as an image from the ⋮ menu.

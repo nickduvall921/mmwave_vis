@@ -7,7 +7,11 @@ import { toast } from './ui.js';
 const MAX = 40;
 let saveTimer = 0;
 
-const clean = name => String(name || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX);
+// One line, no control characters, at most `max` characters (the addon cleans names the same way).
+// Counted in characters, not UTF-16 units, so an emoji at the limit isn't cut in half.
+export const cleanName = (name, max = MAX) =>
+    Array.from(String(name || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim())
+        .slice(0, max).join('').trim();
 
 // Names arrived from the addon (device change, or another browser renamed something)
 export function namesFromServer(names) {
@@ -17,7 +21,7 @@ export function namesFromServer(names) {
 
 export function setName(category, area, name) {
     const key = `${category}:${area}`;
-    const value = clean(name);
+    const value = cleanName(name);
     if ((state.zoneNames[key] || '') === value) return;
     if (value) state.zoneNames[key] = value;
     else delete state.zoneNames[key];
@@ -28,7 +32,7 @@ export function setName(category, area, name) {
 // Several at once (backup import, undo) with one save
 export function setNames(entries) {
     for (const [key, name] of Object.entries(entries)) {
-        const value = clean(name);
+        const value = cleanName(name);
         if (value) state.zoneNames[key] = value;
         else delete state.zoneNames[key];
     }
