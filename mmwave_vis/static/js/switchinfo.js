@@ -123,7 +123,7 @@ function renderName() {
     const d = listEntry();
     nameInput.disabled = !d;
     if (document.activeElement !== nameInput) nameInput.value = (d && d.name) || '';
-    nameInput.placeholder = d ? d.description || d.friendly_name : '';
+    nameInput.placeholder = d ? d.default_label : '';
     let hint = '';
     if (d) {
         hint = 'Shown in the switch list. Leave it empty to use ' + (state.stack === 'zha' ? 'its name in Home Assistant.'
@@ -152,6 +152,7 @@ export function initSwitchInfo() {
         else if (e.key === 'Escape') {
             nameInput.value = (listEntry() || {}).name || '';
             nameInput.blur();
+            e.preventDefault();   // used up: layout mode and a replay leave this Escape be
         }
     });
     on('device', renderName);

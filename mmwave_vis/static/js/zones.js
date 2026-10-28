@@ -344,7 +344,9 @@ function nameNodes(category, area) {
 
 // ZHA has no per-area entities; this template sensor (as in ZHADOC.md) gives one
 export function zhaAreaSensorYaml(ieee, n, name) {
-    const label = (name || `mmWave area ${n}`).replace(/"/g, '\'');
+    // Plain text inside the YAML string and Home Assistant's name template: no quotes,
+    // escaped backslashes, and no braces to start a template
+    const label = (name || `mmWave area ${n}`).replace(/"/g, '\'').replace(/\\/g, '\\\\').replace(/[{}]/g, '');
     const digits = String(ieee).toLowerCase().replace(/^0x/, '').replace(/:/g, '');
     return [
         'template:',

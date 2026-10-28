@@ -7,9 +7,11 @@ import { toast } from './ui.js';
 const MAX = 40;
 let saveTimer = 0;
 
-// One line, no control characters, at most `max` characters (the addon cleans names the same way)
+// One line, no control characters, at most `max` characters (the addon cleans names the same way).
+// Counted in characters, not UTF-16 units, so an emoji at the limit isn't cut in half.
 export const cleanName = (name, max = MAX) =>
-    String(name || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+    Array.from(String(name || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim())
+        .slice(0, max).join('').trim();
 
 // Names arrived from the addon (device change, or another browser renamed something)
 export function namesFromServer(names) {

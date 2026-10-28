@@ -138,6 +138,15 @@ def test_bad_topic_rejected(tmp_path):
     assert store.set('x' * 300, _layout()) is not None
 
 
+def test_errors_name_what_the_store_holds(tmp_path, monkeypatch):
+    import layout_store
+    monkeypatch.setattr(layout_store, 'MAX_LAYOUTS', 1)
+    store = LayoutStore(str(tmp_path / 'names.json'), normalize=lambda v: (v, None), label='Switch names')
+    assert store.set('a', 'Kitchen') is None
+    assert store.set('b', 'Hall') == "Too many saved switch names"
+    assert 'layout' not in store.set('x' * 300, 'Hall').lower()
+
+
 def test_creates_missing_data_folder(tmp_path):
     path = tmp_path / 'nested' / 'data' / 'layouts.json'
     store = LayoutStore(str(path))

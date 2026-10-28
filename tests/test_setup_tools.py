@@ -22,8 +22,8 @@ import device_info
 import diagnostics
 import ha_ws
 import logtap
-from utils import (normalize_zone_names, normalize_switch_name, is_address_name, is_fresh_target_frame,
-                   target_frame_mark)
+from utils import (normalize_zone_names, normalize_switch_name, is_address_name, listed_description,
+                   label_switch, is_fresh_target_frame, target_frame_mark)
 
 IEEE_ZHA = "0c:2a:6f:ff:fe:aa:39:2b"
 IEEE_Z2M = "0x0c2a6ffffef6f6a7"
@@ -269,6 +269,26 @@ def test_address_names():
     assert not is_address_name(IEEE_Z2M[:-1])
     assert not is_address_name(IEEE_Z2M + " kitchen")
     assert not is_address_name(None)
+
+
+def test_listed_description():
+    # Only a switch Zigbee2MQTT knows by its address is listed by its description;
+    # on a named switch the description is often a note
+    assert listed_description(IEEE_Z2M, " Kitchen\n island ") == "Kitchen island"
+    assert listed_description(IEEE_Z2M, "D" * 80) == "D" * 60
+    assert listed_description(IEEE_Z2M, "  ") is None
+    assert listed_description(IEEE_Z2M, None) is None
+    assert listed_description("Washroom", "Installed 2024, aux upstairs") is None
+
+
+def test_label_switch():
+    z2m = {"topic": f"zigbee2mqtt/{IEEE_Z2M}", "friendly_name": IEEE_Z2M, "description": "Kitchen"}
+    assert label_switch(dict(z2m), None) == {**z2m, "name": None, "default_label": "Kitchen", "label": "Kitchen"}
+    assert label_switch(dict(z2m), "Island")["label"] == "Island"
+    assert label_switch(dict(z2m), "Island")["default_label"] == "Kitchen"
+    zha = {"topic": f"zha/{IEEE_ZHA}", "friendly_name": "VZM32-SN — Hall"}
+    assert label_switch(dict(zha), None)["label"] == "VZM32-SN — Hall"
+    assert label_switch({"topic": "zigbee2mqtt/x"}, None)["label"] == "zigbee2mqtt/x"
 
 
 def test_fresh_target_frames():

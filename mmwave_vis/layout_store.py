@@ -57,13 +57,13 @@ class LayoutStore:
         A stored layout that couldn't be written to disk sets `write_error`.
         """
         if not isinstance(topic, str) or not topic or len(topic) > MAX_TOPIC_LENGTH:
-            return "Layout needs a switch"
+            return "That switch's topic can't be saved"
         with self._lock:
             if layout is None:
                 self._layouts.pop(topic, None)
             else:
                 if topic not in self._layouts and len(self._layouts) >= MAX_LAYOUTS:
-                    return "Too many saved layouts"
+                    return f"Too many saved {self._label.lower()}"
                 self._layouts[topic] = layout
             self._write()
         return None

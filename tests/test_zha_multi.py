@@ -70,6 +70,17 @@ def test_device_list_goes_through_the_app_callback():
     assert c.device_list[A]["topic"] == f"zha/{A}"
 
 
+def test_device_list_is_still_sent_when_the_app_callback_fails():
+    # A naming error must not take the ZHA connection down with it
+    c = ZHAClient("http://supervisor", "token", MagicMock(), on_device_list=MagicMock(side_effect=KeyError("x")))
+    c.device_list = {A: {"topic": f"zha/{A}", "ieee": A, "friendly_name": "Hall"}}
+    c._send_device_list()
+    (sent,) = emitted(c, "device_list")
+    assert sent == [{"topic": f"zha/{A}", "ieee": A, "friendly_name": "Hall",
+                     "name": None, "default_label": "Hall", "label": "Hall"}]
+    assert "name" not in c.device_list[A]   # labelled copies, not the cache
+
+
 def test_history_key_callback_is_used():
     # app.py passes its own history_key, which also remembers the topic for live timeline events
     seen = []

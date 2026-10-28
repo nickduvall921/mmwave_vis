@@ -160,6 +160,24 @@ def is_address_name(friendly_name):
     return isinstance(friendly_name, str) and bool(_ADDRESS_NAME.fullmatch(friendly_name.rsplit('/', 1)[-1]))
 
 
+def listed_description(friendly_name, description):
+    """The Zigbee2MQTT description the switch list shows, or None. Only a switch
+    Zigbee2MQTT knows by its address is listed by its description (#67); on other
+    switches it's often a note ("installed 2024…")."""
+    return (clean_name(description, MAX_SWITCH_NAME) or None) if is_address_name(friendly_name) else None
+
+
+def label_switch(entry, name):
+    """Add what the switch list shows to a device_list entry and return it:
+    `name` (given in the Visualizer, or None), `default_label` (its listed
+    Zigbee2MQTT description, else the switch's own name) and `label` (the name,
+    else the default)."""
+    entry['name'] = name
+    entry['default_label'] = entry.get('description') or entry.get('friendly_name') or entry.get('topic')
+    entry['label'] = name or entry['default_label']
+    return entry
+
+
 def target_frame_mark(payload):
     """What identifies one target report in a Zigbee2MQTT message, or None if it has none.
 

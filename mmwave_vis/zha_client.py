@@ -33,7 +33,7 @@ from websockets.sync.client import connect as ws_connect
 import settings_catalog
 from device_info import quirk_kind, QUIRK_VISUALIZER, QUIRK_BUILTIN
 from ha_ws import entity_roles, rest_json
-from utils import layout_key
+from utils import layout_key, label_switch
 
 log = logging.getLogger(__name__)
 
@@ -707,10 +707,19 @@ class ZHAClient:
                 found.append(self.device_list[ieee])
 
         if found:
-            if self._on_device_list:
+            self._send_device_list()
+
+    def _send_device_list(self):
+        """Send the switch list to every page: through app.py's callback, which adds
+        the names given in the Visualizer, else (or if it fails) without them."""
+        if self._on_device_list:
+            try:
                 self._on_device_list()
-            else:
-                self.socketio.emit("device_list", list(self.device_list.values()))
+                return
+            except Exception as e:
+                print(f"ZHA: couldn't add switch names to the switch list ({e}); sending it without them",
+                      flush=True)
+        self.socketio.emit("device_list", [label_switch(dict(d), None) for d in list(self.device_list.values())])
 
     # -----------------------------------------------------------------------
     # Internal: Incoming message routing

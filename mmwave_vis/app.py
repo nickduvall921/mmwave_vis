@@ -156,7 +156,7 @@ session_topics_lock = threading.Lock()
 from utils import (
     validate_parameter, safe_int, decode_raw_targets, decode_raw_zones,
     normalize_layout, layout_key, normalize_zone_names, is_fresh_target_frame, target_frame_mark,
-    normalize_switch_name, is_address_name, clean_name, MAX_SWITCH_NAME,
+    normalize_switch_name, listed_description, label_switch,
 )
 from layout_store import LayoutStore
 import device_info
@@ -219,21 +219,39 @@ def _layout_key(topic):
     return layout_key(topic, driver.ieee_for_topic(topic))
 
 
-def _per_switch(store, topic):
-    value = store.get(_layout_key(topic))
+def _stored(store, topic, ieee):
+    value = store.get(layout_key(topic, ieee))
     # Saved before Z2M told us the switch's IEEE address, so under its topic
     return value if value is not None else store.get(topic)
 
 
+def _per_switch(store, topic):
+    return _stored(store, topic, driver.ieee_for_topic(topic))
+
+
+def _save_per_switch(store, topic, value):
+    """Keep a switch's value (None removes it) under its IEEE address when known.
+    Returns an error for the acknowledgement, or None."""
+    key = _layout_key(topic)
+    error = store.set(key, value)
+    if error:
+        return error
+    if key != topic and store.get(topic) is not None:
+        store.set(topic, None)   # moved to the IEEE key
+    return None
+
+
+def _saved_ack(store, **fields):
+    ack = {'ok': True, **fields}
+    if store.write_error:
+        ack['warning'] = store.write_error
+    return ack
+
+
 def device_list_payload():
-    """The switches for the page's list. Each gets `name`, the one given in the
-    Visualizer (or None), and `label`, what the list shows: that name, else its
-    Zigbee2MQTT description, else the switch's own name."""
-    devices = driver.get_device_list_snapshot()
-    for d in devices:
-        d['name'] = _per_switch(switch_name_store, d.get('topic'))
-        d['label'] = d['name'] or d.get('description') or d.get('friendly_name') or d.get('topic')
-    return devices
+    """The switches for the page's list, with what the list shows (utils.label_switch)."""
+    return [label_switch(d, _stored(switch_name_store, d.get('topic'), d.get('ieee')))
+            for d in driver.get_device_list_snapshot()]
 
 
 def emit_device_list():
@@ -298,9 +316,8 @@ class Z2MDriver:
         with self.device_list_lock:
             devices = [dict(d) for d in self.device_list.values()]
             for d in devices:
-                # A switch Zigbee2MQTT knows only by its address is listed by its Z2M description (#67)
-                entry = self._bridge_entries.get(d['friendly_name']) or {}
-                d['description'] = entry.get('description') if is_address_name(d['friendly_name']) else None
+                d['ieee'] = self._ieee_by_name.get(d['friendly_name'])
+                d['description'] = (self._bridge_entries.get(d['friendly_name']) or {}).get('description')
             return devices
 
     def _remember_ieee(self, devices):
@@ -321,13 +338,18 @@ class Z2MDriver:
             if 'VZM32' in model.upper():
                 entries[d['friendly_name']] = {k: d.get(k) for k in (
                     'ieee_address', 'software_build_id', 'date_code', 'model_id', 'power_source')}
-                entries[d['friendly_name']]['description'] = clean_name(d.get('description'), MAX_SWITCH_NAME) or None
+                entries[d['friendly_name']]['description'] = listed_description(d['friendly_name'], d.get('description'))
+
+        def listed(e):
+            # What the switch list shows from here: each switch's IEEE address (names are
+            # kept by it) and its listed description
+            return {n: (v['ieee_address'], v['description']) for n, v in e.items()}
+
         with self.device_list_lock:
-            changed = names != self._ieee_by_name or entries != self._bridge_entries
+            changed = listed(entries) != listed(self._bridge_entries)
             self._ieee_by_name = names
             self._bridge_entries = entries
         if changed:
-            # Switch names are kept by IEEE address, and the list can show Z2M descriptions
             emit_device_list()
 
     def history_key_for(self, fname, topic):
@@ -1415,19 +1437,12 @@ def handle_save_switch_name(data):
         return {'error': 'The name needs a switch'}
     topic = data['topic']
     name, error = normalize_switch_name(data.get('name'))
+    if not error:
+        error = _save_per_switch(switch_name_store, topic, name)
     if error:
         return {'error': error}
-    key = _layout_key(topic)
-    error = switch_name_store.set(key, name)
-    if error:
-        return {'error': error}
-    if key != topic and switch_name_store.get(topic) is not None:
-        switch_name_store.set(topic, None)   # moved to the IEEE key
     emit_device_list()
-    ack = {'ok': True, 'name': name}
-    if switch_name_store.write_error:
-        ack['warning'] = switch_name_store.write_error
-    return ack
+    return _saved_ack(switch_name_store, name=name)
 
 
 @socketio.on('save_zone_names')
@@ -1437,19 +1452,12 @@ def handle_save_zone_names(data):
         return {'error': 'Zone names need a switch'}
     topic = data['topic']
     names, error = normalize_zone_names(data.get('names'))
+    if not error:
+        error = _save_per_switch(zone_name_store, topic, names)
     if error:
         return {'error': error}
-    key = _layout_key(topic)
-    error = zone_name_store.set(key, names)
-    if error:
-        return {'error': error}
-    if key != topic and zone_name_store.get(topic) is not None:
-        zone_name_store.set(topic, None)
     emit_to_topic_subscribers('zone_names', {'topic': topic, 'names': names}, topic, skip_sid=request.sid)
-    ack = {'ok': True, 'names': names}
-    if zone_name_store.write_error:
-        ack['warning'] = zone_name_store.write_error
-    return ack
+    return _saved_ack(zone_name_store, names=names)
 
 
 # --- History (heat map + timeline) ---
@@ -1542,17 +1550,11 @@ def handle_save_layout(data):
         layout, error = normalize_layout(data['layout'])
         if error:
             return {'error': error}
-    key = _layout_key(topic)
-    error = layout_store.set(key, layout)
+    error = _save_per_switch(layout_store, topic, layout)
     if error:
         return {'error': error}
-    if key != topic and layout_store.get(topic) is not None:
-        layout_store.set(topic, None)   # moved to the IEEE key
     emit_to_topic_subscribers('layout', {'topic': topic, 'layout': layout}, topic, skip_sid=request.sid)
-    ack = {'ok': True, 'layout': layout}
-    if layout_store.write_error:
-        ack['warning'] = layout_store.write_error
-    return ack
+    return _saved_ack(layout_store, layout=layout)
 
 
 @socketio.on('update_parameter')
