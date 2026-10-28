@@ -1,7 +1,7 @@
 # Changelog
 
 
-## [Unreleased]
+## [4.2.2] - 2026-10-28
 
 ### Added
 - Switch names: give a switch the name the switch list shows, in the Config tab under This switch ([#67](https://github.com/nickduvall921/mmwave_vis/issues/67)). The addon keeps it by the switch's IEEE address, so every browser sees it and it survives renaming the switch in Zigbee2MQTT. Works on Zigbee2MQTT and ZHA.
